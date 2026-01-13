@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# # PyTorch/Models
+# *.pth
+# *.pt
+
+# # Datasets (Large folders)
+# dataset_full_yolo/
+# dataset_corrected/
+# cghd_raw/
+# cghd1152/
+# runs/
+
+# Images
+*.png
+*.jpg
+*.jpeg

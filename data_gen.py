@@ -2,78 +2,90 @@ import os
 import schemdraw
 import schemdraw.elements as elm
 import matplotlib.pyplot as plt
-import random
-import numpy as np
-import cv2
+import inspect
+import gc
 
-# Configuration
-CLASSES = {
-    'resistor': elm.Resistor,
-    'capacitor': elm.Capacitor,
-    'inductor': elm.Inductor,
-    'bjt': elm.BjtNpn,
-    'mosfet': elm.NFet, 
-}
+# --- Configuration ---
+OUTPUT_DIR = "dataset_clean_v1"
+DIRECTIONS = ['up', 'down', 'left', 'right']
+UNIT_SIZE = 3.0
+LINE_WIDTH = 2.0
 
-SAMPLES_PER_TYPE = 50  # 50 clean + 50 noisy = 100 total per class
-DATASET_ROOT = "dataset_v2"
+def get_schemdraw_classes():
+    """
+    Dynamically finds all valid component classes in schemdraw.elements.
+    """
+    valid_classes = []
+    # inspect.getmembers returns (name, value) tuples
+    for name, obj in inspect.getmembers(elm):
+        if inspect.isclass(obj) and issubclass(obj, elm.Element) and obj is not elm.Element:
+            # Filter out private classes (start with _) or base classes usually not drawn alone
+            if not name.startswith('_'):
+                valid_classes.append((name, obj))
+    return valid_classes
 
-def apply_noise(image_path):
-    """Applies subtle Gaussian noise and slight blurring to simulate a real scan."""
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None: return
+def generate_component_images():
+    # 1. Create Root Directory
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
     
-    # 1. Add Gaussian Noise
-    gauss = np.random.normal(0, 7, img.shape).astype('uint8')
-    img = cv2.add(img, gauss)
+    # Disable pop-up windows to save RAM
+    plt.ioff()
     
-    # 2. Slight Blur (simulates a non-perfect camera focus)
-    if random.choice([True, False]):
-        img = cv2.GaussianBlur(img, (3, 3), 0)
-        
-    cv2.imwrite(image_path, img)
+    # 2. Find all components
+    classes = get_schemdraw_classes()
+    print(f"Found {len(classes)} component types in schemdraw library.")
+    print("Starting generation... (Press Ctrl+C to stop)")
 
-def generate_component(ComponentClass, save_path, is_noisy=False):
-    """Draws the component and optionally adds noise."""
-    unit_size = random.uniform(2.5, 3.5)
-    line_width = random.uniform(1.5, 2.5) 
+    successful_counts = 0
     
-    # Draw
-    with schemdraw.Drawing(show=False) as d:
-        d.config(unit=unit_size, lw=line_width)
-        orientation = random.choice(['right', 'up', 'down', 'left'])
+    # 3. Iterate through every component class
+    for idx, (comp_name, CompClass) in enumerate(classes):
         
-        comp = ComponentClass()
-        if orientation == 'up': comp.up()
-        elif orientation == 'down': comp.down()
-        elif orientation == 'left': comp.left()
-        else: comp.right()
+        # Create a folder for this specific component
+        comp_folder = os.path.join(OUTPUT_DIR, comp_name)
+        os.makedirs(comp_folder, exist_ok=True)
         
-        d.add(comp)
-        d.save(save_path, dpi=100)
+        print(f"Processing [{idx+1}/{len(classes)}]: {comp_name}")
         
-    plt.close('all') 
-    
-    if is_noisy:
-        apply_noise(save_path)
+        # Try to draw in all 4 directions
+        for direction in DIRECTIONS:
+            save_path = os.path.join(comp_folder, f"{comp_name}_{direction}.png")
+            
+            try:
+                with schemdraw.Drawing(show=False) as d:
+                    d.config(unit=UNIT_SIZE, lw=LINE_WIDTH)
+                    
+                    # Instantiate component
+                    # Some complex components require args; we wrap in try-except
+                    try:
+                        element = CompClass()
+                    except TypeError:
+                        # Skip components that REQUIRE arguments (like some logic gates needing inputs)
+                        continue
+
+                    # Apply direction
+                    if direction == 'up': element.up()
+                    elif direction == 'down': element.down()
+                    elif direction == 'left': element.left()
+                    else: element.right()
+                    
+                    d.add(element)
+                    d.save(save_path, dpi=100)
+                    successful_counts += 1
+                    
+            except Exception as e:
+                # If a specific component crashes schemdraw, just skip it and move on
+                pass
+            finally:
+                # CRITICAL: Close plot to prevent memory leak
+                plt.close('all')
+
+        # Force garbage collection every 10 components to keep laptop cool
+        if idx % 10 == 0:
+            gc.collect()
+
+    print(f"\nCompleted! Generated {successful_counts} images in '{OUTPUT_DIR}'.")
 
 if __name__ == "__main__":
-    os.makedirs(DATASET_ROOT, exist_ok=True)
-    
-    for class_name, comp_obj in CLASSES.items():
-        path = os.path.join(DATASET_ROOT, class_name)
-        os.makedirs(path, exist_ok=True)
-        
-        print(f"Generating data for {class_name}...")
-        
-        # 1. Generate Clean Images
-        for i in range(SAMPLES_PER_TYPE):
-            filename = os.path.join(path, f"{class_name}_{i}_clean.png")
-            generate_component(comp_obj, filename, is_noisy=False)
-            
-        # 2. Generate Noisy Images
-        for i in range(SAMPLES_PER_TYPE):
-            filename = os.path.join(path, f"{class_name}_{i}_noisy.png")
-            generate_component(comp_obj, filename, is_noisy=True)
-
-    print(f"\nSuccess! Dataset created in '{DATASET_ROOT}' with 100 images per class (50 clean/50 noisy).")
+    generate_component_images()
