@@ -1,0 +1,57 @@
+{
+    "resistor": {
+        "prefix": "R",
+        "pins": ["1", "2"],
+        "polarized": false
+    },
+    "capacitor": {
+        "prefix": "C",
+        "pins": ["1", "2"],
+        "polarized": false
+    },
+    "inductor": {
+        "prefix": "L",
+        "pins": ["1", "2"],
+        "polarized": false
+    },
+    "diode": {
+        "prefix": "D",
+        "pins": ["anode", "cathode"],
+        "polarized": true
+    },
+    "voltage": {
+        "prefix": "V",
+        "pins": ["+", "-"],
+        "polarized": true
+    },
+    "current": {
+        "prefix": "I",
+        "pins": ["in", "out"],
+        "polarized": true
+    },
+    "bjt": {
+        "prefix": "Q",
+        "pins": ["collector", "base", "emitter"],
+        "polarized": true
+    },
+    "mosfet": {
+        "prefix": "M",
+        "pins": ["drain", "gate", "source"],
+        "polarized": true
+    },
+    "ground": {
+        "prefix": "GND",
+        "pins": ["gnd"],
+        "polarized": false
+    },
+    "wire": {
+        "prefix": "W",
+        "pins": [],
+        "polarized": false
+    },
+    "text": {
+        "prefix": "TXT",
+        "pins": [],
+        "polarized": false
+    }
+}
