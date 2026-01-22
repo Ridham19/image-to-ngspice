@@ -16,9 +16,9 @@ import glob
 
 # --- CONFIGURATION ---
 MODEL_PATH = "circuit_model_universal_all.pth"
-DATASET_DIR = "dataset_closed_loop"     # Where we load random images from
-CORRECTION_DIR = "dataset_corrected"    # Where we save cropped components (for classifier)
-FULL_YOLO_DIR = "dataset_full_yolo"     # NEW: Where we save full images + labels (for detector)
+DATASET_DIR = "DATA/dataset_closed_loop"  # Where we load random images from
+CORRECTION_DIR = "DATA/dataset_corrected"  # Where we save cropped components (for classifier)
+FULL_YOLO_DIR = "DATA/dataset_full_yolo"  # NEW: Where we save full images + labels (for detector)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

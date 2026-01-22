@@ -7,7 +7,7 @@ import shutil
 
 # --- CONFIGURATION ---
 TRAIN_DIR = "dataset_training_annotated"
-TEST_DIR = "dataset_testing_clean"
+TEST_DIR = "DATA/dataset_testing_clean"
 NUM_IMAGES = 50
 
 # --- GRID CONSTANTS ---

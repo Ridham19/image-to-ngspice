@@ -4,7 +4,7 @@ import random
 import os
 
 # Create output directory
-OUTPUT_DIR = "dataset_closed_loop"
+OUTPUT_DIR = "DATA/dataset_closed_loop"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def get_random_component(label_idx, orientation='right'):

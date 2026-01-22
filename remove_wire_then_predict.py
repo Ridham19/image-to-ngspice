@@ -173,4 +173,4 @@ def analyze_circuit(image_path):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    analyze_circuit("dataset_closed_loop/closed_loop_2comps_0.png")
+    analyze_circuit("DATA/dataset_closed_loop/closed_loop_2comps_0.png")

@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 .venv/
 venv/
+.idea
+DATA/
+DATA
+runs
 
 # # PyTorch/Models
 # *.pth
