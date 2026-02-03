@@ -10,33 +10,27 @@ def preprocess_image(image_path):
 
 def separate_layers(gray_img, binary_thresh):
     """
-    Separates the image into:
-    1. component_mask: Blobs representing components
-    2. wire_mask: Thin lines representing wires
-    3. ai_input: Clean grayscale image (text removed) for the AI model
+    Splits the image into 'Components' and 'Wires' using morphology.
     """
-    # 1. Clean Text (Small blobs)
+    # 1. Clean Text/Noise
     contours, _ = cv2.findContours(binary_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cleaned_binary = binary_thresh.copy()
     ai_input_gray = gray_img.copy() 
     
     for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < 400: # Filter small text/noise
+        if cv2.contourArea(cnt) < 400: # Filter small noise
             cv2.drawContours(cleaned_binary, [cnt], -1, 0, thickness=cv2.FILLED)
-            cv2.drawContours(ai_input_gray, [cnt], -1, 255, thickness=cv2.FILLED) # Erase text
+            cv2.drawContours(ai_input_gray, [cnt], -1, 255, thickness=cv2.FILLED)
 
-    # 2. Extract Wires (Morphology)
+    # 2. Extract Wires
     h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
-    wires_h = cv2.morphologyEx(cleaned_binary, cv2.MORPH_OPEN, h_kernel)
-    
     v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+    wires_h = cv2.morphologyEx(cleaned_binary, cv2.MORPH_OPEN, h_kernel)
     wires_v = cv2.morphologyEx(cleaned_binary, cv2.MORPH_OPEN, v_kernel)
     
     wire_mask = cv2.bitwise_or(wires_h, wires_v)
     
-    # 3. Extract Components
-    # Subtract wires from original binary to leave components
+    # 3. Extract Components (Binary - Wires)
     component_mask = cv2.bitwise_and(cleaned_binary, cv2.bitwise_not(wire_mask))
     
     # Heal fragmented components
@@ -50,6 +44,5 @@ def get_component_contours(component_mask):
     valid_contours = []
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
-        if w > 15 and h > 15: # Basic noise filter
-            valid_contours.append((x, y, w, h))
+        if w > 15 and h > 15: valid_contours.append((x, y, w, h))
     return valid_contours

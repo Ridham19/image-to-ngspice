@@ -1,29 +1,32 @@
 import json
 import os
 
-CONFIG_PATH = r"D:\codes\ML\image_to_ngspice\proper\modules\component_specs.json"
+# Get the directory where THIS file is located
+MODULES_DIR = os.path.dirname(os.path.abspath(__file__))
+# Look for json in the same folder
+CONFIG_PATH = os.path.join(MODULES_DIR, "component_specs.json")
 
 class ComponentConfig:
-    def __init__(self, path=CONFIG_PATH):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Configuration file {path} not found!")
-        
+    def __init__(self):
+        if not os.path.exists(CONFIG_PATH):
+            # Fallback: Check parent folder just in case
+            parent_path = os.path.join(os.path.dirname(MODULES_DIR), "component_specs.json")
+            if os.path.exists(parent_path):
+                self.load_specs(parent_path)
+            else:
+                raise FileNotFoundError(f"❌ Configuration file missing! Expected at: {CONFIG_PATH}")
+        else:
+            self.load_specs(CONFIG_PATH)
+
+    def load_specs(self, path):
         with open(path, 'r') as f:
             self.specs = json.load(f)
-            
-        # Generate handy lists for other modules
         self.class_names = sorted(list(self.specs.keys()))
-        self.spice_prefixes = {k: v['prefix'] for k, v in self.specs.items()}
 
-    def get_pin_count(self, class_name):
-        """Returns expected number of pins for a component type."""
-        return len(self.specs.get(class_name, {}).get("pins", []))
+    def get_prefix(self, label):
+        return self.specs.get(label, {}).get('prefix', 'X')
 
-    def get_pin_names(self, class_name):
-        return self.specs.get(class_name, {}).get("pins", [])
+    def get_pin_names(self, label):
+        return self.specs.get(label, {}).get('pins', [])
 
-    def is_polarized(self, class_name):
-        return self.specs.get(class_name, {}).get("polarized", False)
-
-# Global Instance
 cfg = ComponentConfig()

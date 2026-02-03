@@ -4,118 +4,127 @@ from PIL import Image, ImageTk
 import cv2
 import os
 
-# Internal imports from your modular structure
-from modules.processing import preprocess_image, separate_layers, get_component_contours
+# Internal Imports
+from modules.processing import preprocess_image, separate_layers
 from modules.model import ComponentDetector
 from modules.netlist import trace_nodes, generate_spice_text
 from modules.config import cfg
+import modules.labeling as labeler
 
 class SpiceGuiApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Ridham19-AI: Image to SPICE")
-        self.root.geometry("1100x750")
+        self.root.title("Ridham19-AI: Image to SPICE (YOLO)")
+        self.root.geometry("1200x800")
         
-        # --- State ---
         self.current_image_path = None
-        # Ensure your model file is in the root directory
-        self.detector = ComponentDetector("circuit_model.pth")
+        self.detector = ComponentDetector("best.pt") 
         
         self._setup_ui()
 
     def _setup_ui(self):
-        # Top Control Bar
-        top_bar = tk.Frame(self.root, pady=10, bg="#2d2d2d")
-        top_bar.pack(side="top", fill="x")
+        # Toolbar
+        toolbar = tk.Frame(self.root, bg="#333", pady=10)
+        toolbar.pack(side="top", fill="x")
         
-        tk.Button(top_bar, text="📁 Load Circuit Image", command=self.load_image, 
-                  padx=20, bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), bd=0).pack(side="left", padx=20)
+        tk.Button(toolbar, text="📂 Load Image", command=self.load_image,
+                  bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"), padx=15).pack(side="left", padx=10)
         
-        self.btn_run = tk.Button(top_bar, text="⚡ Generate Netlist", command=self.process_circuit, 
-                                 state="disabled", padx=20, font=("Arial", 10, "bold"), bd=0)
-        self.btn_run.pack(side="left")
+        tk.Button(toolbar, text="🏷️ Open Labeler", command=self.open_labeler,
+                  bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"), padx=15).pack(side="left", padx=10)
+        
+        self.btn_gen = tk.Button(toolbar, text="⚡ Generate Netlist", command=self.run_pipeline,
+                                 bg="#0078D7", fg="white", font=("Segoe UI", 10, "bold"), padx=15, state="disabled")
+        self.btn_gen.pack(side="left", padx=10)
 
-        # Main Layout (Image Preview | Netlist View)
-        main_frame = tk.Frame(self.root, bg="#1e1e1e")
-        main_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        # Content
+        content = tk.Frame(self.root, bg="#222")
+        content.pack(fill="both", expand=True)
         
-        # Left Panel: Image Display
-        self.img_panel = tk.Label(main_frame, text="No Image Loaded", bg="#252526", 
-                                  fg="white", relief="sunken", bd=0)
-        self.img_panel.pack(side="left", fill="both", expand=True)
+        self.panel_img = tk.Label(content, text="No Image", bg="black", fg="#888")
+        self.panel_img.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         
-        # Right Panel: SPICE Text Output
-        right_panel = tk.Frame(main_frame, padx=10, bg="#1e1e1e")
-        right_panel.pack(side="right", fill="both")
+        right_frame = tk.Frame(content, bg="#222", width=400)
+        right_frame.pack(side="right", fill="y", padx=10, pady=10)
+        right_frame.pack_propagate(False)
         
-        tk.Label(right_panel, text="Generated SPICE Code:", font=("Arial", 10, "bold"), 
-                 bg="#1e1e1e", fg="white").pack(anchor="w", pady=(0,5))
-        self.txt_output = scrolledtext.ScrolledText(right_panel, width=45, height=35, 
-                                                    bg="#252526", fg="#d4d4d4", 
-                                                    insertbackground="white", font=("Consolas", 10))
-        self.txt_output.pack(fill="both", expand=True)
+        tk.Label(right_frame, text="SPICE Netlist", bg="#222", fg="white", font=("Segoe UI", 12)).pack(anchor="w")
+        self.txt_out = scrolledtext.ScrolledText(right_frame, bg="#333", fg="white", font=("Consolas", 11), insertbackground="white")
+        self.txt_out.pack(fill="both", expand=True)
+
+    def open_labeler(self):
+        # Launch Labeler as a TOP LEVEL window (Pop up)
+        labeler.run_labeler(self.root)
 
     def load_image(self):
-        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg")])
+        path = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
         if path:
             self.current_image_path = path
-            pil_img = Image.open(path)
-            pil_img.thumbnail((550, 550)) 
-            tk_img = ImageTk.PhotoImage(pil_img)
-            self.img_panel.config(image=tk_img, text="")
-            self.img_panel.image = tk_img
-            
-            self.btn_run.config(state="normal", bg="#0078d7", fg="white")
-            self.txt_output.delete('1.0', tk.END)
+            self.show_image(path)
+            self.btn_gen.config(state="normal")
+            self.txt_out.delete('1.0', tk.END)
 
-    def process_circuit(self):
-        if not self.current_image_path: return
+    def show_image(self, path, cv_img=None):
+        if cv_img is not None:
+            pil_img = Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB))
+        else:
+            pil_img = Image.open(path)
+            
+        w, h = pil_img.size
+        # Smart Resize to fit window
+        aspect = w / h
+        disp_h = 600
+        disp_w = int(disp_h * aspect)
+        pil_img = pil_img.resize((disp_w, disp_h))
         
+        tk_img = ImageTk.PhotoImage(pil_img)
+        self.panel_img.config(image=tk_img, text="")
+        self.panel_img.image = tk_img
+
+    def run_pipeline(self):
+        if not self.current_image_path: return
         try:
-            # 1. Processing Pipeline
+            # 1. Preprocess (Get Wires)
             original, gray, binary = preprocess_image(self.current_image_path)
-            comp_mask, wire_mask, ai_input_gray = separate_layers(gray, binary)
-            contours = get_component_contours(comp_mask)
+            _, wire_mask, _ = separate_layers(gray, binary)
+            
+            # 2. YOLO Detect (Get Components)
+            detections = self.detector.detect(original)
             
             detected_comps = []
-            counts = {k: 0 for k in cfg.class_names}
+            counts = {k:0 for k in cfg.class_names}
+            vis_img = original.copy()
             
-            # 2. Component Identification
-            for (x, y, w, h) in contours:
-                pad = 10
-                roi = ai_input_gray[max(0, y-pad):min(gray.shape[0], y+h+pad), 
-                                    max(0, x-pad):min(gray.shape[1], x+w+pad)]
+            for det in detections:
+                label = det['label']
+                x, y, w, h = det['box']
                 
-                if roi.size == 0: continue
-                label, conf = self.detector.predict(Image.fromarray(roi))
+                if label in ['wire', 'text']: continue
                 
-                if label in ['wire', 'text'] or conf < 0.60: continue
-                
-                counts[label] += 1
-                prefix = cfg.specs[label]['prefix']
+                # Naming Logic
+                counts[label] = counts.get(label, 0) + 1
+                prefix = cfg.get_prefix(label)
                 name = f"{prefix}{counts[label]}"
+                
                 detected_comps.append({'name': name, 'type': label, 'box': (x, y, w, h)})
                 
-                # Visual Feedback
-                cv2.rectangle(original, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                cv2.putText(original, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                # Draw on preview
+                cv2.rectangle(vis_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.putText(vis_img, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-            # 3. Trace & Generate
+            # 3. Connectivity
             connections = trace_nodes(wire_mask, detected_comps)
             spice_code = generate_spice_text(detected_comps, connections)
             
-            # 4. Update UI
-            self.txt_output.delete('1.0', tk.END)
-            self.txt_output.insert(tk.END, spice_code)
+            self.txt_out.delete('1.0', tk.END)
+            self.txt_out.insert(tk.END, spice_code)
+            self.show_image(None, cv_img=vis_img)
             
-            final_pil = Image.fromarray(cv2.cvtColor(original, cv2.COLOR_BGR2RGB))
-            final_pil.thumbnail((550, 550))
-            tk_final = ImageTk.PhotoImage(final_pil)
-            self.img_panel.config(image=tk_final)
-            self.img_panel.image = tk_final
-            
+            messagebox.showinfo("Done", f"Found {len(detected_comps)} components.")
+
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            messagebox.showerror("Error", str(e))
+            print(e)
 
 def run_main_gui():
     root = tk.Tk()
