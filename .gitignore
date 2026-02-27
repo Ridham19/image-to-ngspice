@@ -8,6 +8,7 @@ venv/
 DATA/
 DATA
 runs
+source.docx
 
 # # PyTorch/Models
 # *.pth

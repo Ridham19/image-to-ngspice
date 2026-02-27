@@ -1,4 +1,7 @@
-* AI Generated Circuit
-.title Circuit Output
-M1 0 0 model_X
+* Linter-Corrected SPICE Netlist
+R1 1 0 1k_(NEEDS_OCR)
+T1 0 1 1k
+R2 0 1 1k_(NEEDS_OCR)
+R3 0 1 1k_(NEEDS_OCR)
+R4 0 1 1k_(NEEDS_OCR)
 .end

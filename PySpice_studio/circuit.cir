@@ -1,0 +1,18 @@
+* PySpice Studio Netlist
+
+
+R1 1 0 1k
+V1 1 0 PULSE(0 5 10m 1n 1n 10m 20m)
+
+.tran 0.1m 80m 0
+.control
+run
+set color0 = white
+set color1 = black
+set color2 = red
+set color3 = red
+set xbrushwidth = 2
+plot v(1) title 'Graph Window 1'
+plot i(V1) title 'Graph Window 2'
+.endc
+.end

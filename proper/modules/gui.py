@@ -84,43 +84,44 @@ class SpiceGuiApp:
     def run_pipeline(self):
         if not self.current_image_path: return
         try:
-            # 1. Preprocess (Get Wires)
+            # 1. Preprocess (Get Wires using correct functions)
             original, gray, binary = preprocess_image(self.current_image_path)
             _, wire_mask, _ = separate_layers(gray, binary)
             
-            # 2. YOLO Detect (Get Components)
-            detections = self.detector.detect(original)
+            # 2. YOLO Detect (This now automatically writes detected_components.json)
+            detected_comps = self.detector.detect(self.current_image_path, output_file="detected_components.json")
             
-            detected_comps = []
-            counts = {k:0 for k in cfg.class_names}
             vis_img = original.copy()
             
-            for det in detections:
-                label = det['label']
-                x, y, w, h = det['box']
+            for comp in detected_comps:
+                name = comp['name']
+                label = comp['type']
+                x, y, w, h = comp['box']
                 
-                if label in ['wire', 'text']: continue
-                
-                # Naming Logic
-                counts[label] = counts.get(label, 0) + 1
-                prefix = cfg.get_prefix(label)
-                name = f"{prefix}{counts[label]}"
-                
-                detected_comps.append({'name': name, 'type': label, 'box': (x, y, w, h)})
-                
-                # Draw on preview
+                # Draw main component box on preview
                 cv2.rectangle(vis_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
                 cv2.putText(vis_img, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                # If the AI paired a text box to this component, highlight it in Orange!
+                if comp.get('value') == "TEXT_FOUND" and 'text_box' in comp:
+                    tx, ty, tw, th = comp['text_box']
+                    cv2.rectangle(vis_img, (tx, ty), (tx+tw, ty+th), (0, 165, 255), 2) # Orange BGR
+                    cv2.putText(vis_img, "Value", (tx, ty-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
 
-            # 3. Connectivity
+            # 3. Connectivity & Netlist
             connections = trace_nodes(wire_mask, detected_comps)
             spice_code = generate_spice_text(detected_comps, connections)
             
+            # Display results
             self.txt_out.delete('1.0', tk.END)
             self.txt_out.insert(tk.END, spice_code)
             self.show_image(None, cv_img=vis_img)
             
-            messagebox.showinfo("Done", f"Found {len(detected_comps)} components.")
+            # Save final output
+            with open("circuit.cir", "w") as f:
+                f.write(spice_code)
+            
+            messagebox.showinfo("Success", f"Found {len(detected_comps)} components!\n\nJSON saved: detected_components.json\nSPICE saved: circuit.cir")
 
         except Exception as e:
             messagebox.showerror("Error", str(e))

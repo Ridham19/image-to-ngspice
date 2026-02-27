@@ -1,0 +1,138 @@
+[
+    {
+        "name": "R1",
+        "type": "resistor",
+        "box": [
+            625,
+            443,
+            87,
+            137
+        ],
+        "center": [
+            668.5,
+            511.5
+        ],
+        "conf": 0.96,
+        "value": "TEXT_FOUND",
+        "text_box": [
+            714,
+            442,
+            66,
+            67
+        ]
+    },
+    {
+        "name": "T1",
+        "type": "transistor",
+        "box": [
+            930,
+            658,
+            170,
+            167
+        ],
+        "center": [
+            1015.0,
+            741.5
+        ],
+        "conf": 0.96,
+        "value": null
+    },
+    {
+        "name": "R2",
+        "type": "resistor",
+        "box": [
+            625,
+            901,
+            89,
+            138
+        ],
+        "center": [
+            669.5,
+            970.0
+        ],
+        "conf": 0.96,
+        "value": "TEXT_FOUND",
+        "text_box": [
+            726,
+            907,
+            69,
+            66
+        ]
+    },
+    {
+        "name": "R3",
+        "type": "resistor",
+        "box": [
+            1005,
+            958,
+            87,
+            135
+        ],
+        "center": [
+            1048.5,
+            1025.5
+        ],
+        "conf": 0.9,
+        "value": "TEXT_FOUND",
+        "text_box": [
+            1110,
+            967,
+            71,
+            65
+        ]
+    },
+    {
+        "name": "GND1",
+        "type": "ground",
+        "box": [
+            1001,
+            1210,
+            95,
+            60
+        ],
+        "center": [
+            1048.5,
+            1240.0
+        ],
+        "conf": 0.88,
+        "value": null
+    },
+    {
+        "name": "R4",
+        "type": "resistor",
+        "box": [
+            1003,
+            382,
+            87,
+            135
+        ],
+        "center": [
+            1046.5,
+            449.5
+        ],
+        "conf": 0.88,
+        "value": "TEXT_FOUND",
+        "text_box": [
+            1101,
+            383,
+            71,
+            68
+        ]
+    },
+    {
+        "name": "GND2",
+        "type": "ground",
+        "box": [
+            621,
+            1209,
+            97,
+            58
+        ],
+        "center": [
+            669.5,
+            1238.0
+        ],
+        "conf": 0.87,
+        "value": null
+    }
+]

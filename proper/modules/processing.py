@@ -5,7 +5,8 @@ def preprocess_image(image_path):
     img = cv2.imread(image_path)
     if img is None: raise ValueError("Image not found")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+   # Replace your threshold line with this:
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 5)
     return img, gray, thresh
 
 def separate_layers(gray_img, binary_thresh):
