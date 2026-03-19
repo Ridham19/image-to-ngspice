@@ -98,16 +98,19 @@ def generate_spice_text(components, connections):
 
         node_str = " ".join(current_nodes)
         
-        val = "1k" # Fallback Default
+        # Fallback Defaults
+        val = "1k" 
         if label in ['voltage', 'source', 'battery']: val = "5V"
         elif label == 'capacitor': val = "1u"
         elif label == 'inductor': val = "1mH"
         elif label == 'diode': val = "D1"
-        elif label == 'current': val = "1A"
 
-        # Check if model.py successfully paired a text box to this component
-        if comp.get('value') == "TEXT_FOUND":
-            val = f"{val}_(NEEDS_OCR)" # We add a marker so we can see it working!
+        # --- NEW: APPLY OCR VALUE ---
+        detected_val = comp.get('value')
+        if detected_val and detected_val != "TEXT_FOUND":
+            val = detected_val # Use the OCR value (e.g., "10k")
+        elif detected_val == "TEXT_FOUND":
+            val = f"{val}_(NEEDS_OCR)" # Fallback if OCR was too blurry
 
         netlist.append(f"{name} {node_str} {val}")
         

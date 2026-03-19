@@ -3,7 +3,21 @@ from tkinter import filedialog, messagebox, Menu
 import copy
 import subprocess
 import os
+import sys
 import json
+
+# --- AI PIPELINE INTEGRATION ---
+# Add the 'proper' directory to the system path so we can import the YOLO model
+ai_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'proper'))
+if ai_path not in sys.path:
+    sys.path.append(ai_path)
+
+try:
+    from modules.model import ComponentDetector
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    print("⚠️ Warning: Could not load AI ComponentDetector. Make sure the 'proper' folder exists next to PySpice_studio.")
 
 # Internal module imports
 from components import Component, ComponentHelper
@@ -74,26 +88,21 @@ class CircuitEditor:
     # ==========================================
 
     def _setup_main_layout(self):
-        """Organizes the primary frames and sidebar."""
         self.root.rowconfigure(0, weight=1)
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=0)
 
-        # Left area: Toolbar + Canvas
         left_frame = tk.Frame(self.root, bg=COLOR_TOOLBAR_BG)
         left_frame.grid(row=0, column=0, sticky="nsew")
         left_frame.rowconfigure(1, weight=1)
         left_frame.columnconfigure(0, weight=1)
 
-        # Right area: Sidebar
         self.prop_frame = tk.Frame(self.root, width=300, bg=COLOR_SIDEBAR_BG, bd=0)
         self.prop_frame.grid(row=0, column=1, sticky="ns")
         self.prop_frame.pack_propagate(False)
         
-        # Menu
         self._init_menu_bar()
         
-        # Sidebar Sections
         self._add_sidebar_header("PROPERTIES")
         self.prop_container = tk.Frame(self.prop_frame, bg=COLOR_SIDEBAR_BG, padx=10, pady=10)
         self.prop_container.pack(fill="x")
@@ -104,7 +113,6 @@ class CircuitEditor:
         
         self._add_sidebar_footer_shortcuts()
 
-        # Build functional UI components
         self._init_professional_toolbar(left_frame)
         self._init_canvas(left_frame)
 
@@ -114,8 +122,10 @@ class CircuitEditor:
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
         
-        # --- Add this new line ---
-        file_menu.add_command(label="Import AI JSON...", command=self.import_from_ai)
+        # --- NEW AI IMPORT BUTTONS ---
+        file_menu.add_command(label="📸 Import from Image (AI)...", command=self.import_from_image)
+        file_menu.add_command(label="📄 Import AI JSON...", command=self.import_from_ai)
+        file_menu.add_separator()
         
         file_menu.add_command(label="Settings (Set ngspice path)", command=self.open_settings)
         file_menu.add_separator()
@@ -131,18 +141,16 @@ class CircuitEditor:
                  justify="left", font=("Consolas", 8)).pack(side="bottom", pady=20)
 
     def _setup_shortcuts(self):
-        """Bind keyboard keys to internal functions."""
         keys = {'w': 'wire', 'p': 'probe', 'r': 'resistor', 'c': 'capacitor', 'l': 'inductor', 'd': 'diode'}
         for key, mode in keys.items():
             self.root.bind(key, lambda e, m=mode: self.set_mode(m))
-            
         self.root.bind('<Delete>', self.delete_selection)
         self.root.bind('<Control-r>', self.rotate_command)
         self.root.bind('<Control-c>', self.copy_selection)
         self.root.bind('<Control-v>', self.paste_selection)
 
     # ==========================================
-    # FILE & CONFIG LOGIC
+    # FILE, CONFIG & AI IMPORT LOGIC
     # ==========================================
 
     def load_config(self):
@@ -161,59 +169,142 @@ class CircuitEditor:
                 json.dump({"ngspice_path": path}, f)
             messagebox.showinfo("Config Updated", f"Simulator path set to:\n{path}")
 
+    def import_from_image(self):
+        """Opens an image, runs YOLO detection, shows debug window, and loads to canvas."""
+        if not AI_AVAILABLE:
+            messagebox.showerror("AI Engine Missing", "Could not load the YOLO modules.")
+            return
+
+        img_path = filedialog.askopenfilename(title="Select Hand-Drawn Circuit", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp")])
+        if not img_path: return
+
+        try:
+            self.status.config(text="🤖 AI is processing image... Please wait.")
+            self.root.update()
+
+            detector = ComponentDetector()
+            json_output_path = os.path.join(os.path.dirname(__file__), "detected_components.json")
+            detected_comps = detector.detect(img_path, output_file=json_output_path)
+            
+            # --- FIXED: NATIVE TKINTER AI DEBUG WINDOW ---
+            import cv2
+            from PIL import Image, ImageTk
+            
+            vis_img = cv2.imread(img_path)
+            for comp in detected_comps:
+                x, y, w, h = comp['box']
+                name = comp['name']
+                cv2.rectangle(vis_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                
+                val = comp.get('value')
+                # If we paired text, draw the orange box and show the OCR result
+                if val and val != "TEXT_FOUND" and 'text_box' in comp:
+                    tx, ty, tw, th = comp['text_box']
+                    cv2.rectangle(vis_img, (tx, ty), (tx+tw, ty+th), (0, 165, 255), 2)
+                    cv2.putText(vis_img, f"OCR: {val}", (tx, ty-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                    cv2.putText(vis_img, name, (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                else:
+                    cv2.putText(vis_img, name, (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            # Convert OpenCV BGR to RGB for PIL
+            rgb_img = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb_img)
+
+            # Smart resize so massive phone photos don't overflow your monitor
+            im_w, im_h = pil_img.size
+            if im_h > 700 or im_w > 1000:
+                scale = min(1000/im_w, 700/im_h)
+                pil_img = pil_img.resize((int(im_w*scale), int(im_h*scale)), Image.Resampling.LANCZOS)
+                
+            self.status.config(text="Review the AI detection window...")
+            self.root.update()
+            
+            # Create a native Tkinter popup
+            debug_win = tk.Toplevel(self.root)
+            debug_win.title("AI Vision Debug")
+            debug_win.configure(bg="#1E1E1E")
+            
+            tk_img = ImageTk.PhotoImage(pil_img)
+            lbl = tk.Label(debug_win, image=tk_img, bg="#1E1E1E")
+            lbl.image = tk_img # Keep reference so garbage collector doesn't delete the image
+            lbl.pack(padx=20, pady=20)
+            
+            tk.Button(debug_win, text="Accept & Load Circuit", command=debug_win.destroy, 
+                      bg="#0078D7", fg="white", font=("Segoe UI", 12, "bold"), padx=20, pady=10).pack(pady=(0, 20))
+            
+            # Pause the main window execution until the popup is closed
+            self.root.wait_window(debug_win)
+            # -----------------------------------
+            
+            self._load_ai_data_to_canvas(detected_comps)
+            self.status.config(text="Ready")
+            messagebox.showinfo("AI Import Success", f"AI placed {len(detected_comps)} components onto the canvas!")
+
+        except Exception as e:
+            self.status.config(text="Ready")
+            messagebox.showerror("AI Processing Error", f"Failed to process image:\n{e}")
+    
     def import_from_ai(self):
-        """Reads the detected_components.json from the ML pipeline and places them on the canvas."""
+        """Reads a pre-existing JSON file from the ML pipeline."""
         filepath = filedialog.askopenfilename(title="Select AI JSON", filetypes=[("JSON Files", "*.json")])
         if not filepath:
             return
-
         try:
             with open(filepath, 'r') as f:
                 ai_data = json.load(f)
-
-            # Clear the current canvas
-            self.components = []
-            self.wires = []
-            
-            # Map YOLO labels to Spice-Playground internal types
-            type_mapping = {
-                'voltage': 'source',
-                'ground': 'gnd',
-                'transistor': 'bjt_npn' # Default fallback for transistors
-            }
-
-            for item in ai_data:
-                raw_type = item['type']
-                sp_type = type_mapping.get(raw_type, raw_type)
-
-                # 1. Snap coordinates to the editor's grid (GRID_SIZE = 20)
-                cx, cy = item['center']
-                snapped_x = round(cx / GRID_SIZE) * GRID_SIZE
-                snapped_y = round(cy / GRID_SIZE) * GRID_SIZE
-
-                # 2. Guess orientation from bounding box aspect ratio
-                rotation = 0
-                if 'box' in item:
-                    x, y, w, h = item['box']
-                    if h > w * 1.2: # Taller than wide
-                        rotation = 90
-
-                # 3. Create the Component directly
-                comp = Component(sp_type, snapped_x, snapped_y, item['name'])
-                comp.rotation = rotation
-
-                # 4. Handle linked text
-                if item.get('value') == 'TEXT_FOUND':
-                    comp.value = "NEEDS_OCR"
-
-                self.components.append(comp)
-
-            # Re-render the canvas
-            self.redraw_all()
-            messagebox.showinfo("AI Import", f"Successfully placed {len(self.components)} components on the canvas!")
-
+            self._load_ai_data_to_canvas(ai_data)
+            messagebox.showinfo("JSON Import", f"Successfully placed {len(self.components)} components on the canvas!")
         except Exception as e:
             messagebox.showerror("Import Error", f"Failed to load AI JSON:\n{e}")
+
+    def _load_ai_data_to_canvas(self, ai_data):
+        """Helper function: Translates AI JSON array into Canvas Components."""
+        self.components = []
+        self.wires = []
+        self.selected_comps = []
+        self.selected_wires = []
+        
+        type_mapping = {
+            'voltage': 'source',
+            'ground': 'gnd',
+            'transistor': 'bjt_npn'
+        }
+
+        for item in ai_data:
+            raw_type = item['type']
+            sp_type = type_mapping.get(raw_type, raw_type)
+
+            # Snap coordinates to grid
+            cx, cy = item['center']
+            snapped_x = round(cx / GRID_SIZE) * GRID_SIZE
+            snapped_y = round(cy / GRID_SIZE) * GRID_SIZE
+
+            # Guess rotation from bounding box
+            rotation = 0
+            if 'box' in item:
+                x, y, w, h = item['box']
+                if h > w * 1.2:
+                    rotation = 90
+
+            comp = Component(sp_type, snapped_x, snapped_y, item['name'])
+            comp.rotation = rotation
+
+            # --- THE FIX: INJECT VALUE INTO PARAMS ---
+            detected_val = item.get('value')
+            if detected_val:
+                # Set the visual label
+                comp.value = "NEEDS_OCR" if detected_val == "TEXT_FOUND" else detected_val
+                
+                # Inject it into the sidebar parameters!
+                # We grab the first key (e.g., 'resistance', 'capacitance', 'dc_value') 
+                # and overwrite the default 1k / 1u.
+                if comp.params and detected_val != "TEXT_FOUND":
+                    first_key = list(comp.params.keys())[0]
+                    comp.params[first_key] = detected_val
+
+            self.components.append(comp)
+
+        self.redraw_all()
 
 
     # ==========================================
@@ -221,7 +312,6 @@ class CircuitEditor:
     # ==========================================
 
     def open_sim_dialog(self): 
-        """Analyzes current connectivity and opens the setup window."""
         node_map, sources, unique_nodes, sweepables = analyze_circuit(self.components, self.wires)
         SimulationDialog(self.root, unique_nodes, sources, sweepables, self.sim_data, self.set_sim_data)
 
@@ -230,7 +320,6 @@ class CircuitEditor:
         self.lbl_sim.config(text=data['cmd'])
 
     def run_simulation(self):
-        """Generates netlist and launches ngspice."""
         cwd = os.getcwd()
         filepath = os.path.join(cwd, "circuit.cir")
         netlist_code = generate_netlist(self.components, self.wires, self.sim_data)
@@ -251,7 +340,6 @@ class CircuitEditor:
     # ==========================================
 
     def update_sidebar(self):
-        """Populates properties based on selection."""
         for widget in self.prop_container.winfo_children():
             widget.destroy()
         
@@ -265,12 +353,10 @@ class CircuitEditor:
                      bg=COLOR_SIDEBAR_BG, fg="#888").pack(pady=20)
 
     def _build_component_editor(self, comp):
-        # Reference Designator (Name)
         self._add_prop_label("Reference ID:") 
         self.entry_name = self._add_prop_entry(comp.name)
         
         self.param_entries = {}
-        # Dynamic SPICE Parameters
         for key, value in comp.params.items():
             self._add_prop_label(f"{key.upper()}:")
             entry = self._add_prop_entry(str(value))
@@ -310,7 +396,6 @@ class CircuitEditor:
             f.pack(side="left", fill="y", padx=5, pady=5)
             return f
 
-        # Generate Component Buttons from Library DB
         groups = {}
         for c_type, data in DB.items():
             cat = data['category']
@@ -319,12 +404,10 @@ class CircuitEditor:
             tk.Button(groups[cat], text=btn_lbl, command=lambda t=c_type: self.set_mode(t),
                       relief="flat", bg="#444", fg="white", font=("Segoe UI", 9)).pack(side="left", padx=2, pady=2)
 
-        # Utility Tools
         g_tools = create_btn_group("Drawing Tools")
         tk.Button(g_tools, text="✏️ WIRE", command=lambda: self.set_mode('wire'), bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(side="left", padx=2)
         tk.Button(g_tools, text="🔍 PROBE", command=lambda: self.set_mode("probe"), bg="#FF9800", fg="white", relief="flat").pack(side="left", padx=2)
         
-        # Run/Config
         g_sim = create_btn_group("Simulation Control")
         tk.Button(g_sim, text="Config", command=self.open_sim_dialog, bg="#555", fg="white").pack(side="left", padx=2)
         tk.Button(g_sim, text="RUN", command=self.run_simulation, bg="#2E7D32", fg="white", font=("Segoe UI", 9, "bold")).pack(side="left", padx=5)
@@ -336,7 +419,6 @@ class CircuitEditor:
         self.canvas = tk.Canvas(parent, bg=COLOR_CANVAS_BG, highlightthickness=0, cursor="cross")
         self.canvas.grid(row=1, column=0, sticky="nsew")
         
-        # Bind Mouse Actions
         self.canvas.bind("<Button-1>", self.on_left_click)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
@@ -400,13 +482,11 @@ class CircuitEditor:
             self.wire_start = (wx, wy)
 
     def _handle_selection_click(self, wx, wy):
-        # Check Components
         clicked_comp = next((c for c in self.components if abs(c.x-wx)<30 and abs(c.y-wy)<30), None)
         if clicked_comp:
             self.selected_comps, self.selected_wires = [clicked_comp], []
             self.drag_start_world = (wx, wy)
         else:
-            # Check Wires
             clicked_wire = None
             for w in self.wires:
                 (x1, y1), (x2, y2) = w
@@ -416,7 +496,6 @@ class CircuitEditor:
             if clicked_wire:
                 self.selected_wires, self.selected_comps = [clicked_wire], []
             else:
-                # Start Box Select
                 self.selected_comps, self.selected_wires = [], []
                 self.selection_box_start = (wx, wy)
         
@@ -447,7 +526,6 @@ class CircuitEditor:
             x1, y1 = self.selection_box_start; x2, y2 = wx, wy
             bx, by, bX, bY = min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
             
-            # Area select logic
             self.selected_comps = [c for c in self.components if bx <= c.x <= bX and by <= c.y <= bY]
             self.selected_wires = [w for w in self.wires if bx <= w[0][0] <= bX and by <= w[0][1] <= bY and bx <= w[1][0] <= bX and by <= w[1][1] <= bY]
 
@@ -485,7 +563,6 @@ class CircuitEditor:
             p1, p2 = self.world_to_screen(*wire[0]), self.world_to_screen(*wire[1])
             self.canvas.create_line(p1[0], p1[1], p2[0], p2[1], fill=col, width=width)
             
-            # Junction dots
             r = 3*self.zoom
             self.canvas.create_oval(p1[0]-r, p1[1]-r, p1[0]+r, p1[1]+r, fill=col, outline="")
             self.canvas.create_oval(p2[0]-r, p2[1]-r, p2[0]+r, p2[1]+r, fill=col, outline="")
@@ -503,13 +580,11 @@ class CircuitEditor:
             self.canvas.create_rectangle(sx-w/2-5, sy-h/2-5, sx+w/2+5, sy+h/2+5, 
                                          outline=COLOR_ACCENT_BLUE, width=2, dash=(4,2))
         
-        # Text Label
         off = 35*self.zoom
         tx, ty = (sx+off, sy) if comp.rotation in [90, 270] else (sx, sy+off)
         self.canvas.create_text(tx, ty, text=f"{comp.name}\n{comp.value}", 
                                  fill=COLOR_TEXT_LIGHT, font=("Arial", max(6, int(8*self.zoom))))
         
-        # Pins
         r = 3*self.zoom
         for px, py in comp.get_pins():
             psx, psy = self.world_to_screen(px, py)
@@ -578,7 +653,6 @@ class CircuitEditor:
         return (wx * self.zoom) + self.offset_x, (wy * self.zoom) + self.offset_y
 
     def screen_to_world(self, sx, sy):
-        # Snaps to grid automatically
         wx = round(((sx - self.offset_x) / self.zoom) / GRID_SIZE) * GRID_SIZE
         wy = round(((sy - self.offset_y) / self.zoom) / GRID_SIZE) * GRID_SIZE
         return wx, wy
