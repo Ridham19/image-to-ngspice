@@ -1,0 +1,53 @@
+body, html {
+    margin: 0; padding: 0; height: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1E1E1E; color: #E0E0E0;
+    overflow: hidden; /* Prevent scrolling */
+}
+
+/* Toolbar */
+.toolbar {
+    height: 60px; background-color: #2D2D2D;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+.toolbar-group { display: flex; align-items: center; gap: 10px; }
+.status-text { color: #888; font-size: 14px; margin-left: 15px; }
+
+/* Buttons */
+button {
+    border: none; padding: 8px 16px; border-radius: 4px;
+    font-weight: bold; cursor: pointer; transition: 0.2s;
+}
+.btn-primary { background-color: #0078D7; color: white; }
+.btn-primary:hover { background-color: #005A9E; }
+.btn-secondary { background-color: #555; color: white; }
+.btn-secondary:hover { background-color: #666; }
+.btn-success { background-color: #2E7D32; color: white; }
+.btn-success:hover { background-color: #1B5E20; }
+
+/* Main Layout */
+.main-container {
+    display: flex; height: calc(100vh - 60px);
+}
+
+/* Canvas Area */
+.canvas-container {
+    flex-grow: 1; position: relative;
+    background-color: #1E1E1E;
+}
+canvas {
+    display: block; width: 100%; height: 100%;
+    cursor: crosshair;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 300px; background-color: #252526;
+    border-left: 1px solid #333; display: flex; flex-direction: column;
+}
+.sidebar-header {
+    background-color: #333; padding: 10px; font-size: 12px;
+    font-weight: bold; letter-spacing: 1px;
+}
+.sidebar-content { padding: 15px; }

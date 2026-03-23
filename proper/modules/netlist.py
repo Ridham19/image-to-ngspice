@@ -4,35 +4,64 @@ from modules.config import cfg
 from modules.corrector import run_linter # Import our custom linter
 
 def trace_nodes(wire_mask, detected_components):
+    print("🔌 Using OpenCV Pixel-Tracing Engine...")
     h, w = wire_mask.shape
     
-    # 1. "The Core Cut": Erase the middle of components to break short-circuits.
-    cut_wires = wire_mask.copy()
-    
+    # 1. Clean the mask: Remove text boxes completely so they don't act as accidental wires
+    clean_mask = wire_mask.copy()
+    for comp in detected_components:
+        if comp['type'] == 'text':
+            x, y, cw, ch = comp['box']
+            cv2.rectangle(clean_mask, (max(0, x-5), max(0, y-5)), (min(w, x+cw+5), min(h, y+ch+5)), 0, -1)
+
+    # 2. "The Core Cut": Erase the middle of components to break short-circuits.
     for comp in detected_components:
         label = comp['type']
-        if label in ['junction', 'wire', 'text']:
+        if label in ['junction', 'wire', 'text', 'ground']:
             continue
             
         x, y, cw, ch = comp['box']
-        
-        if ch >= cw: 
-            cut_y1 = y + (ch // 2) - 4
-            cut_y2 = y + (ch // 2) + 4
-            cv2.rectangle(cut_wires, (max(0, x-5), cut_y1), (min(w, x+cw+5), cut_y2), 0, -1)
-        else:
-            cut_x1 = x + (cw // 2) - 4
-            cut_x2 = x + (cw // 2) + 4
-            cv2.rectangle(cut_wires, (cut_x1, max(0, y-5)), (cut_x2, min(h, y+ch+5)), 0, -1)
+        # Cut a massive chunk out of the center, leaving only the edges (pins) touching the wires
+        cut_y1, cut_y2 = y + int(ch * 0.2), y + int(ch * 0.8)
+        cut_x1, cut_x2 = x + int(cw * 0.2), x + int(cw * 0.8)
+        cv2.rectangle(clean_mask, (cut_x1, cut_y1), (cut_x2, cut_y2), 0, -1)
 
-    # 2. Heal the remaining true wires and find distinct connected components
+    # 3. Thicken remaining wires and find distinct connected components
     kernel = np.ones((5, 5), np.uint8)
-    healed_wires = cv2.dilate(cut_wires, kernel, iterations=1)
-    
+    healed_wires = cv2.dilate(clean_mask, kernel, iterations=1)
     num_labels, labels_im = cv2.connectedComponents(healed_wires)
+    
+    # 4. Handle Junctions using Union-Find (Merge overlapping nodes!)
+    # If a YOLO junction box touches Node 2 and Node 5, they become the same SPICE node.
+    parent = {i: i for i in range(num_labels)}
+    
+    def find(i):
+        if parent[i] == i: return i
+        parent[i] = find(parent[i])
+        return parent[i]
+        
+    def union(i, j):
+        root_i, root_j = find(i), find(j)
+        if root_i != root_j: parent[root_i] = root_j
+
+    for comp in detected_components:
+        if comp['type'] == 'junction':
+            x, y, cw, ch = comp['box']
+            roi = labels_im[max(0, y-5):min(h, y+ch+5), max(0, x-5):min(w, x+cw+5)]
+            valid_nodes = [n for n in np.unique(roi) if n != 0]
+            
+            # Tie all wires touching this junction together
+            for i in range(1, len(valid_nodes)):
+                union(valid_nodes[0], valid_nodes[i])
+                
+    # Apply junction mappings to the master image
+    mapped_labels = np.zeros_like(labels_im)
+    for i in range(1, num_labels):
+        mapped_labels[labels_im == i] = find(i)
+
+    # 5. Assign the distinct nodes back to the components
     comp_connections = []
     
-    # 3. Assign the distinct nodes to the components
     for comp in detected_components:
         x, y, cw, ch = comp['box']
         label = comp['type']
@@ -41,23 +70,19 @@ def trace_nodes(wire_mask, detected_components):
             comp_connections.append([])
             continue
             
-        pad = 12
+        pad = 15 # Look just outside the bounding box for wires
         y1, y2 = max(0, y-pad), min(h, y+ch+pad)
         x1, x2 = max(0, x-pad), min(w, x+cw+pad)
         
-        roi = labels_im[y1:y2, x1:x2]
+        roi = mapped_labels[y1:y2, x1:x2]
+        valid_nodes = [n for n in np.unique(roi) if n != 0]
         
-        unique_nodes = np.unique(roi)
-        valid_nodes = [n for n in unique_nodes if n != 0]
-        
-        # 4. Sort nodes spatially
+        # Sort nodes spatially
         node_positions = []
         for node_id in valid_nodes:
             ys, xs = np.where(roi == node_id)
             if len(ys) > 0:
-                avg_y = np.mean(ys)
-                avg_x = np.mean(xs)
-                node_positions.append((node_id, avg_x, avg_y))
+                node_positions.append((node_id, np.mean(xs), np.mean(ys)))
         
         is_vertical = ch >= cw
         if is_vertical:

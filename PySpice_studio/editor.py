@@ -14,10 +14,12 @@ if ai_path not in sys.path:
 
 try:
     from modules.model import ComponentDetector
+    from modules.processing import preprocess_image, separate_layers
+    from modules.netlist import trace_nodes
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
-    print("⚠️ Warning: Could not load AI ComponentDetector. Make sure the 'proper' folder exists next to PySpice_studio.")
+    print("⚠️ Warning: Could not load AI modules. Make sure the 'proper' folder is situated correctly.")
 
 # Internal module imports
 from components import Component, ComponentHelper
@@ -29,27 +31,22 @@ from library import DB
 CONFIG_FILE = "config.json"
 GRID_SIZE = 20 # Don't change
 
-# Colors
-COLOR_CANVAS_BG   = "#1E1E1E"  # Deep charcoal
-COLOR_TOOLBAR_BG  = "#2D2D2D"  # Medium gray
-COLOR_SIDEBAR_BG  = "#252526"  # Visual Studio style sidebar
-COLOR_TEXT_LIGHT  = "#E0E0E0"  # Off-white
-COLOR_ACCENT_BLUE = "#0078D7"  # Selection blue
-COLOR_WIRE        = "#4FC1FF"  # Electric blue
-COLOR_GRID_DOT    = "#444444"  # Subtle grid
+COLOR_CANVAS_BG   = "#1E1E1E" 
+COLOR_TOOLBAR_BG  = "#2D2D2D" 
+COLOR_SIDEBAR_BG  = "#252526" 
+COLOR_TEXT_LIGHT  = "#E0E0E0" 
+COLOR_ACCENT_BLUE = "#0078D7" 
+COLOR_WIRE        = "#4FC1FF" 
+COLOR_GRID_DOT    = "#444444" 
 
 class CircuitEditor:
     def __init__(self, root):
         self.root = root
         self.root.title("PySpice Studio - Professional")
         
-        # Window Setup
-        try:
-            self.root.state('zoomed')
-        except:
-            self.root.geometry("1400x900")
+        try: self.root.state('zoomed')
+        except: self.root.geometry("1400x900")
 
-        # Application State
         self.ngspice_path = "ngspice"
         self.load_config()
         
@@ -57,19 +54,16 @@ class CircuitEditor:
         self.wires = []
         self.sim_data = {'cmd': '.op', 'plots': {}, 'colors': {}} 
         
-        # View & Control State
         self.zoom = 1.0
         self.offset_x = 0
         self.offset_y = 0
-        self.mode = "select"  # current tool
-        self.counts = {}      # component auto-increment counters
+        self.mode = "select"  
+        self.counts = {}      
         
-        # Selection State
         self.selected_comps = []
         self.selected_wires = []
         self.clipboard = []
         
-        # Mouse Interaction Temp Variables
         self.selection_box_start = None
         self.drag_start_world = None
         self.wire_start = None
@@ -78,8 +72,6 @@ class CircuitEditor:
 
         self._setup_main_layout()
         self._setup_shortcuts()
-        
-        # Initial Draw
         self._draw_grid()
         self.redraw_all()
 
@@ -102,7 +94,6 @@ class CircuitEditor:
         self.prop_frame.pack_propagate(False)
         
         self._init_menu_bar()
-        
         self._add_sidebar_header("PROPERTIES")
         self.prop_container = tk.Frame(self.prop_frame, bg=COLOR_SIDEBAR_BG, padx=10, pady=10)
         self.prop_container.pack(fill="x")
@@ -112,7 +103,6 @@ class CircuitEditor:
         self.lbl_sim.pack(pady=5)
         
         self._add_sidebar_footer_shortcuts()
-
         self._init_professional_toolbar(left_frame)
         self._init_canvas(left_frame)
 
@@ -122,28 +112,23 @@ class CircuitEditor:
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
         
-        # --- NEW AI IMPORT BUTTONS ---
         file_menu.add_command(label="📸 Import from Image (AI)...", command=self.import_from_image)
         file_menu.add_command(label="📄 Import AI JSON...", command=self.import_from_ai)
         file_menu.add_separator()
-        
         file_menu.add_command(label="Settings (Set ngspice path)", command=self.open_settings)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
 
     def _add_sidebar_header(self, text):
-        tk.Label(self.prop_frame, text=text, bg="#333", fg=COLOR_TEXT_LIGHT, 
-                 font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(10, 0))
+        tk.Label(self.prop_frame, text=text, bg="#333", fg=COLOR_TEXT_LIGHT, font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(10, 0))
 
     def _add_sidebar_footer_shortcuts(self):
         info = "SHORTCUTS:\n[W] Wire   [P] Probe\n[R] Resistor [C] Cap\n[L] Inductor [D] Diode\n[Del] Delete\n[Ctrl+C/V] Copy/Paste\n[Ctrl+R] Rotate"
-        tk.Label(self.prop_frame, text=info, bg=COLOR_SIDEBAR_BG, fg="#888", 
-                 justify="left", font=("Consolas", 8)).pack(side="bottom", pady=20)
+        tk.Label(self.prop_frame, text=info, bg=COLOR_SIDEBAR_BG, fg="#888", justify="left", font=("Consolas", 8)).pack(side="bottom", pady=20)
 
     def _setup_shortcuts(self):
         keys = {'w': 'wire', 'p': 'probe', 'r': 'resistor', 'c': 'capacitor', 'l': 'inductor', 'd': 'diode'}
-        for key, mode in keys.items():
-            self.root.bind(key, lambda e, m=mode: self.set_mode(m))
+        for key, mode in keys.items(): self.root.bind(key, lambda e, m=mode: self.set_mode(m))
         self.root.bind('<Delete>', self.delete_selection)
         self.root.bind('<Control-r>', self.rotate_command)
         self.root.bind('<Control-c>', self.copy_selection)
@@ -157,22 +142,19 @@ class CircuitEditor:
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r') as f:
-                    data = json.load(f)
-                    self.ngspice_path = data.get("ngspice_path", "ngspice")
+                    self.ngspice_path = json.load(f).get("ngspice_path", "ngspice")
             except: pass
 
     def open_settings(self):
         path = filedialog.askopenfilename(title="Locate ngspice.exe", filetypes=[("Executable", "*.exe"), ("All", "*.*")])
         if path:
             self.ngspice_path = path
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump({"ngspice_path": path}, f)
+            with open(CONFIG_FILE, 'w') as f: json.dump({"ngspice_path": path}, f)
             messagebox.showinfo("Config Updated", f"Simulator path set to:\n{path}")
 
     def import_from_image(self):
-        """Opens an image, runs YOLO detection, shows debug window, and loads to canvas."""
         if not AI_AVAILABLE:
-            messagebox.showerror("AI Engine Missing", "Could not load the YOLO modules.")
+            messagebox.showerror("AI Engine Missing", "Could not load the YOLO modules. Check your folder structure.")
             return
 
         img_path = filedialog.askopenfilename(title="Select Hand-Drawn Circuit", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp")])
@@ -182,11 +164,12 @@ class CircuitEditor:
             self.status.config(text="🤖 AI is processing image... Please wait.")
             self.root.update()
 
+            # 1. Run YOLO Object Detection (Skip OpenCV completely!)
             detector = ComponentDetector()
             json_output_path = os.path.join(os.path.dirname(__file__), "detected_components.json")
             detected_comps = detector.detect(img_path, output_file=json_output_path)
-            
-            # --- FIXED: NATIVE TKINTER AI DEBUG WINDOW ---
+
+            # 2. Native Tkinter AI Debug Window
             import cv2
             from PIL import Image, ImageTk
             
@@ -197,20 +180,15 @@ class CircuitEditor:
                 cv2.rectangle(vis_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
                 
                 val = comp.get('value')
-                # If we paired text, draw the orange box and show the OCR result
                 if val and val != "TEXT_FOUND" and 'text_box' in comp:
                     tx, ty, tw, th = comp['text_box']
                     cv2.rectangle(vis_img, (tx, ty), (tx+tw, ty+th), (0, 165, 255), 2)
                     cv2.putText(vis_img, f"OCR: {val}", (tx, ty-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-                    cv2.putText(vis_img, name, (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                else:
-                    cv2.putText(vis_img, name, (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(vis_img, name, (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # Convert OpenCV BGR to RGB for PIL
             rgb_img = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_img)
 
-            # Smart resize so massive phone photos don't overflow your monitor
             im_w, im_h = pil_img.size
             if im_h > 700 or im_w > 1000:
                 scale = min(1000/im_w, 700/im_h)
@@ -219,93 +197,116 @@ class CircuitEditor:
             self.status.config(text="Review the AI detection window...")
             self.root.update()
             
-            # Create a native Tkinter popup
             debug_win = tk.Toplevel(self.root)
             debug_win.title("AI Vision Debug")
             debug_win.configure(bg="#1E1E1E")
             
             tk_img = ImageTk.PhotoImage(pil_img)
             lbl = tk.Label(debug_win, image=tk_img, bg="#1E1E1E")
-            lbl.image = tk_img # Keep reference so garbage collector doesn't delete the image
+            lbl.image = tk_img 
             lbl.pack(padx=20, pady=20)
             
             tk.Button(debug_win, text="Accept & Load Circuit", command=debug_win.destroy, 
                       bg="#0078D7", fg="white", font=("Segoe UI", 12, "bold"), padx=20, pady=10).pack(pady=(0, 20))
             
-            # Pause the main window execution until the popup is closed
             self.root.wait_window(debug_win)
-            # -----------------------------------
             
+            # 3. Load Data & Trigger Grid-Raycast Auto-Router
             self._load_ai_data_to_canvas(detected_comps)
+            
             self.status.config(text="Ready")
-            messagebox.showinfo("AI Import Success", f"AI placed {len(detected_comps)} components onto the canvas!")
+            messagebox.showinfo("AI Import Success", f"AI placed components and auto-routed wires!")
 
         except Exception as e:
             self.status.config(text="Ready")
             messagebox.showerror("AI Processing Error", f"Failed to process image:\n{e}")
-    
+
     def import_from_ai(self):
-        """Reads a pre-existing JSON file from the ML pipeline."""
         filepath = filedialog.askopenfilename(title="Select AI JSON", filetypes=[("JSON Files", "*.json")])
-        if not filepath:
-            return
+        if not filepath: return
         try:
-            with open(filepath, 'r') as f:
-                ai_data = json.load(f)
+            with open(filepath, 'r') as f: ai_data = json.load(f)
             self._load_ai_data_to_canvas(ai_data)
-            messagebox.showinfo("JSON Import", f"Successfully placed {len(self.components)} components on the canvas!")
         except Exception as e:
             messagebox.showerror("Import Error", f"Failed to load AI JSON:\n{e}")
 
     def _load_ai_data_to_canvas(self, ai_data):
-        """Helper function: Translates AI JSON array into Canvas Components."""
+        """Translates AI JSON array into Canvas Components AND Mathematically Routes Wires."""
         self.components = []
         self.wires = []
         self.selected_comps = []
         self.selected_wires = []
         
-        type_mapping = {
-            'voltage': 'source',
-            'ground': 'gnd',
-            'transistor': 'bjt_npn'
-        }
+        type_mapping = {'voltage': 'source', 'ground': 'gnd', 'transistor': 'bjt_npn'}
 
+        # 1. Place all components snapped perfectly to the grid
         for item in ai_data:
             raw_type = item['type']
-            sp_type = type_mapping.get(raw_type, raw_type)
+            if raw_type in ['wire', 'junction', 'text']: continue 
 
-            # Snap coordinates to grid
+            sp_type = type_mapping.get(raw_type, raw_type)
             cx, cy = item['center']
+            
             snapped_x = round(cx / GRID_SIZE) * GRID_SIZE
             snapped_y = round(cy / GRID_SIZE) * GRID_SIZE
 
-            # Guess rotation from bounding box
             rotation = 0
             if 'box' in item:
                 x, y, w, h = item['box']
-                if h > w * 1.2:
-                    rotation = 90
+                if h > w * 1.2: rotation = 90
 
             comp = Component(sp_type, snapped_x, snapped_y, item['name'])
             comp.rotation = rotation
 
-            # --- THE FIX: INJECT VALUE INTO PARAMS ---
             detected_val = item.get('value')
             if detected_val:
-                # Set the visual label
                 comp.value = "NEEDS_OCR" if detected_val == "TEXT_FOUND" else detected_val
-                
-                # Inject it into the sidebar parameters!
-                # We grab the first key (e.g., 'resistance', 'capacitance', 'dc_value') 
-                # and overwrite the default 1k / 1u.
                 if comp.params and detected_val != "TEXT_FOUND":
                     first_key = list(comp.params.keys())[0]
                     comp.params[first_key] = detected_val
 
             self.components.append(comp)
 
-        self.redraw_all()
+        # 2. THE GRID-RAYCAST AUTO-ROUTER
+        # Since components are on a grid, we check if their pins align perfectly horizontally or vertically
+        all_pins = []
+        for comp in self.components:
+            for px, py in comp.get_pins():
+                all_pins.append((px, py, comp))
+                
+        for i in range(len(all_pins)):
+            for j in range(i + 1, len(all_pins)):
+                x1, y1, c1 = all_pins[i]
+                x2, y2, c2 = all_pins[j]
+                
+                if c1 == c2: continue # Don't short circuit a component to itself
+                
+                is_vertical_align = abs(x1 - x2) < 5
+                is_horizontal_align = abs(y1 - y2) < 5
+                
+                if is_vertical_align or is_horizontal_align:
+                    # Check if the distance is reasonable (don't connect across the whole page)
+                    dist = abs(y1 - y2) if is_vertical_align else abs(x1 - x2)
+                    if dist > 500: continue
+                    
+                    # Ensure no other component is blocking the path of this wire
+                    blocked = False
+                    for block_comp in self.components:
+                        if block_comp in [c1, c2]: continue
+                        
+                        # If a component's center is sitting right on the wire's path, it's blocked
+                        if is_vertical_align:
+                            if abs(block_comp.x - x1) < 25 and min(y1, y2) < block_comp.y < max(y1, y2):
+                                blocked = True; break
+                        else:
+                            if abs(block_comp.y - y1) < 25 and min(x1, x2) < block_comp.x < max(x1, x2):
+                                blocked = True; break
+                                
+                    if not blocked:
+                        # Success! Draw the wire perfectly straight between the pins
+                        self.wires.append(((x1, y1), (x2, y2)))
 
+        self.redraw_all()
 
     # ==========================================
     # SIMULATION ENGINE
@@ -324,33 +325,24 @@ class CircuitEditor:
         filepath = os.path.join(cwd, "circuit.cir")
         netlist_code = generate_netlist(self.components, self.wires, self.sim_data)
         
-        with open(filepath, "w") as f:
-            f.write(netlist_code)
+        with open(filepath, "w") as f: f.write(netlist_code)
         
         if not self.ngspice_path or self.ngspice_path == "ngspice": 
             messagebox.showwarning("Warning", "ngspice path not configured. Using system default.")
         
-        try: 
-            subprocess.Popen([self.ngspice_path, filepath], cwd=cwd)
-        except Exception as e: 
-            messagebox.showerror("Execution Error", f"Failed to run simulation:\n{e}")
+        try: subprocess.Popen([self.ngspice_path, filepath], cwd=cwd)
+        except Exception as e: messagebox.showerror("Execution Error", f"Failed to run simulation:\n{e}")
 
     # ==========================================
     # SIDEBAR PROPERTY EDITOR
     # ==========================================
 
     def update_sidebar(self):
-        for widget in self.prop_container.winfo_children():
-            widget.destroy()
+        for widget in self.prop_container.winfo_children(): widget.destroy()
         
-        if len(self.selected_comps) == 1:
-            self._build_component_editor(self.selected_comps[0])
-        elif self.selected_wires:
-            tk.Label(self.prop_container, text=f"{len(self.selected_wires)} Wires Selected", 
-                     bg=COLOR_SIDEBAR_BG, fg="white").pack(pady=20)
-        else:
-            tk.Label(self.prop_container, text="Select an object to edit", 
-                     bg=COLOR_SIDEBAR_BG, fg="#888").pack(pady=20)
+        if len(self.selected_comps) == 1: self._build_component_editor(self.selected_comps[0])
+        elif self.selected_wires: tk.Label(self.prop_container, text=f"{len(self.selected_wires)} Wires Selected", bg=COLOR_SIDEBAR_BG, fg="white").pack(pady=20)
+        else: tk.Label(self.prop_container, text="Select an object to edit", bg=COLOR_SIDEBAR_BG, fg="#888").pack(pady=20)
 
     def _build_component_editor(self, comp):
         self._add_prop_label("Reference ID:") 
@@ -359,14 +351,11 @@ class CircuitEditor:
         self.param_entries = {}
         for key, value in comp.params.items():
             self._add_prop_label(f"{key.upper()}:")
-            entry = self._add_prop_entry(str(value))
-            self.param_entries[key] = entry
+            self.param_entries[key] = self._add_prop_entry(str(value))
         
-        tk.Button(self.prop_container, text="Update Component", command=self.apply_properties, 
-                  bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(fill="x", pady=10)
+        tk.Button(self.prop_container, text="Update Component", command=self.apply_properties, bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(fill="x", pady=10)
 
-    def _add_prop_label(self, text):
-        tk.Label(self.prop_container, text=text, bg=COLOR_SIDEBAR_BG, fg="white", anchor="w").pack(fill="x")
+    def _add_prop_label(self, text): tk.Label(self.prop_container, text=text, bg=COLOR_SIDEBAR_BG, fg="white", anchor="w").pack(fill="x")
     
     def _add_prop_entry(self, initial_val):
         e = tk.Entry(self.prop_container, bg="#444", fg="white", insertbackground="white", bd=0, highlightthickness=1)
@@ -379,8 +368,7 @@ class CircuitEditor:
         if len(self.selected_comps) == 1:
             comp = self.selected_comps[0]
             comp.name = self.entry_name.get()
-            for key, entry in self.param_entries.items():
-                comp.params[key] = entry.get()
+            for key, entry in self.param_entries.items(): comp.params[key] = entry.get()
             self.redraw_all()
 
     # ==========================================
@@ -401,8 +389,7 @@ class CircuitEditor:
             cat = data['category']
             if cat not in groups: groups[cat] = create_btn_group(cat)
             btn_lbl = data.get('btn_text', data['label']) 
-            tk.Button(groups[cat], text=btn_lbl, command=lambda t=c_type: self.set_mode(t),
-                      relief="flat", bg="#444", fg="white", font=("Segoe UI", 9)).pack(side="left", padx=2, pady=2)
+            tk.Button(groups[cat], text=btn_lbl, command=lambda t=c_type: self.set_mode(t), relief="flat", bg="#444", fg="white", font=("Segoe UI", 9)).pack(side="left", padx=2, pady=2)
 
         g_tools = create_btn_group("Drawing Tools")
         tk.Button(g_tools, text="✏️ WIRE", command=lambda: self.set_mode('wire'), bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(side="left", padx=2)
@@ -436,17 +423,9 @@ class CircuitEditor:
         self.canvas.focus_set()
         wx, wy = self.screen_to_world(event.x, event.y)
         
-        if self.mode == 'probe':
-            self._handle_probe_click(wx, wy)
-            return
-
-        if self.mode == 'wire':
-            self._handle_wire_click(wx, wy)
-            return
-
-        if self.mode != 'select': 
-            self.create_component(self.mode, wx, wy, self.ghost_rotation)
-            return
+        if self.mode == 'probe': return self._handle_probe_click(wx, wy)
+        if self.mode == 'wire': return self._handle_wire_click(wx, wy)
+        if self.mode != 'select': return self.create_component(self.mode, wx, wy, self.ghost_rotation)
         
         self._handle_selection_click(wx, wy)
 
@@ -517,8 +496,7 @@ class CircuitEditor:
         self.canvas.delete("sel_box")
         s_start = self.world_to_screen(*self.selection_box_start)
         s_end = self.world_to_screen(wx, wy)
-        self.canvas.create_rectangle(s_start[0], s_start[1], s_end[0], s_end[1], 
-                                     outline=COLOR_ACCENT_BLUE, dash=(2,2), tags="sel_box")
+        self.canvas.create_rectangle(s_start[0], s_start[1], s_end[0], s_end[1], outline=COLOR_ACCENT_BLUE, dash=(2,2), tags="sel_box")
 
     def on_release(self, event):
         wx, wy = self.screen_to_world(event.x, event.y)
@@ -543,8 +521,7 @@ class CircuitEditor:
         self.canvas.delete("all")
         self._draw_grid()
         self._draw_wires()
-        for comp in self.components:
-            self._draw_component_visual(comp)
+        for comp in self.components: self._draw_component_visual(comp)
 
     def _draw_grid(self):
         if self.zoom < 0.4: return
@@ -577,13 +554,11 @@ class CircuitEditor:
         
         if comp in self.selected_comps:
             w, h = tk_img.width(), tk_img.height()
-            self.canvas.create_rectangle(sx-w/2-5, sy-h/2-5, sx+w/2+5, sy+h/2+5, 
-                                         outline=COLOR_ACCENT_BLUE, width=2, dash=(4,2))
+            self.canvas.create_rectangle(sx-w/2-5, sy-h/2-5, sx+w/2+5, sy+h/2+5, outline=COLOR_ACCENT_BLUE, width=2, dash=(4,2))
         
         off = 35*self.zoom
         tx, ty = (sx+off, sy) if comp.rotation in [90, 270] else (sx, sy+off)
-        self.canvas.create_text(tx, ty, text=f"{comp.name}\n{comp.value}", 
-                                 fill=COLOR_TEXT_LIGHT, font=("Arial", max(6, int(8*self.zoom))))
+        self.canvas.create_text(tx, ty, text=f"{comp.name}\n{comp.value}", fill=COLOR_TEXT_LIGHT, font=("Arial", max(6, int(8*self.zoom))))
         
         r = 3*self.zoom
         for px, py in comp.get_pins():
@@ -649,46 +624,33 @@ class CircuitEditor:
     # VIEWPORT CONTROL
     # ==========================================
 
-    def world_to_screen(self, wx, wy):
-        return (wx * self.zoom) + self.offset_x, (wy * self.zoom) + self.offset_y
-
+    def world_to_screen(self, wx, wy): return (wx * self.zoom) + self.offset_x, (wy * self.zoom) + self.offset_y
     def screen_to_world(self, sx, sy):
         wx = round(((sx - self.offset_x) / self.zoom) / GRID_SIZE) * GRID_SIZE
         wy = round(((sy - self.offset_y) / self.zoom) / GRID_SIZE) * GRID_SIZE
         return wx, wy
-
     def start_pan(self, e): self.pan_start = (e.x, e.y)
-
     def do_pan(self, e):
         if not hasattr(self, 'pan_start'): return
-        self.offset_x += e.x - self.pan_start[0]
-        self.offset_y += e.y - self.pan_start[1]
+        self.offset_x += e.x - self.pan_start[0]; self.offset_y += e.y - self.pan_start[1]
         self.pan_start = (e.x, e.y)
         self.redraw_all()
-
     def do_zoom(self, e):
         wx, wy = self.screen_to_world(e.x, e.y)
         self.zoom *= 1.1 if e.delta > 0 else 0.9
         self.zoom = max(0.2, min(self.zoom, 5.0))
         self.offset_x, self.offset_y = e.x - wx*self.zoom, e.y - wy*self.zoom
         self.redraw_all()
-
     def on_mouse_move(self, event):
         wx, wy = self.screen_to_world(event.x, event.y)
         self._update_hover_state(wx, wy)
-        
-        if self.mode == 'wire' and self.wire_start: 
-            self._update_temp_wire_visual(wx, wy)
-        elif self.mode not in ['select', 'wire', 'probe']: 
-            self._update_ghost(wx, wy)
-
+        if self.mode == 'wire' and self.wire_start: self._update_temp_wire_visual(wx, wy)
+        elif self.mode not in ['select', 'wire', 'probe']: self._update_ghost(wx, wy)
     def _update_hover_state(self, wx, wy):
         self.hovered_pin = None
         for comp in self.components:
             for px, py in comp.get_pins():
-                if abs(px - wx) < 5 and abs(py - wy) < 5: 
-                    self.hovered_pin = (px, py); break
-
+                if abs(px - wx) < 5 and abs(py - wy) < 5: self.hovered_pin = (px, py); break
     def _update_temp_wire_visual(self, twx, twy):
         self.canvas.delete("temp_wire")
         if not self.wire_start: return
@@ -698,7 +660,6 @@ class CircuitEditor:
         col = "green" if self.hovered_pin else "cyan"
         self.canvas.create_line(p1[0], p1[1], p2[0], p2[1], fill=col, dash=(2,2), tags="temp_wire")
         self.canvas.create_line(p2[0], p2[1], p3[0], p3[1], fill=col, dash=(2,2), tags="temp_wire")
-
     def _update_ghost(self, wx, wy):
         self.canvas.delete("ghost")
         sx, sy = self.world_to_screen(wx, wy)
@@ -706,7 +667,6 @@ class CircuitEditor:
         if tk_img:
             self.ghost_img_ref = tk_img
             self.canvas.create_image(sx, sy, image=tk_img, anchor="center", tags="ghost")
-
     def on_right_click(self, e):
         self.canvas.focus_set()
         self.wire_start = None
