@@ -42,53 +42,74 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file", file);
 
         try {
-            // Send to our Python Backend!
-            const response = await fetch("http://localhost:8000/api/detect", {
+            const response = await fetch("http://127.0.0.1:8000/api/detect", {
                 method: "POST",
                 body: formData
             });
 
             const data = await response.json();
+            console.log("🤖 AI Response Data:", data); // <--- THIS IS MAGIC. Check your F12 Console!
             
             if (data.status === "success") {
                 statusText.innerText = `✅ Success! Found ${data.components.length} components.`;
-                renderComponents(data.components);
+                // Pass BOTH components and connections to the renderer
+                renderComponents(data.components, data.connections); 
             } else {
                 statusText.innerText = "❌ Error: " + data.message;
             }
         } catch (error) {
-            statusText.innerText = "❌ Network Error. Is the Python server running?";
-            console.error(error);
+            statusText.innerText = "❌ Network Error.";
+            console.error("Fetch Error:", error);
         }
     });
 
     // 4. Draw the AI components onto the HTML Canvas
-    function renderComponents(components) {
-        drawGrid(); // Clear and redraw grid
+    function renderComponents(components, connections) {
+    drawGrid(); 
+    const gridSize = 20;
+    const compMap = {}; // To map AI indices to coordinates
+
+    components.forEach((comp, index) => {
+        if (['wire', 'junction', 'text'].includes(comp.type)) return;
+
+        const cx = Math.round(comp.center[0] / gridSize) * gridSize;
+        const cy = Math.round(comp.center[1] / gridSize) * gridSize;
+        compMap[index] = { x: cx, y: cy, type: comp.type };
+
+        // Draw Component Box
+        ctx.strokeStyle = "#0078D7";
+        ctx.strokeRect(cx - 20, cy - 20, 40, 40);
+        ctx.fillStyle = "#E0E0E0";
+        ctx.fillText(comp.name, cx, cy - 25);
+    });
+
+    // --- Drawing the Wires ---
+    if (connections) {
+        ctx.strokeStyle = "#4FC1FF"; // Electric blue wires
+        ctx.lineWidth = 2;
         
-        components.forEach(comp => {
-            if (comp.type === 'wire' || comp.type === 'junction' || comp.type === 'text') return;
+        connections.forEach((nodes, compIdx) => {
+            const startComp = compMap[compIdx];
+            if (!startComp) return;
 
-            // Snap to grid coordinates (assuming center format)
-            const gridSize = 20;
-            const cx = Math.round(comp.center[0] / gridSize) * gridSize;
-            const cy = Math.round(comp.center[1] / gridSize) * gridSize;
-
-            // Draw a placeholder box for the component
-            ctx.strokeStyle = "#0078D7";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(cx - 20, cy - 20, 40, 40);
-
-            // Draw the Component Name & Value (OCR)
-            ctx.fillStyle = "#E0E0E0";
-            ctx.font = "12px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(comp.name, cx, cy - 25);
-            
-            if (comp.value) {
-                ctx.fillStyle = "#FF9800"; // Orange for OCR text
-                ctx.fillText(comp.value, cx, cy + 35);
-            }
+            nodes.forEach(nodeId => {
+                // Find other components sharing this node
+                connections.forEach((targetNodes, targetIdx) => {
+                    if (compIdx === targetIdx) return;
+                    if (targetNodes.includes(nodeId)) {
+                        const endComp = compMap[targetIdx];
+                        if (endComp) {
+                            // Simple Manhattan routing (L-shape)
+                            ctx.beginPath();
+                            ctx.moveTo(startComp.x, startComp.y);
+                            ctx.lineTo(startComp.x, endComp.y);
+                            ctx.lineTo(endComp.x, endComp.y);
+                            ctx.stroke();
+                        }
+                    }
+                });
+            });
         });
     }
+}
 });

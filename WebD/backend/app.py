@@ -4,6 +4,7 @@ import json
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 # Import your ML Logic (Assuming you copied your 'proper/modules' into 'backend/core')
 import sys
@@ -37,37 +38,43 @@ def read_root():
 
 @app.post("/api/detect")
 async def detect_circuit(file: UploadFile = File(...)):
-    """
-    Receives an image from the frontend, runs YOLO + OCR, and returns the component JSON.
-    """
     try:
-        # 1. Save the uploaded image temporarily
+        # 1. Save File
         file_location = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        print(f"📸 Received image: {file.filename}")
-
-        # 2. Run the ML Pipeline
-        # We save a temporary JSON in the workspace, but we will also return the data directly
+        # 2. Run YOLO + OCR
         json_output_path = os.path.join(WORKSPACE_DIR, "latest_detection.json")
         detected_comps = detector.detect(file_location, output_file=json_output_path)
 
-        # 3. Clean up the uploaded image (optional, to save space)
-        # os.remove(file_location)
+        # 3. Run OpenCV Wire Tracing
+        try:
+            from core.processing import preprocess_image, separate_layers
+            from core.netlist import trace_nodes
+            
+            original, gray, binary = preprocess_image(file_location)
+            _, wire_mask, _ = separate_layers(gray, binary)
+            connections = trace_nodes(wire_mask, detected_comps)
+        except Exception as e:
+            print(f"⚠️ Wire tracing failed, skipping connections: {e}")
+            connections = None
 
-        # 4. Return the data to the web browser!
+        # 4. Make Data Web-Safe and Return
+        safe_components = jsonable_encoder(detected_comps)
+        safe_connections = jsonable_encoder(connections)
+
         return JSONResponse(content={
             "status": "success",
-            "components": detected_comps
+            "components": safe_components,
+            "connections": safe_connections
         })
 
     except Exception as e:
-        print(f"❌ Error during detection: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(e)}
-        )
+        import traceback
+        traceback.print_exc() 
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
 
 if __name__ == "__main__":
     import uvicorn
