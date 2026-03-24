@@ -11,29 +11,32 @@
 
     <div class="toolbar">
         <div class="toolbar-group">
-            <button id="btnLoadImage" class="btn-primary">📸 Upload Circuit Image</button>
-            <span id="statusText" class="status-text">Ready. Upload an image to start.</span>
+            <button id="btnLoadImage" class="btn-primary">📸 Import AI</button>
+            <span id="statusText" class="status-text">Ready.</span>
         </div>
+        
+        <div class="toolbar-group tools">
+            <button id="tool-select" class="btn-tool active">👆 Select</button>
+            <button id="tool-wire" class="btn-tool">✏️ Wire</button>
+            <button id="tool-resistor" class="btn-tool">⚡ Resistor</button>
+            <button id="tool-capacitor" class="btn-tool">🔋 Capacitor</button>
+            <button id="tool-source" class="btn-tool">🔌 Source</button>
+        </div>
+
         <div class="toolbar-group">
-            <button class="btn-secondary">⚙️ SPICE Config</button>
-            <button class="btn-success">▶ RUN SIMULATION</button>
+            <button class="btn-success">▶ RUN</button>
         </div>
     </div>
 
     <div class="main-container">
-        <div class="canvas-container">
+        <div class="canvas-container" id="canvasWrapper">
             <canvas id="circuitCanvas"></canvas>
         </div>
 
         <div class="sidebar">
             <div class="sidebar-header">PROPERTIES</div>
             <div id="propertiesPanel" class="sidebar-content">
-                <p style="color: #888; text-align: center; margin-top: 20px;">Select a component to edit</p>
-            </div>
-            
-            <div class="sidebar-header" style="margin-top: 20px;">SIMULATION</div>
-            <div class="sidebar-content">
-                <p style="color: #4CAF50; font-family: monospace;">.op</p>
+                <p style="color: #888; text-align: center;">Select an object</p>
             </div>
         </div>
     </div>
