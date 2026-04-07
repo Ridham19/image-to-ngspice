@@ -1,12 +1,20 @@
-* Linter-Corrected SPICE Netlist
-R1 10 0 1k_(NEEDS_OCR)
-C1 10 0 1u_(NEEDS_OCR)
-R2 10 0 1k_(NEEDS_OCR)
-V1 0 10 5V_(NEEDS_OCR)
-R3 10 0 1k_(NEEDS_OCR)
-T2 10 0 1k_(NEEDS_OCR)
-V2 10 0 5V
-C2 10 0 1u_(NEEDS_OCR)
-R4 0 10 1k_(NEEDS_OCR)
-R5 0 10 1k_(NEEDS_OCR)
+* PySpice Studio Netlist
+
+.Model Dx diode (Is=14n Rs=0 N=1)
+
+D1 1 2 010de
+I1 3 4 Ir01ut0y ic=0
+C1 5 6 uc1t0rCap ic=0
+R1 7 8 uc1t0rCap
+V1 9 10 DC 5
+
+.tran 0.1m 80m 0
+.control
+run
+set color0 = white
+set color1 = black
+set color2 = red
+set xbrushwidth = 2
+plot v(1) title 'Graph Window 1'
+.endc
 .end

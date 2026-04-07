@@ -1,0 +1,13 @@
+names:
+  0: resistor
+  1: capacitor
+  2: inductor
+  3: diode
+  4: source
+  5: transistor
+  6: ground
+  7: text
+  8: wire
+path: /content/dataset_yolo
+train: images/train
+val: images/train

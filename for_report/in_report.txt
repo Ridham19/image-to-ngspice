@@ -1,0 +1,16 @@
+problem statement
+Abstract
+Introduction
+research overview done by us
+about ML Model (YOLO)
+about implementation
+current results
+Future work
+    - improved OCR
+    - source classification
+    - further deployment
+    - wire detection
+    - junction / crossover detection
+    - more components
+conclsuion
+References
