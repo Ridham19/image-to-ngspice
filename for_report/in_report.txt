@@ -1,8 +1,20 @@
-problem statement
+30-35 pages
+
 Abstract
+problem statement
+acknowledgement
 Introduction
-research overview done by us
+research overview done by us   
+    - found dataset
+    - found the research paper
+    - found schemadraw
+    - finding perfect image proessing model ( Found YOLO )
+
 about ML Model (YOLO)
+    - what is YOLO
+    - how YOLO is used in our project 
+    
+
 about implementation
 current results
 Future work
@@ -13,4 +25,61 @@ Future work
     - junction / crossover detection
     - more components
 conclsuion
+References
+
+
+///////////////////////////////////////
+gemini made 
+///////////////////////////////////////
+
+Abstract
+Problem Statement
+Acknowledgement
+
+Introduction
+- Motivation and Objectives
+- Scope of the project (Desktop-based ML pipeline)
+
+Research Overview Done by Us
+- Finding the dataset (Kaggle circuit dataset and its limitations)
+- Review of existing object detection models
+- Exploring schematic drawing tools (SchemDraw)
+- Understanding the NGSPICE simulation standard
+- Finding the perfect image processing model (YOLOv8)
+
+About ML Model (YOLO & Computer Vision)
+- The evolution of Deep Learning in image processing
+- What is YOLOv8 and how it works (Backbone, Neck, Head)
+- The mathematics behind YOLO (IoU and Loss functions)
+- OpenCV image preprocessing (Grayscale, Blur, Adaptive Thresholding)
+- Morphological operations for wire enhancement
+
+How YOLO is Used in Our Project
+- Domain-specific fine-tuning for 9 electronic components
+- Handling extreme scale variance in schematics
+- Model training parameters and Google Colab setup
+- Bridging the gap: Translating AI tensors to pixel coordinates
+
+About Implementation (PySpice Studio)
+- Graphical User Interface (GUI) design using Tkinter
+- Interactive canvas engine (Panning, zooming, and drag-and-drop)
+- The wire routing algorithm (Converting OpenCV masks to mathematical lines)
+- Netlist generation logic (Converting canvas coordinates to a .cir file)
+- Executing NGSPICE binary simulations directly from Python
+
+Current Results
+- Evaluation metrics (Precision, Recall, F1-Score, mAP)
+- Training performance analysis
+- Confusion Matrix analysis (Where the AI excels and struggles)
+- Precision-Recall curves
+- System walkthrough (Hand-drawn sketch ➡️ PySpice Canvas ➡️ Simulation output)
+
+Future Work
+- Implementation of OCR text extraction (Reading values like "10k")
+- Web and Cloud deployment
+- Source classification (Differentiating AC vs DC sources)
+- Junction and crossover detection
+- Expanding the component library
+
+Conclusion
 References

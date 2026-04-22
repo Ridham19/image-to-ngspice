@@ -75,6 +75,19 @@ class VisionTesterApp:
         if not image_path:
             return
 
+        # ---------------------------------------------------------
+        # NEW: FOLDER CREATION LOGIC
+        # ---------------------------------------------------------
+        # Extract the base name of the image without the extension (e.g., "my_sketch" from "my_sketch.png")
+        base_filename = os.path.splitext(os.path.basename(image_path))[0]
+        
+        # Create the specific directory path
+        save_dir = os.path.join("vision_output", base_filename)
+        
+        # Make the directories if they don't exist
+        os.makedirs(save_dir, exist_ok=True)
+        # ---------------------------------------------------------
+
         self.lbl_status.config(text=f"👁️ Analyzing: {os.path.basename(image_path)}...")
         self.root.update()
 
@@ -117,6 +130,10 @@ class VisionTesterApp:
             rgb_img = cv2.cvtColor(combined_img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_img)
 
+            # --- SAVE THE MAIN YOLO OUTPUT ---
+            yolo_save_path = os.path.join(save_dir, "0_yolo_heatmap.png")
+            pil_img.save(yolo_save_path)
+
             max_w = self.root.winfo_width() - 40
             max_h = self.root.winfo_height() - 100
             if max_w < 100: max_w = 1400
@@ -137,11 +154,12 @@ class VisionTesterApp:
             self.lbl_status.config(text="⚙️ Generating CV Processing Windows...")
             self.root.update()
 
-            self.create_preprocessing_window(image_path)
-            self.create_morphology_window(image_path)
-            self.create_features_window(image_path)
+            # Pass the save directory to the graphing functions
+            self.create_preprocessing_window(image_path, save_dir)
+            self.create_morphology_window(image_path, save_dir)
+            self.create_features_window(image_path, save_dir)
 
-            self.lbl_status.config(text=f"✅ Done! Found {len(results[0].boxes)} objects and opened 3 analysis windows.")
+            self.lbl_status.config(text=f"✅ Done! Outputs saved to: vision_output/{base_filename}/")
 
         except Exception as e:
             self.lbl_status.config(text="❌ Error during processing.")
@@ -150,7 +168,7 @@ class VisionTesterApp:
             messagebox.showerror("Processing Error", str(e))
 
     # =================================================================
-    # REPORT GENERATION METHODS (Opening in new Tkinter Windows)
+    # REPORT GENERATION METHODS (Opening in new Tkinter Windows & Saving)
     # =================================================================
     
     def display_figure(self, title, fig):
@@ -168,13 +186,12 @@ class VisionTesterApp:
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    def create_preprocessing_window(self, image_path):
+    def create_preprocessing_window(self, image_path, save_dir):
         img = cv2.imread(image_path)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
 
-        # Use pure object-oriented matplotlib to avoid Tkinter thread crashing
         fig = Figure(figsize=(12, 3.5), dpi=100)
         axes = fig.subplots(1, 4)
         
@@ -188,9 +205,14 @@ class VisionTesterApp:
             axes[i].axis('off')
         
         fig.tight_layout()
+        
+        # --- SAVE THE FIGURE ---
+        save_path = os.path.join(save_dir, "1_preprocessing_pipeline.png")
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        
         self.display_figure("Report View: Preprocessing Pipeline", fig)
 
-    def create_morphology_window(self, image_path):
+    def create_morphology_window(self, image_path, save_dir):
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
 
@@ -210,9 +232,14 @@ class VisionTesterApp:
             axes[i].axis('off')
             
         fig.tight_layout()
+        
+        # --- SAVE THE FIGURE ---
+        save_path = os.path.join(save_dir, "2_morphological_operations.png")
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        
         self.display_figure("Report View: Morphological Operations", fig)
 
-    def create_features_window(self, image_path):
+    def create_features_window(self, image_path, save_dir):
         img = cv2.imread(image_path)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -240,6 +267,11 @@ class VisionTesterApp:
             ax.axis('off')
             
         fig.tight_layout()
+        
+        # --- SAVE THE FIGURE ---
+        save_path = os.path.join(save_dir, "3_feature_extraction.png")
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        
         self.display_figure("Report View: Feature Extraction", fig)
 
 

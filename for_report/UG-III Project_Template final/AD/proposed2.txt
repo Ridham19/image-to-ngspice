@@ -1,0 +1,17 @@
+
+
+---SAMPLE TEXT FOR APPENDIX----
+Timing Detail:
+--------------
+All values displayed in nanoseconds (ns)
+
+=========================================================================
+Timing constraint: Default period analysis for Clock 'clk'
+  Clock period: 4.319ns (frequency: 231.535MHz)
+  Total number of paths / destination ports: 1135 / 56
+-------------------------------------------------------------------------
+Delay:               4.319ns (Levels of Logic = 17)
+  Source:            x_1_0 (FF)
+  Destination:       IAU0/b1_15 (FF)
+  Source Clock:      clk rising
+  Destination Clock: clk rising

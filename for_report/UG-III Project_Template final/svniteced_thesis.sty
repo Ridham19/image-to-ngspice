@@ -1,0 +1,475 @@
+% File: svniteced_thesis.sty
+% Edited :  Raviraj P Makwana (P13VL020)
+% Author: Ankur Limaye (P12VL005)
+% Email: ankur.limaye@gmail.com 
+% Date: August 22, 2013.
+% Version: v03/28.11.13
+%
+% This package was written to help students of SVNIT
+% Electronics Engineering Department to write a thesis using
+% LaTeX2e.
+%
+% The LaTeX file should begin with
+% \documentclass[12pt,twoside,openright]{report}
+% \usepackage{svniteced_dissprelim}
+% \usepackage{graphicx}
+% \usepackage[dvipsnames]{xcolor}
+% \usepackage{fancybox}
+% \usepackage{lipsum}
+% \usepackage{geometry}
+%
+% The following commands are defined in this package:
+% \ssp					Switch to single spacing
+% \dsp					Switch to double spacing
+% \makecerti			Generates the signature page.
+% \maketitlepage		Generates the title page and starts roman page numbers
+% \StartBody			Sets up to start page 1 of thesis, after preliminaries
+% \GuideName			To provide the name of Guide
+% \GuidePos				To provide the Guide's position
+% \Degree				To provide the degree
+% \Specialization		To provide the specialization
+% \AdmNo				To provide the Admission number
+% \DocType				To input whether the document is Seminar Report or Thesis Report
+% \AcadYear				To input the Academic Year
+
+% For some environments we switch back to single-spacing, also
+% provides \dsp in case you need double-spacing where single-spacing
+% is otherwise used.
+\def\ssp{\def\baselinestretch{1.15}\large\normalsize}
+\def\dsp{\def\baselinestretch{1.5}\large\normalsize}
+
+%\tab command is used to provide paragraph
+\newcommand{\tab}{\hspace*{2em}}
+\newcommand{\ent}{\\[0.1in]}
+
+% \smallssp is used to produce tabular environments in the small font.
+% This is required because single-spacing requires a change in font size.
+% \scriptsizessp is a still smaller version of the same thing.
+\def\smallssp{\def\baselinestretch{1}\large\small}
+\def\scriptsizessp{\def\baselinestretch{1}\large\scriptsize}
+
+%The following taken from report.cls, modified
+%to suit our purpose in table of contents, list of figures,
+%list of tables and references.
+
+\renewcommand\tableofcontents{%
+    \if@twocolumn
+      \@restonecoltrue\onecolumn
+    \else
+      \@restonecolfalse
+    \fi
+    \chapter*{\contentsname
+        \@mkboth{%
+           \MakeUppercase\contentsname}{\MakeUppercase\contentsname}}%
+    \addcontentsline{toc}{chapter}{\textbf{Table of Contents}}%
+    \@starttoc{toc}%
+    \if@restonecol\twocolumn
+    \fi
+    }
+\def\l@chapter{\@dottedtocline{0}{0.1em}{1.4em}}
+\def\l@section{\@dottedtocline{1}{1.5em}{2.3em}}
+\def\l@subsection{\@dottedtocline{2}{3.8em}{3.2em}}
+\def\l@subsubsection{\@dottedtocline{3}{7.0em}{4.1em}}
+\def\l@paragraph{\@dottedtocline{4}{10em}{5em}}
+\def\l@subparagraph{\@dottedtocline{5}{12em}{6em}}
+
+\def\listoffigures{\@restonecolfalse\if@twocolumn\@restonecoltrue\onecolumn
+ \fi\chapter*{List of Figures\@mkboth
+ {List of Figures}{List of Figures}}
+ \addcontentsline{toc}{chapter}{\textbf{List of Figures}}
+ \@starttoc{lof}\if@restonecol
+ \twocolumn\fi}
+\def\l@figure{\@dottedtocline{1}{1.5em}{2.3em}}
+
+\def\listoftables{\@restonecolfalse\if@twocolumn\@restonecoltrue\onecolumn
+ \fi\chapter*{List of Tables\@mkboth
+ {List of Tables}{List of Tables}}
+ \addcontentsline{toc}{chapter}{\textbf{List of Tables}}
+ \@starttoc{lot}\if@restonecol
+ \twocolumn\fi}
+\let\l@table\l@figure
+
+%The following taken from report.cls, modified
+%to have no header space above new chapters and
+%make chapter titles centered.
+
+\def\@makeschapterhead#1{%
+  %\vspace*{50\p@}%
+  {\parindent \z@ \raggedright
+    \normalfont
+    \centering
+    \interlinepenalty\@M
+    \LARGE \bfseries  #1\par\nobreak
+    \vskip 15\p@
+  }}
+ 
+\def\@makechapterhead#1{%
+  %\vspace*{50\p@}%
+  {\parindent \z@ \raggedright \normalfont
+    \centering
+    \ifnum \c@secnumdepth >\m@ne
+        \LARGE\bfseries \@chapapp\space \thechapter
+        \par\nobreak
+        %\vskip 10\p@
+    \fi
+    \interlinepenalty\@M
+    \LARGE \bfseries #1\par\nobreak
+    \vskip 20\p@
+  }}
+
+%The following, also taken from report.cls, was
+%modified to line up the text properly on the left
+%when the text of the caption does not fit on one
+%line.
+
+\long\def\@makecaption#1#2{%
+  \vskip\abovecaptionskip
+  \sbox\@tempboxa{#1: #2}%
+  \ifdim \wd\@tempboxa >\hsize
+     \sbox\@tempboxa{#1: #2}%
+     \begin{center}
+     \ssp
+     #1: \parbox[t]{5in}{#2}
+     \end{center}
+  \else
+    \global \@minipagefalse
+    \hb@xt@\hsize{\hfil\box\@tempboxa\hfil}%
+  \fi
+  \vskip\belowcaptionskip}
+
+% Page format
+% a4 paper
+\setlength\paperheight {297mm}
+\setlength\paperwidth  {210mm}
+% left and top margins (+1in)
+%\setlength{\topmargin}{0.05in}
+% head
+\setlength{\headheight}{0.25in}
+\setlength{\headsep}{0.25in}
+% body
+%\setlength{\textwidth}{15cm}
+%\setlength{\textheight}{22cm}
+% foot
+\setlength{\footskip}{0.5in}
+
+% This part of code is written to have an empty page if the previous
+% chapter ends on a odd numbered page.
+\let\origdoublepage\cleardoublepage
+\newcommand{\clearemptydoublepage}{%
+  \clearpage
+  {\pagestyle{empty}\origdoublepage}%
+}
+\let\cleardoublepage\clearemptydoublepage
+
+\pagestyle{empty}       % No page numbers printing, but still counts pages
+\pagenumbering{roman}   % Roman numeral page numbers
+
+\renewcommand\contentsname{Table of Contents}
+\renewcommand\listfigurename{List of Figures}
+\renewcommand\listtablename{List of Tables}
+\renewcommand\bibname{References}
+
+% Input Variables
+
+\newif\if@coguide
+\@coguidefalse
+
+\newcommand{\titleoncerti}[1]{%
+ \gdef\@certititle{#1}
+}
+
+\newcommand{\GuideName}[1]{%
+ \gdef\@guidenm{#1}
+}
+
+\newcommand{\GuidePos}[1]{%
+ \gdef\@guideposn{#1}
+}
+
+\newcommand{\GuideAssociation}[1]{%
+ \gdef\@guideasso{#1}
+}
+
+\newcommand{\CoGuideName}[1]{%
+ \@coguidetrue
+ \gdef\@coguidenm{#1}
+}
+
+\newcommand{\CoGuidePosn}[1]{%
+ \gdef\@coguideposn{#1}
+}
+
+\newcommand{\CoGuideAssociation}[1]{%
+ \gdef\@coguideasso{#1}
+}
+
+\newcommand{\Degree}[1]{%
+ \gdef\@degr{#1}
+}
+
+\newcommand{\Specialization}[1]{%
+ \gdef\@specializn{#1}
+}
+
+\newcommand{\AdmNo}[1]{%
+ \gdef\@rollnum{#1}
+}
+
+\newcommand{\DocType}[1]{%
+ \gdef\@docty{#1}
+}
+
+\newcommand{\AcadYear}[1]{%
+ \gdef\@acadyr{#1}
+}
+
+
+%Title Page Formatting
+\newcommand{\MakeTitlePage}{
+
+% Margins for the Title Page
+\newgeometry{top=2cm, bottom=2cm, left=3cm, right=2cm, hcentering}
+\dsp
+
+\setlength{\textheight}{9in}
+
+\thispagestyle{empty}
+
+\begin{center}
+
+\vspace*{0.5cm}
+%{\Large {A}}\\
+%{\Large {Dissertation Preliminary Report}}\\
+%{\Large {on}}\\[2mm]
+{\huge \bf\color{blue}{\@title}}
+\vfill
+ A Thesis Submitted to the Department of Electronics Engineering\\
+in Partial Fulfillment of the Requirements for the Degree of
+\vfill
+\emph {\bf \large \color{magenta}{\bf \@degr \\ \bf (\@specializn)}}
+\vfill
+	\begin{center}
+	by
+	\vfill
+	{\large \color{Green}{\bf \@author \\ (\@rollnum)}}
+	\end{center} 
+\vfill
+	\begin{center}
+	Guided by
+	\vfill
+	{\large \color{cyan}{\bf \@guidenm \\ \@guideposn, \@guideasso}}
+	\end{center}
+	\if@coguide
+	\&
+	\vfill 
+	{\large \color{cyan}{\bf \@coguidenm \\ \@coguideposn, \@coguideasso}}
+	\fi
+\vfill
+\begin{figure}[htpb]
+  \begin{center}
+    \resizebox{50mm}{!} {\includegraphics *{svnit_logo.jpg}}
+  \end{center}
+\end{figure}
+
+{\color{magenta}{DEPARTMENT OF ELECTRONICS ENGINEERING}\\
+SARDAR VALLABHBHAI NATIONAL INSTITUTE OF TECHNOLOGY\\
+{\MakeUppercase{\@date}}}
+\end{center}
+
+\restoregeometry
+
+}
+
+% Certificate Page
+\newcommand{\MakeCerti}{
+
+\clearemptydoublepage
+
+\newgeometry{top=1.5cm, bottom=2.5cm, hcentering}
+\ssp
+
+\setlength{\textheight}{8.4in}
+
+\thispagestyle{empty}
+
+\thisfancypage{%
+  \setlength{\fboxsep}{15pt}\doublebox}{}
+
+\begin{center}
+
+{\Large \bf \color{BrickRed}{Sardar Vallabhbhai National Institute Of Technology}}\\
+Surat - 395 007, Gujarat, India \\[1pc]
+
+{\large \color{violet}{\underline{ELECTRONICS ENGINEERING DEPARTMENT}}}
+
+\begin{figure}[htpb]
+  \begin{center}
+    \resizebox{35mm}{!} {\includegraphics *{svnit_logo.jpg}}
+  \end{center}
+\end{figure}
+
+{\Huge \bf \color{red}{CERTIFICATE}}
+\end{center}
+
+This is to certify that {\color{Green}{\textbf{\@author}}}, \textbf{(Adm. No. {\@rollnum})}, Full-time M.Tech student has presented his Thesis on {\color{blue}{\textbf{`{\@title}'}}}, in partial fulfillment of the requirement for the award of the degree {\color{magenta}{\textbf{\@degr}}} in {\color{magenta}{\textbf{Electronics Engineering}}} with specialization in  {\color{magenta}{\textbf{\@specializn}}} during the year \textbf{\@acadyr}.
+
+\vfill
+
+\if@coguide
+\begin{table}[!h]
+\resizebox{\textwidth}{!} {
+\begin{tabular}{c c c c}
+&\\
+&\\
+&\\
+\line(1,0){100} & \line(1,0){100} & \line(1,0){100} & \line(1,0){100} \\
+{\large Guide} & {\large Co-Guide} & {\large Examiner} & {\large Chairman} \\
+\end{tabular}
+}
+\end{table}
+\vfill
+\begin{table}[!h]
+\resizebox{\textwidth}{!}
+{
+\begin{tabular}{c c c}
+& &\\
+& & \\
+& &\\
+\line(1,0){100}& &\line(1,0){100} \\
+{P. G. Incharge} & & {Head of The Department} \\
+& & \\
+& &\\
+& &\\
+ & {Seal of The Department} & \\
+ & {\MakeUppercase{\@date}} & \\
+\end{tabular}
+}
+\end{table}
+\else
+\begin{table}[!h]
+\resizebox{\textwidth}{!} {
+\begin{tabular}{c c c}
+&\\
+&\\
+&\\
+\line(1,0){100} & \line(1,0){100} & \line(1,0){100} \\
+{\footnotesize Guide} & {\footnotesize Examiner} & {\footnotesize Chairman} \\
+\end{tabular}
+}
+\end{table}
+\vfill
+\begin{table}[!h]
+\resizebox{\textwidth}{!}
+{
+\begin{tabular}{c c c}
+& &\\
+& & \\
+& &\\
+\line(1,0){100}& &\line(1,0){100} \\
+{\small P. G. Incharge} & & {\small Head of The Department} \\
+& & \\
+& &\\
+& &\\
+ & {\small Seal of The Department} & \\
+ & {\small \MakeUppercase{\@date}} & \\
+\end{tabular}
+}
+\end{table}
+\fi
+
+\restoregeometry
+
+\newpage
+\newgeometry{left=1.5in, right=1in, bottom=1.25in}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\textit{\nouppercase{\leftmark}}}
+\fancyhead[RO]{\textit{\nouppercase{\rightmark}}}
+\renewcommand{\headrulewidth}{1.0pt}
+\cfoot{\fancyplain{}{\thepage}}
+
+\ssp
+
+}
+
+\newcommand{\addboldline}[2]{%
+    \immediate\write\@mainaux{%
+        \string\@writefile{#1}{\noindent {\string\bf\space#2}}}
+}
+
+\newcommand{\StartBody}{
+\clearemptydoublepage
+\include{null}          	% this to get Roman numeral page numbering correct
+\pagenumbering{arabic}  	% Arabic page numbers
+\setcounter{page}{1}    	% Reset page numbering to 1
+\addboldline{toc}{Chapters}	%Adds the word ``Chapter'' in the TOC.
+}
+
+\newcommand{\StartAppendix}{ %
+\clearemptydoublepage
+\addboldline{toc}{Appendix} %Adds the word ``Appendix'' in the TOC.
+\appendix
+}
+
+\newcommand{\StartAppendices}{ %
+\clearemptydoublepage
+\addboldline{toc}{Appendices} %Adds the word ``Appendices'' in the TOC.
+\appendix
+}
+
+\newcommand{\StartRef}{%
+\clearemptydoublepage
+\addcontentsline{toc}{chapter}{\textbf{References}} %Adds the word ``References'' in the TOC.
+}
+
+\newcommand{\Acknowledgement}[1]{ %
+\clearemptydoublepage
+\addcontentsline{toc}{chapter}{\textbf{Acknowledgements}}
+\include{#1}
+}
+
+\newcommand{\Abstract}[1]{ %
+\clearemptydoublepage
+\addcontentsline{toc}{chapter}{\textbf{Abstract}}
+\include{#1}
+}
+
+\newcommand{\Abbreviations}[1]{ %
+\clearemptydoublepage
+\addcontentsline{toc}{chapter}{\textbf{List of Abbreviations}}
+\include{#1}
+}
+
+\newcommand{\ConclusionChapter}[1]{ %
+\clearemptydoublepage
+\addcontentsline{toc}{chapter}{Conclusion}
+\include{#1}
+}
+
+\newcommand{\TableOfContents}{
+\tableofcontents
+}
+
+\newcommand{\ListOfTables}{
+\listoftables
+}
+
+\newcommand{\ListOfFigures}{
+\listoffigures
+}
+
+\newcommand{\Chapter}[1]{
+\include{#1}
+}
+
+\newcommand{\Appendix}[1]{
+\include{#1}
+}
+
+\addtocontents{toc}{\hfill{\bf Page}}
+
+% This file is modified version of the file mentioned below:
+% File: utepcsthesis.sty
+% Author: Luc Longpr
+% email: longpre@utep.edu
+% Date: February 17, 2005.
