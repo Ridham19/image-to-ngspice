@@ -1,0 +1,98 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {section}{Abstract}{i}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Problem Statement}{ii}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Acknowledgements}{iii}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Motivation and Objectives}{1}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Scope of the project (Desktop-based ML pipeline)}{2}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Research and Literature Review}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Finding the dataset (Kaggle circuit dataset and its limitations)}{3}{subsection.2.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations.}}{4}{figure.1}\protected@file@percent }
+\newlabel{fig:dataset_samples}{{1}{4}{Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Review of existing object detection models}{4}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Exploring schematic drawing tools (SchemDraw)}{5}{subsection.2.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization.}}{6}{figure.2}\protected@file@percent }
+\newlabel{fig:schemdraw}{{2}{6}{An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Understanding the NGSPICE simulation standard}{6}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Finding the perfect image processing model (YOLOv8)}{7}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Machine Learning Architecture and Vision Pipeline}{7}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}The evolution of Deep Learning in image processing}{7}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}What is YOLOv8 and how it works (Backbone, Neck, Head)}{8}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}The Backbone (Feature Extractor)}{8}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}The Neck (Feature Fusion)}{8}{subsubsection.3.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3}The Head (Anchor-Free Detection)}{8}{subsubsection.3.2.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces High-level architectural block diagram of YOLOv8, illustrating the flow of tensors through the Backbone, PANet Neck, and Dual-Branch Head.}}{9}{figure.3}\protected@file@percent }
+\newlabel{fig:yolo_architecture}{{3}{9}{High-level architectural block diagram of YOLOv8, illustrating the flow of tensors through the Backbone, PANet Neck, and Dual-Branch Head}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}The mathematics behind YOLO (IoU and Loss functions)}{9}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Intersection over Union (IoU)}{9}{subsubsection.3.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}The Loss Function}{9}{subsubsection.3.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}OpenCV image preprocessing (Grayscale, Blur, Adaptive Thresholding)}{9}{subsection.3.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces The OpenCV preprocessing pipeline converting a raw photograph into a clean binary matrix suitable for wire extraction.}}{10}{figure.4}\protected@file@percent }
+\newlabel{fig:preprocessing}{{4}{10}{The OpenCV preprocessing pipeline converting a raw photograph into a clean binary matrix suitable for wire extraction}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Morphological operations for wire enhancement}{10}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}How YOLO is Used in Our Project}{11}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Domain-Specific Fine-Tuning for 19 Electronic Components}{11}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Handling Extreme Scale Variance in Schematics}{11}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Model training parameters and Google Colab setup}{12}{subsection.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Training metrics over 100 epochs, demonstrating the steady decrease in bounding box and classification loss, alongside the corresponding rise in Mean Average Precision (mAP).}}{12}{figure.5}\protected@file@percent }
+\newlabel{fig:training_results}{{5}{12}{Training metrics over 100 epochs, demonstrating the steady decrease in bounding box and classification loss, alongside the corresponding rise in Mean Average Precision (mAP)}{figure.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Bridging the gap: Translating AI tensors to pixel coordinates}{12}{subsection.4.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces The visual result of translating YOLO coordinate tensors back into the 2D image plane, highlighting components with labeled bounding boxes.}}{13}{figure.6}\protected@file@percent }
+\newlabel{fig:tensor_translation}{{6}{13}{The visual result of translating YOLO coordinate tensors back into the 2D image plane, highlighting components with labeled bounding boxes}{figure.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}System Implementation: PySpice Studio}{13}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Graphical user interface (GUI) design using Tkinter}{13}{subsection.5.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar.}}{14}{figure.7}\protected@file@percent }
+\newlabel{fig:pyspice_editor}{{7}{14}{The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar}{figure.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Interactive canvas engine (panning, zooming, and drag-and-drop)}{15}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}The wire routing algorithm (converting OpenCV masks to mathematical lines)}{15}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Netlist generation logic (converting canvas coordinates to a .cir file)}{16}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Executing NGSPICE binary simulations directly from Python}{16}{subsection.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Transient analysis of a Diode Rectifier circuit executed via NGSPICE.}}{17}{figure.8}\protected@file@percent }
+\newlabel{fig:sim_transient}{{8}{17}{Transient analysis of a Diode Rectifier circuit executed via NGSPICE}{figure.8}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale.}}{18}{figure.9}\protected@file@percent }
+\newlabel{fig:sim_ac}{{9}{18}{AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale}{figure.9}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Current Results}{18}{section.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces The raw, hand-drawn input sketch before any digital processing or AI inference.}}{19}{figure.10}\protected@file@percent }
+\newlabel{fig:raw_input}{{10}{19}{The raw, hand-drawn input sketch before any digital processing or AI inference}{figure.10}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch.}}{19}{figure.11}\protected@file@percent }
+\newlabel{fig:example_output}{{11}{19}{Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch}{figure.11}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point.}}{20}{figure.12}\protected@file@percent }
+\newlabel{fig:heatmap}{{12}{20}{Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point}{figure.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Evaluation metrics (Precision, Recall, F1-Score, mAP)}{20}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Training performance analysis}{21}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Confusion Matrix analysis (Where our model excels and struggles)}{21}{subsection.6.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Normalized confusion matrix of the detection model across the 9 component classes and the background.}}{22}{figure.13}\protected@file@percent }
+\newlabel{fig:confusion_matrix_normalized}{{13}{22}{Normalized confusion matrix of the detection model across the 9 component classes and the background}{figure.13}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Precision-Recall curves}{23}{subsection.6.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}}{23}{figure.14}\protected@file@percent }
+\newlabel{fig:pr_curve}{{14}{23}{Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837}{figure.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}System walkthrough (Hand-drawn sketch $\rightarrow $ PySpice Canvas $\rightarrow $ Simulation output)}{24}{subsection.6.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}}{24}{figure.15}\protected@file@percent }
+\newlabel{fig:canvas_confirmation}{{15}{24}{Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas}{figure.15}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation.}}{25}{figure.16}\protected@file@percent }
+\newlabel{fig:canvas_output}{{16}{25}{The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation}{figure.16}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Future Work}{25}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Implementation of OCR text extraction}{25}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Web and Cloud deployment}{26}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Source classification}{26}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Junction and crossover detection}{26}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Expanding the component library}{26}{subsection.7.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{27}{section.8}\protected@file@percent }
+\bibcite{redmon2016}{1}
+\bibcite{thoma2021}{2}
+\bibcite{ahmed2025}{3}
+\bibcite{patare2016}{4}
+\bibcite{cghd}{5}
+\bibcite{ultralyticsdocs}{6}
+\bibcite{schemdrawdocs}{7}
+\bibcite{netron}{8}
+\bibcite{ngspice}{9}
+\bibcite{projimage}{10}
+\bibcite{projspice}{11}
+\@writefile{toc}{\contentsline {section}{References}{28}{section.8}\protected@file@percent }
+\bibcite{reposchemdraw}{12}
+\bibcite{repoultralytics}{13}
+\gdef \@abspage@last{35}

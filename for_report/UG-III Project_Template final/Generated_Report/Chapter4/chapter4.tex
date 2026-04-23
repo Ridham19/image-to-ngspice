@@ -1,0 +1,43 @@
+% chapter4.tex
+\chapter{How YOLO is Used in Our Project}
+
+While understanding the base YOLO architecture is critical, the true engineering challenge of this project lay in adapting a generalized Deep Learning model into a specialized electronic schematic digitizer. This section details the practical implementation, training, and data-translation phases of the machine learning pipeline.
+
+\section{Domain-Specific Fine-Tuning for 19 Electronic Components}
+A base YOLOv8 model, pre-trained on the standard COCO (Common Objects in Context) dataset, is highly proficient at recognizing everyday objects like cars, people, and furniture, but it has zero concept of electronic symbology. Training a deep neural network from scratch to recognize circuits would require millions of images and massive computational resources.
+
+To circumvent this, we utilized \textbf{Transfer Learning}. We retained the generalized feature-extraction weights in the YOLOv8 backbone—which already understood how to detect edges, corners, and geometric shapes—but completely replaced the classification head. The model was then fine-tuned on our specialized Kaggle dataset containing 19 unique circuit classes (including resistors, capacitors, voltage sources, ground symbols, etc.). This approach allowed the network to leverage its existing foundational knowledge of geometry while exclusively learning the visual signatures of electronic components.
+
+\section{Handling Extreme Scale Variance in Schematics}
+One of the primary difficulties in parsing hand-drawn schematics is the extreme variance in object scale. A long wire trace might span $80\%$ of the image canvas, while a junction dot or a small diode takes up less than $2\%$. Standard convolutional networks often lose the spatial data of tiny objects as the image is pooled into deeper layers.
+
+We explicitly leveraged YOLOv8’s multi-scale PANet (Path Aggregation Network) neck to solve this. By extracting bounding box predictions from feature maps at three different resolution scales (typically $80 \times 80$, $40 \times 40$, and $20 \times 20$), the model maintains situational awareness. The high-resolution feature maps successfully localized the microscopic components (like text and junctions), while the low-resolution, high-semantic maps accurately bounded massive components (like transformers and long wire segments).
+
+\section{Model training parameters and Google Colab setup}
+Due to the heavy computational requirements of training a deep neural network, the model was trained using cloud infrastructure via Google Colab, utilizing a hardware-accelerated GPU environment.
+
+The training process was executed using the following hyperparameter configuration:
+\begin{itemize}
+    \item \textbf{Image Size (\texttt{imgsz}):} 640x640 pixels. All input images were dynamically scaled and padded to this dimension to maintain a uniform tensor shape.
+    \item \textbf{Epochs:} The model was trained for 100 iterations over the entire dataset. Early stopping was monitored to prevent overfitting.
+    \item \textbf{Batch Size:} 16 images per forward/backward pass, optimizing GPU memory utilization.
+    \item \textbf{Optimizer:} SGD (Stochastic Gradient Descent) with momentum, allowing the network to navigate the loss landscape efficiently.
+\end{itemize}
+Upon completion of the training phase, the optimized weights were exported as a \texttt{best.pt} file. This highly compressed, standalone file contains the entire "brain" of our AI.
+
+\section{Bridging the gap: Translating AI tensors to pixel coordinates}
+The most critical integration point of the project occurs when the Deep Learning pipeline hands its data over to the deterministic Logic Pipeline (PySpice Studio). When a user uploads a hand-drawn sketch to the desktop interface, the image is passed through the \texttt{.predict()} method of our trained \texttt{best.pt} model.
+
+The direct output of YOLO is not a visual image, but rather a multi-dimensional mathematical tensor. For every detected object, the tensor contains an array formatted as:
+\begin{equation}
+    [\text{Class\_ID}, \text{Confidence\_Score}, x_{center}, y_{center}, \text{width}, \text{height}]
+\end{equation}
+
+Our Python implementation acts as the bridge. It parses this raw tensor array with the following logic:
+\begin{enumerate}
+    \item \textbf{Thresholding:} It filters out any detection with a \texttt{Confidence\_Score} below $0.40$ (40\%) to prevent visual hallucinations and false positives.
+    \item \textbf{Coordinate Translation:} It translates the normalized center coordinates into absolute pixel coordinates representing the top-left and bottom-right corners of the bounding box.
+    \item \textbf{Data Injection:} These coordinates, mapped to their specific string labels (e.g., "Resistor"), are injected into the PySpice Studio state manager.
+\end{enumerate}
+
+This translation converts static pixels into interactive data objects—allowing the custom GUI to draw selectable, movable components precisely over the user's original sketch.

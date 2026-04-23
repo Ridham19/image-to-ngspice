@@ -1,0 +1,28 @@
+\documentclass[12pt,twoside,openright]{report}
+\makeatletter
+\renewcommand{\cleardoublepage}{%
+  \clearpage
+  \if@twoside
+    \ifodd\c@page\else
+      \null
+      \vspace*{\fill}
+      \begin{center}
+        \textit{This page is intentionally left blank.}
+      \end{center}
+      \vspace*{\fill}
+      \thispagestyle{empty}
+      \newpage
+      \addtocounter{page}{-1}
+    \fi
+  \fi
+}
+\makeatother
+\begin{document}
+Chapter 1
+\clearpage
+This is page 2
+\clearpage
+This is page 3
+\cleardoublepage
+Chapter 2 starts here. It should be page 4.
+\end{document}

@@ -1,0 +1,34 @@
+% chapter1.tex
+\chapter{Introduction}
+\section{Problem Statement}
+In academic research, rapid electronic prototyping, and analog circuit design, the conversion of visual circuit representations into textual SPICE netlists is a mandatory prerequisite for software simulation. Traditionally, this digitization process relies exclusively on manual data entry within specialized schematic editors. This manual procedure is inherently time-consuming, and the repetitive nature of transcription frequently introduces topological and parameter-value errors that severely hinder the debugging pipeline. Despite significant advancements in artificial intelligence, a robust and accessible interface capable of reliably translating hand-drawn sketches directly into industry-standard SPICE syntax remains largely underdeveloped. 
+
+This project addresses this operational bottleneck by engineering a comprehensive deep learning pipeline. The primary objective is to develop a highly robust system capable of automatically parsing uploaded circuit schematics, accurately localizing and classifying native electronic components, extracting intricate wiring topologies, and synthesizing structurally accurate, NGSPICE-compatible netlists ready for immediate downstream electrical simulation.
+
+\section{Introduction}
+The design and simulation of electronic circuits is a fundamental process in electrical engineering, serving as the bridge between theoretical concepts and physical hardware. Traditionally, the ideation phase begins with rapid, hand-drawn sketches on paper or whiteboards. However, to validate these designs mathematically, engineers must manually translate these sketches into simulation software using specific syntax, such as SPICE (Simulation Program with Integrated Circuit Emphasis) netlists. This manual transcription is notoriously tedious, time-consuming, and highly susceptible to human error. As artificial intelligence and computer vision technologies advance, there is a significant opportunity to automate this transition. This project introduces a comprehensive machine learning pipeline designed to seamlessly digitize hand-drawn electronic schematics and convert them directly into executable NGSPICE simulations.
+
+\subsection{Motivation and Objectives}
+\noindent \textbf{Motivation}\par
+The primary motivation for this project stems from the friction experienced during the hardware prototyping phase. While modern Electronic Design Automation (EDA) tools are powerful, they impose a rigid workflow that interrupts the natural, fluid process of hand-drawing a circuit. For students, educators, and rapid-prototyping engineers, the requirement to manually place components and route wires in a digital GUI—or worse, write raw \texttt{.cir} text files—acts as a severe bottleneck. By applying Deep Learning to visual recognition, we aim to eliminate this bottleneck, allowing engineers to retain the speed of physical sketching while immediately gaining the analytical power of digital simulation.
+
+\vspace{0.5cm}
+\noindent \textbf{Objectives}\par
+To achieve this, the project was guided by the following core objectives:
+\begin{enumerate}
+    \item \textbf{Object Detection:} To train and deploy a Convolutional Neural Network (YOLOv8) capable of recognizing and localizing hand-drawn electronic symbols with high precision, overcoming variations in sketching styles and extreme scale differences.
+    \item \textbf{Computer Vision Routing:} To implement deterministic image processing algorithms (using OpenCV) that can extract, repair, and trace hand-drawn wire connections between detected components.
+    \item \textbf{Interactive GUI Development:} To engineer a custom desktop environment (``PySpice Studio'') that provides users with an interactive digital canvas to visualize the AI's predictions and manually adjust the circuit before simulation.
+    \item \textbf{Algorithmic Netlist Generation:} To develop a mathematical routing algorithm that translates the spatial coordinates of the digital canvas into a syntactically correct NGSPICE netlist, executing the simulation and retrieving the results seamlessly.
+\end{enumerate}
+
+\subsection{Scope of the project (Desktop-based ML pipeline)}
+It is crucial to define the boundaries of this project to accurately evaluate its success. This system is designed as an end-to-end, \textbf{desktop-based machine learning pipeline} built entirely in Python.
+
+\vspace{0.5cm}
+\noindent \textbf{In-Scope Features:}
+\begin{itemize}
+    \item The system is capable of recognizing \textbf{9 distinct classes} of electronic components (including standard passives, basic active components like BJTs, and power sources).
+    \item The pipeline operates locally on the user's machine, integrating the YOLOv8 inference engine, the OpenCV processing logic, and the NGSPICE binary execution within a unified Tkinter graphical interface.
+    \item The system supports the algorithmic extraction of orthogonal (Manhattan) wire routing to generate node-accurate netlists.
+\end{itemize}

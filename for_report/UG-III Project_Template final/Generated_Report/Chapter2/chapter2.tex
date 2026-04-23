@@ -1,0 +1,52 @@
+% chapter2.tex
+\chapter{Research and Literature Review}
+
+Before developing the custom PySpice Studio pipeline, an extensive review of existing tools, datasets, and machine learning models was conducted. This phase was critical for understanding the limitations of current electronic design automation (EDA) workflows and selecting the optimal technology stack for real-time circuit digitization.
+
+\section{Finding the dataset (Kaggle circuit dataset and its limitations)}
+Training a robust Deep Learning model requires a highly diverse and accurately annotated dataset. For this project, we sourced a specialized dataset from Kaggle containing images of hand-drawn electronic circuits (see Figure~\ref{fig:dataset_samples}). The dataset encompasses 19 distinct classes, ranging from basic passive components (resistors, capacitors, inductors) to active components (MOSFETs, BJTs, Op-Amps) and structural elements (junctions, wires, and text).
+
+While the dataset provided a strong foundational baseline, our research identified several limitations that had to be addressed during the preprocessing phase:
+\begin{itemize}
+    \item \textbf{Class Imbalance:} Common components like resistors and wires were heavily overrepresented compared to complex components like transformers or logic gates.
+    \item \textbf{Illumination Variance:} The images contained significant variations in lighting, shadows, and paper textures, mimicking real-world conditions but complicating feature extraction.
+    \item \textbf{Lack of Value Annotation:} While the dataset localized text (e.g., drawing a bounding box around "10k"), it did not transcribe the actual strings. This limitation scoped our current project to component topology extraction, delegating Optical Character Recognition (OCR) to future work.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/sample_from_dataset.jpg}
+    \caption{Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations.}
+    \label{fig:dataset_samples}
+\end{figure}
+
+\section{Review of existing object detection models}
+Object detection is a mature field within computer vision, but not all models are suited for schematic extraction. We reviewed several standard architectures:
+\begin{itemize}
+    \item \textbf{Template Matching (OpenCV):} Traditional computer vision relies on sliding a template image across the input. Research showed this method is highly brittle; it fails immediately if the user draws a resistor slightly larger, rotated, or messier than the template.
+    \item \textbf{Faster R-CNN:} A two-stage Deep Learning detector. It first generates "region proposals" and then classifies them. While highly accurate, the two-stage pipeline is computationally heavy and slower, making it less ideal for a responsive desktop application.
+    \item \textbf{Single Shot MultiBox Detector (SSD):} Faster than R-CNN as it predicts bounding boxes in a single pass, but historically struggles with detecting very small objects (like junction dots in a large circuit diagram).
+\end{itemize}
+
+\section{Exploring schematic drawing tools (SchemDraw)}
+To understand how software programmatically generates circuit diagrams, we researched existing Python libraries, primarily \texttt{SchemDraw}. \texttt{SchemDraw} allows engineers to draw highly professional schematics by writing Python code (e.g., \texttt{d += elm.Resistor().right().label('10k')}). 
+
+Our research into \texttt{SchemDraw} was invaluable for understanding how electronic symbols are rendered on a digital coordinate plane (an example output is provided in Figure~\ref{fig:schemdraw}). However, it confirmed the core problem statement: writing lines of code to generate a visual diagram is inherently backward for a hardware prototyping workflow. The engineer must already know the exact topology and calculate the grid coordinates mentally. This solidified our goal to build a visual-first, drag-and-drop canvas (PySpice Studio) rather than a code-first renderer.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/schemdraw_example.png}
+    \caption{An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization.}
+    \label{fig:schemdraw}
+\end{figure}
+
+\section{Understanding the NGSPICE simulation standard}
+To bridge the gap between computer vision and physical simulation, an in-depth study of the SPICE (Simulation Program with Integrated Circuit Emphasis) standard was required. SPICE does not understand graphics, lines, or bounding boxes; it only understands nodal matrices represented as plain text (Netlists).
+
+A standard NGSPICE netlist entry follows a strict syntactical format: \texttt{[Component\_Name] [Node\_1] [Node\_2] [Value]}. 
+Our research revealed that the true complexity of this project would not be identifying the components, but rather mapping the spatial interconnects (the hand-drawn wires) into discrete, shared mathematical nodes. For example, if a resistor and a capacitor touch the same wire, the Python backend must assign them an identical string identifier (e.g., \texttt{N1}) before invoking the NGSPICE binary.
+
+\section{Finding the perfect image processing model (YOLOv8)}
+After evaluating the limitations of traditional OpenCV methods and two-stage detectors, we concluded that the YOLO (You Only Look Once) architecture—specifically YOLOv8—was the optimal solution for this project. 
+
+Unlike two-stage models that first generate region proposals before classification, YOLOv8 consolidates these distinct theoretical steps. It frames object detection as a single regression problem and utilizes an anchor-free detection head. This is highly advantageous for electronic components that vary wildly in aspect ratio (e.g., a long, thin wire versus a perfectly square logic gate). Furthermore, YOLOv8's integration with PyTorch allows for seamless exporting of the trained weights (\texttt{.pt} files) directly into our local Python Tkinter environment, enabling rapid, offline inference without the need for cloud computing APIs.

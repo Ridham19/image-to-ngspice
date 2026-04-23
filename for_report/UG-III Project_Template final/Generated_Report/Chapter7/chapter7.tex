@@ -1,0 +1,19 @@
+% chapter7.tex
+\chapter{Future Work}
+
+While the current iteration of PySpice Studio successfully bridges the gap between hand-drawn sketches and functional NGSPICE simulations, there remain several avenues for optimization. Future development will focus on enhancing the topological routing logic and expanding the system's analytical capabilities.
+
+\section{Implementation of OCR text extraction}
+Currently, the system isolates text bounding boxes but assigns default parametric values (e.g., $1\text{k}\Omega$) that require manual GUI editing. Future iterations will integrate an OCR engine (such as EasyOCR) to transcribe handwritten values (e.g., "10k", "5V") and algorithmically associate them with the nearest electronic component. This spatial mapping will fully automate the SPICE parameterization process.
+
+\section{Web and Cloud deployment}
+To increase accessibility and eliminate the hardware constraints of running local deep learning models, the monolithic Python/Tkinter architecture will be refactored into a client-server web application. Moving YOLO inference and NGSPICE execution to a cloud-hosted FastAPI backend will allow users to digitize circuits natively from mobile devices and web browsers.
+
+\section{Source classification}
+The AI model occasionally struggles to differentiate between visually similar circular source symbols if the sketch is blurry. Future work will implement a secondary, high-resolution classification pass to reliably distinguish between highly specific inputs, such as DC batteries, AC sine-wave generators, and Pulse sources, ensuring rigorous simulation accuracy.
+
+\section{Junction and crossover detection}
+Currently, the morphological wire-tracing algorithm assumes all intersections are shared electrical nodes. To support complex, overlapping schematics, "Junction Dots" and "Wire Crossovers" will be added as distinct detection classes. Furthermore, the OpenCV pipeline will utilize pixel-density heuristics to differentiate a genuine electrical connection from an insulated wire crossover.
+
+\section{Expanding the component library}
+To increase the utility of PySpice Studio as a robust analog design tool, the neural network's training dataset will be expanded. Rather than broadening into digital logic, focus will be placed on deeper analog integration—specifically training the model to recognize advanced MOSFET configurations and a wider array of specialized power sources. Synthetic data generation via programmatic drawing tools will be explored to rapidly scale this dataset without the bottleneck of manual human annotation.

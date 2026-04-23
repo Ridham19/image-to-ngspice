@@ -1,0 +1,20 @@
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {2.1}{\ignorespaces Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations.}}{5}{figure.caption.7}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization.}}{6}{figure.caption.8}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {5.1}{\ignorespaces The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar.}}{16}{figure.caption.9}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces The pin calibration interface used to map mathematical connection nodes to the visual component symbol.}}{18}{figure.caption.10}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces Transient analysis of a Diode Rectifier circuit executed via NGSPICE.}}{20}{figure.caption.11}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale.}}{20}{figure.caption.12}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {6.1}{\ignorespaces The raw, hand-drawn input sketch before any digital processing or AI inference.}}{21}{figure.caption.13}%
+\contentsline {figure}{\numberline {6.2}{\ignorespaces Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch.}}{22}{figure.caption.14}%
+\contentsline {figure}{\numberline {6.3}{\ignorespaces Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point.}}{22}{figure.caption.15}%
+\contentsline {figure}{\numberline {6.4}{\ignorespaces Normalized confusion matrix of the detection model across the 9 component classes and the background.}}{24}{figure.caption.16}%
+\contentsline {figure}{\numberline {6.5}{\ignorespaces Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}}{25}{figure.caption.17}%
+\contentsline {figure}{\numberline {6.6}{\ignorespaces Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}}{26}{figure.caption.18}%
+\contentsline {figure}{\numberline {6.7}{\ignorespaces The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation.}}{27}{figure.caption.19}%
+\addvspace {10\p@ }

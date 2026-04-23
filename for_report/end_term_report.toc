@@ -1,0 +1,48 @@
+\contentsline {section}{Abstract}{i}{section*.1}%
+\contentsline {section}{Problem Statement}{ii}{section*.2}%
+\contentsline {section}{Acknowledgements}{iii}{section*.3}%
+\contentsline {section}{\numberline {1}Introduction}{1}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Motivation and Objectives}{1}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Scope of the project (Desktop-based ML pipeline)}{2}{subsection.1.2}%
+\contentsline {section}{\numberline {2}Research and Literature Review}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Finding the dataset (Kaggle circuit dataset and its limitations)}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Review of existing object detection models}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Exploring schematic drawing tools (SchemDraw)}{5}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Understanding the NGSPICE simulation standard}{6}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Finding the perfect image processing model (YOLOv8)}{7}{subsection.2.5}%
+\contentsline {section}{\numberline {3}Machine Learning Architecture and Vision Pipeline}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}The evolution of Deep Learning in image processing}{7}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}What is YOLOv8 and how it works (Backbone, Neck, Head)}{8}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}The Backbone (Feature Extractor)}{8}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}The Neck (Feature Fusion)}{8}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.2.3}The Head (Anchor-Free Detection)}{8}{subsubsection.3.2.3}%
+\contentsline {subsection}{\numberline {3.3}The mathematics behind YOLO (IoU and Loss functions)}{9}{subsection.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.1}Intersection over Union (IoU)}{9}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.2}The Loss Function}{9}{subsubsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.4}OpenCV image preprocessing (Grayscale, Blur, Adaptive Thresholding)}{9}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Morphological operations for wire enhancement}{10}{subsection.3.5}%
+\contentsline {section}{\numberline {4}How YOLO is Used in Our Project}{11}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Domain-Specific Fine-Tuning for 19 Electronic Components}{11}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Handling Extreme Scale Variance in Schematics}{11}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Model training parameters and Google Colab setup}{12}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Bridging the gap: Translating AI tensors to pixel coordinates}{12}{subsection.4.4}%
+\contentsline {section}{\numberline {5}System Implementation: PySpice Studio}{13}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Graphical user interface (GUI) design using Tkinter}{13}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Interactive canvas engine (panning, zooming, and drag-and-drop)}{15}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}The wire routing algorithm (converting OpenCV masks to mathematical lines)}{15}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Netlist generation logic (converting canvas coordinates to a .cir file)}{16}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Executing NGSPICE binary simulations directly from Python}{16}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Current Results}{18}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Evaluation metrics (Precision, Recall, F1-Score, mAP)}{20}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Training performance analysis}{21}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Confusion Matrix analysis (Where our model excels and struggles)}{21}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Precision-Recall curves}{23}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}System walkthrough (Hand-drawn sketch $\rightarrow $ PySpice Canvas $\rightarrow $ Simulation output)}{24}{subsection.6.5}%
+\contentsline {section}{\numberline {7}Future Work}{25}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Implementation of OCR text extraction}{25}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Web and Cloud deployment}{26}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Source classification}{26}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Junction and crossover detection}{26}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Expanding the component library}{26}{subsection.7.5}%
+\contentsline {section}{\numberline {8}Conclusion}{27}{section.8}%
+\contentsline {section}{References}{28}{section.8}%

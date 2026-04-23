@@ -1,0 +1,85 @@
+% chapter5.tex
+\chapter{System Implementation: PySpice Studio}
+
+While the deep learning pipeline is responsible for recognizing the electronic components, the system requires a robust logic engine to visualize the results, allow user modifications, and translate visual data into mathematical models. This chapter details the implementation of \textbf{PySpice Studio}, a custom-built, desktop-based Electronic Design Automation (EDA) environment developed entirely in Python.
+
+\section{Graphical user interface (GUI) design using Tkinter}
+The user interface of PySpice Studio was engineered using Tkinter, Python's standard GUI framework. Tkinter was selected for its lightweight footprint and native OS integration, which ensures fast rendering without the overhead of heavy web frameworks like Electron. The interface layout is presented in Figure~\ref{fig:pyspice_editor}.
+
+The application architecture is divided into three primary regions:
+\begin{enumerate}
+    \item \textbf{Dynamic Toolbar:} Located at the top, it parses the component database (\texttt{library.py}) to dynamically generate tool buttons organized by categories (Passives, Sources, Active components, and Drawing Tools). 
+    \item \textbf{Interactive Canvas:} The central viewport where the circuit schematics are rendered and manipulated.
+    \item \textbf{Property Inspector Sidebar:} A dynamic data-binding panel on the right side. When a user selects a component, the sidebar dynamically generates entry fields for the component's internal dictionary (\texttt{comp.params}), allowing users to easily modify reference designators and SPICE parameters.
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{images/editor.png}
+    \caption{The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar.}
+    \label{fig:pyspice_editor}
+\end{figure}
+
+\section{Interactive canvas engine}
+To provide a professional CAD-like experience, the PySpice Studio canvas engine implements custom affine transformation logic rather than relying on static Tkinter pixel coordinates. The system maintains two parallel coordinate systems: \textbf{World Coordinates} (the absolute mathematical position of the components) and \textbf{Screen Coordinates} (where the pixels are drawn on the monitor).
+
+All mouse events are piped through \texttt{world\_to\_screen} and \texttt{screen\_to\_world} transformation functions:
+\begin{itemize}
+    \item \textbf{Grid Snapping:} As the user drags the mouse, coordinates are divided by a constant \texttt{GRID\_SIZE} (set to 20), rounded, and multiplied back. This strictly enforces orthogonal alignment.
+    \item \textbf{Zooming:} Bound to the mouse wheel, the zoom function applies a scalar multiplier (\texttt{self.zoom}) to the canvas and dynamically adjusts the viewing offset (\texttt{offset\_x}, \texttt{offset\_y}) to ensure the zoom centers precisely on the user's cursor.
+    \item \textbf{Image Caching:} To maintain a high frame rate during panning, component graphics are cached in memory using their type, rotation angle, and current zoom scale as a unique dictionary key.
+\end{itemize}
+
+\section{The wire routing algorithm}
+A circuit is fundamentally a graph, and the wires represent the edges connecting the component nodes. Within PySpice Studio, wires are not stored as graphical pixels; they are stored as mathematical tuples containing start and end coordinates.
+
+When the Deep Learning and OpenCV pipelines process a hand-drawn sketch, the morphological line-tracing algorithm outputs a series of coordinate paths. These paths are passed into the canvas engine, where they are discretized and snapped to the nearest \texttt{GRID\_SIZE} intervals. 
+
+Furthermore, the GUI allows for manual wire correction. Using orthogonal routing logic, when a user clicks two points on the canvas, the system automatically resolves the diagonal delta into horizontal and vertical segments. If a wire intersects a component's registered pin coordinates, an electrical connection is successfully established.
+
+\subsection{Pin calibration for accurate routing}
+To ensure precise electrical connectivity during the wire routing phase, each component model undergoes a pin calibration process. As shown in Figure~\ref{fig:pin_calibration}, this procedure maps the exact mathematical coordinates of the connection nodes to their graphical representation on the PySpice Studio canvas. This critical alignment guarantees that when a user routes a wire to a visual pin, the underlying logic engine correctly registers the intersection and establishes the connection for the subsequent netlist generation phase.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/pin_calibration.png}
+    \caption{The pin calibration interface used to map mathematical connection nodes to the visual component symbol.}
+    \label{fig:pin_calibration}
+\end{figure}
+
+\section{Netlist generation logic}
+SPICE simulators do not understand 2D coordinates; they only understand shared nodes. Translating the visual canvas into a text-based \texttt{.cir} file requires an algorithmic graph traversal, which is handled by the \texttt{analyze\_circuit} function.
+
+The generation process follows a strict sequence:
+\begin{enumerate}
+    \item \textbf{Adjacency Mapping:} The algorithm iterates over all wire segments and component pins, building an adjacency list (\texttt{adj}) that maps every coordinate point to all other points it physically touches.
+    \item \textbf{Node Clustering (DFS):} Using a Depth-First Search (DFS) algorithm with a \texttt{visited} set and a \texttt{stack}, the system traverses the adjacency list. Every connected cluster of wires and pins is assigned a unique string ID.
+    \item \textbf{Ground and Label Overrides:} If the DFS traversal encounters a Ground symbol (\texttt{gnd}), that entire node cluster is aggressively renamed to the universal SPICE ground identifier: \texttt{"0"}.
+    \item \textbf{Netlist Transcription:} Finally, the algorithm iterates through the active components. It looks up the mathematical nodes touching its pins, queries the component database for its specific SPICE syntax string, and formats the final string block.
+\end{enumerate}
+
+\section{Executing NGSPICE binary simulations directly from Python}
+The ultimate goal of the pipeline is mathematical validation. PySpice Studio includes a dedicated Simulation Dialog that allows users to configure Transient, AC, DC Sweep, or Operating Point analyses. 
+
+Once the simulation parameters and plot probes are configured, the Python backend executes the following steps:
+\begin{enumerate}
+    \item It writes the generated string data from the netlist algorithm into a temporary local file named \texttt{circuit.cir}.
+    \item It appends a SPICE \texttt{.control} block to the file, which dictates plot colors, variables to trace, and the specific \texttt{run} command.
+    \item It utilizes Python's \texttt{subprocess.Popen} library to asynchronously invoke the \texttt{ngspice.exe} binary installed on the host machine, passing the \texttt{.cir} file as a command-line argument.
+\end{enumerate}
+
+This opens the native NGSPICE graphing utility directly over the PySpice Studio interface, providing the user with immediate, highly accurate waveform visualizations.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{images/transient_rectifier.png}
+    \caption{Transient analysis of a Diode Rectifier circuit executed via NGSPICE.}
+    \label{fig:sim_transient}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{images/AC_HPF.png}
+    \caption{AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale.}
+    \label{fig:sim_ac}
+\end{figure}

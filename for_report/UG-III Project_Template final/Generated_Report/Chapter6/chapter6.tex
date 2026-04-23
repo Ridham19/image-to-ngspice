@@ -1,0 +1,96 @@
+% chapter6.tex
+\chapter{Current Results}
+
+At the current stage, the project can confidently locate and extract primary components from varying layouts of handwritten circuit designs. We have verified the system output against multiple moderately complex test circuits, transitioning them from physical sketches to mathematical representations.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{C171_D1_P1/C171_D1_P1.jpeg}
+    \caption{The raw, hand-drawn input sketch before any digital processing or AI inference.}
+    \label{fig:raw_input}
+\end{figure}
+
+The feasibility of automated circuit digitization has proven successful. The YOLOv8 model demonstrates robust bounding box captures regardless of the drawing scale or minor rotational variances, as seen in Figure~\ref{fig:example_output}. Figure~\ref{fig:heatmap} provides the corresponding heatmap overlay.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{C171_D1_P1/3_feature_extraction.png}
+    \caption{Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch.}
+    \label{fig:example_output}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{C171_D1_P1/0_yolo_heatmap.png}
+    \caption{Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point.}
+    \label{fig:heatmap}
+\end{figure}
+
+\section{Evaluation metrics (Precision, Recall, F1-Score, mAP)}
+To scientifically quantify the performance of the object detection model, we rely on four standard machine learning metrics calculated by comparing the AI's predictions against the ground-truth labeled dataset:
+
+\begin{itemize}
+    \item \textbf{Precision:} Measures the accuracy of the positive predictions. Out of all the bounding boxes the AI drew, what percentage were actually correct?
+    \item \textbf{Recall:} Measures the model's ability to find all the positive samples. Out of all the actual components drawn on the paper, what percentage did the AI successfully find?
+    \item \textbf{F1-Score:} The harmonic mean of Precision and Recall. It provides a single metric to judge the perfect balance.
+    \item \textbf{mAP (Mean Average Precision):} The most critical metric for object detection. It is calculated by taking the area under the Precision-Recall curve for every single class, and averaging them together.
+\end{itemize}
+
+\section{Training performance analysis}
+The model was trained over 100 epochs, allowing the neural network ample iterations to adjust its internal weights. During the early epochs, the bounding box regression loss and classification loss dropped sharply, indicating that the model quickly learned to differentiate between blank paper, wires, and actual components. 
+
+By epoch 80, the loss curves began to plateau, indicating convergence. The model successfully learned the visual signatures of the 19 classes without overfitting to the training data.
+
+\section{Confusion Matrix analysis}
+The confusion matrix is a powerful diagnostic tool that visualizes exactly where the AI is making classification errors. In a normalized confusion matrix, the diagonal from top-left to bottom-right represents correct predictions (True Positives).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{images/confusion_matrix_normalized.png}
+    \caption{Normalized confusion matrix of the detection model across the 9 component classes and the background.}
+    \label{fig:confusion_matrix_normalized}
+\end{figure}
+
+\textbf{Analysis of the Matrix:}\par
+The deep blue shading along the main diagonal indicates a high overall classification accuracy for most core components, as illustrated in Figure~\ref{fig:confusion_matrix_normalized}. The model performs exceptionally well at identifying geometrically distinct features such as \textbf{Transistors} (88\% accuracy) and \textbf{Resistors} (82\% accuracy). 
+
+However, analyzing the off-diagonal elements reveals specific morphological struggles. \textbf{Inductors} proved to be the most difficult class to detect correctly (only 60\% accuracy), with the model frequently confusing true resistors for inductors (12\% of the time). Similarly, there is a minor confusion where true capacitors are misclassified as sources (9\%).
+
+The most significant insights come from the background classifications (False Positives and False Negatives). The bottom row indicates that the model occasionally misses real components entirely, particularly variable or small symbols like ground and inductors. Conversely, the rightmost column reveals a notable False Positive issue with the \textbf{text} class.
+
+\section{Precision-Recall curves}
+The Precision-Recall (PR) curve plots precision against recall for varying confidence thresholds. A perfect model would have a line that hugs the top-right corner of the graph.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/BoxPR_curve.png}
+    \caption{Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}
+    \label{fig:pr_curve}
+\end{figure}
+
+As shown in Figure \ref{fig:pr_curve}, the overall \textbf{mAP@0.5 reached 0.837}, proving the system is highly viable for real-world usage. Breaking down the classes, the model achieved exceptional Average Precision for Transistors (0.916) and Resistors (0.878). 
+
+Furthermore, analyzing the F1-Confidence curve generated during training revealed an optimal peak of \textbf{0.80 at a confidence threshold of 0.343}. Based on this, our PySpice Studio backend was hardcoded to use a confidence threshold of \texttt{0.40} during inference.
+
+\section{System walkthrough}
+To demonstrate the full pipeline, we trace a circuit from paper to simulation.
+
+\textbf{Step 1: Digitization.} The user uploads a photograph of a hand-drawn circuit. The YOLOv8 model runs inference, isolating the components, while OpenCV morphological algorithms extract wire traces (Figure~\ref{fig:canvas_confirmation}).
+
+\begin{figure}[H]
+    \centering
+     \includegraphics[width=0.8\textwidth]{C171_D1_P1/canvas_confirmation.png}
+    \caption{Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}
+    \label{fig:canvas_confirmation}
+\end{figure}
+
+\textbf{Step 2: Interactive Canvas.} The PySpice Studio GUI translates these raw matrices into an interactive, grid-snapped digital canvas (Figure~\ref{fig:canvas_output}). 
+
+\begin{figure}[H]
+    \centering
+     \includegraphics[width=1.0\textwidth]{C171_D1_P1/canvas_output.png}
+    \caption{The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation.}
+    \label{fig:canvas_output}
+\end{figure}
+
+\textbf{Step 3: SPICE Execution.} Once the user verifies the layout, the Python logic subsystem generates the nodal netlist and invokes the NGSPICE binary. The resulting simulation is immediately plotted on the screen, successfully completing the journey from a physical sketch to a validated digital simulation.

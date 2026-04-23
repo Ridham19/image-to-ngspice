@@ -1,0 +1,60 @@
+% chapter3.tex
+\chapter{Machine Learning Architecture and Vision Pipeline}
+
+To successfully convert a raw, hand-drawn sketch into a functional digital simulation, the system relies on a hybrid pipeline combining cutting-edge Deep Learning object detection with traditional, deterministic Computer Vision algorithms. This chapter details the theoretical and mathematical foundations of the vision subsystem.
+
+\section{The evolution of Deep Learning in image processing}
+Traditional image processing relies heavily on manual feature extraction techniques, such as Haar cascades or template matching, to identify objects. While effective in highly controlled environments, these methods struggle severely with varying lighting, scale discrepancies, and the inherent inconsistencies of human handwriting. Deep Learning, specifically Convolutional Neural Networks (CNNs), revolutionized this domain by automatically learning hierarchical features from massive datasets.
+
+Early deep learning detection architectures, such as Faster R-CNN, utilized a two-stage process: they first generated thousands of "region proposals" and subsequently ran a classifier over each one. While highly accurate, this two-stage pipeline is computationally expensive. For real-time circuit digitization, our system requires rapid, unified inference. Therefore, we selected the \textbf{YOLO (You Only Look Once)} architecture. YOLO frames object detection as a single regression problem, predicting bounding boxes and class probabilities simultaneously directly from the full image in one evaluation.
+
+\section{What is YOLOv8 and how it works (Backbone, Neck, Head)}
+YOLOv8 represents the state-of-the-art in the YOLO family, offering an anchor-free detection mechanism. The architecture is fundamentally divided into three core deep learning subsystems: the Backbone, the Neck, and the Head.
+
+\subsection{The Backbone (Feature Extractor)}
+The backbone is responsible for extracting visual features from the raw input image of the circuit sketch. YOLOv8 utilizes a modified CSPNet (Cross Stage Partial Network). As the image passes through successive convolutional layers, spatial dimensions are reduced while the channel depth increases. Early layers detect primitive features like straight lines and corners (crucial for wires), while deeper layers detect complex semantic features, such as the specific zig-zag pattern of a resistor.
+
+\subsection{The Neck (Feature Fusion)}
+Circuit diagrams contain objects of wildly different scales—for instance, a massive voltage source versus a microscopic junction dot. To solve this, YOLOv8 uses a PANet (Path Aggregation Network) structure in its Neck. It takes high-level, semantically strong features from the deep layers and combines them with low-level, spatially accurate features from earlier layers. This multi-scale fusion ensures that the model does not lose the coordinates of tiny components while processing the larger image context.
+
+\subsection{The Head (Anchor-Free Detection)}
+Unlike older models that used predefined "anchor boxes," YOLOv8 directly predicts the center of an object and the distance to its bounding box edges. The head outputs two separate streams simultaneously:
+\begin{itemize}
+    \item \textbf{Classification Branch:} Predicts the probability of the object belonging to one of the target classes.
+    \item \textbf{Regression Branch:} Predicts the spatial bounding box coordinates $[x, y, w, h]$.
+\end{itemize}
+
+\section{The mathematics behind YOLO (IoU and Loss functions)}
+During training and inference, the neural network relies on strict mathematical formulations to refine its accuracy and penalize incorrect guesses.
+
+\subsection{Intersection over Union (IoU)}
+To determine if a predicted bounding box correctly captures a circuit component, the model calculates the IoU against the ground truth labels provided in the dataset. It is defined as the area of overlap divided by the area of union between the predicted box and the actual box:
+\begin{equation}
+    IoU = \frac{\text{Area of Overlap}}{\text{Area of Union}}
+\end{equation}
+If the IoU exceeds a predefined threshold (e.g., $0.50$), the detection is considered a True Positive.
+
+\subsection{The Loss Function}
+During the training phase, YOLOv8 optimizes its weights using a composite loss function that penalizes classification errors, bounding box coordinate errors, and distribution focal loss (DFL) for fine-tuning box edges:
+\begin{equation}
+    \mathcal{L}_{total} = \lambda_{box} \mathcal{L}_{box} + \lambda_{cls} \mathcal{L}_{cls} + \lambda_{dfl} \mathcal{L}_{dfl}
+\end{equation}
+By minimizing $\mathcal{L}_{total}$ over hundreds of epochs, the neural network converges, learning the precise visual signatures of the 19 distinct electronic classes.
+
+\section{OpenCV image preprocessing}
+While YOLO handles the classification of distinct components, extracting the hand-drawn wires requires deterministic pixel-level analysis. Before the system can mathematically route wires, the raw image must be cleaned using OpenCV to remove shadows, paper textures, and lighting gradients.
+
+\begin{itemize}
+    \item \textbf{Grayscale Conversion:} The image is reduced from a 3-channel RGB array to a 1-channel grayscale matrix.
+    \item \textbf{Gaussian Blurring:} A $5 \times 5$ Gaussian kernel is convoluted over the image to smooth out high-frequency noise.
+    \item \textbf{Adaptive Thresholding:} Because a photograph of a sketch often has uneven lighting, standard global thresholding fails. Gaussian Adaptive Thresholding calculates the threshold for small, localized regions, ensuring that dark lines are extracted cleanly.
+\end{itemize}
+
+\section{Morphological operations for wire enhancement}
+Hand-drawn circuit sketches frequently suffer from discontinuities; a pen might skip, leaving a micro-gap in a wire trace. If left uncorrected, the routing algorithm would perceive this as an open circuit, ruining the final SPICE simulation.
+
+To repair these breaks algorithmically, we employed Morphological Operations on the binarized image using a $5 \times 5$ structural element (kernel).
+\begin{itemize}
+    \item \textbf{Dilation:} This operation expands the white regions of the image, effectively bridging small gaps, but thickening the overall lines.
+    \item \textbf{Morphological Closing:} To bridge gaps without permanently thickening the lines, we used the "Closing" operation, which is a mathematical Dilation immediately followed by an Erosion. This successfully repairs broken traces while preserving the original structural geometry of the circuit.
+\end{itemize}
