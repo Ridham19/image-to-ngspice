@@ -1,1 +1,0 @@
-*Please use the 'acknowl', 'abstract', 'abbreviations' and 'conclusion' tex files given in this folder only.
