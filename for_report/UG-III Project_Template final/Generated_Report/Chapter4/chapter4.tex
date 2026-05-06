@@ -3,10 +3,10 @@
 
 While understanding the base YOLO architecture is critical, the true engineering challenge of this project lay in adapting a generalized Deep Learning model into a specialized electronic schematic digitizer. This section details the practical implementation, training, and data-translation phases of the machine learning pipeline.
 
-\section{Domain-Specific Fine-Tuning for 19 Electronic Components}
+\section{Domain-Specific Fine-Tuning for 9 Electronic Components}
 A base YOLOv8 model, pre-trained on the standard COCO (Common Objects in Context) dataset, is highly proficient at recognizing everyday objects like cars, people, and furniture, but it has zero concept of electronic symbology. Training a deep neural network from scratch to recognize circuits would require millions of images and massive computational resources.
 
-To circumvent this, we utilized \textbf{Transfer Learning}. We retained the generalized feature-extraction weights in the YOLOv8 backbone—which already understood how to detect edges, corners, and geometric shapes—but completely replaced the classification head. The model was then fine-tuned on our specialized Kaggle dataset containing 19 unique circuit classes (including resistors, capacitors, voltage sources, ground symbols, etc.). This approach allowed the network to leverage its existing foundational knowledge of geometry while exclusively learning the visual signatures of electronic components.
+To circumvent this, we utilized \textbf{Transfer Learning}. We retained the generalized feature-extraction weights in the YOLOv8 backbone—which already understood how to detect edges, corners, and geometric shapes—but completely replaced the classification head. The model was then fine-tuned on our specialized Kaggle dataset containing 9 unique circuit classes (including resistors, capacitors, voltage sources, ground symbols, etc.). This approach allowed the network to leverage its existing foundational knowledge of geometry while exclusively learning the visual signatures of electronic components.
 
 \section{Handling Extreme Scale Variance in Schematics}
 One of the primary difficulties in parsing hand-drawn schematics is the extreme variance in object scale. A long wire trace might span $80\%$ of the image canvas, while a junction dot or a small diode takes up less than $2\%$. Standard convolutional networks often lose the spatial data of tiny objects as the image is pooled into deeper layers.

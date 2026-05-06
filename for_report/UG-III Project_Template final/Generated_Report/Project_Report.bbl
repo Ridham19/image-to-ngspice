@@ -21,14 +21,6 @@
 \providecommand{\BIBdecl}{\relax}
 \BIBdecl
 
-\bibitem{redmon2016}
-\BIBentryALTinterwordspacing
-J.~Redmon, S.~Divvala, R.~Girshick, and A.~Farhadi, ``You only look once:
-  Unified, real-time object detection,'' in \emph{Proc. CVPR}, 2016. [Online].
-  Available:
-  \url{https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Redmon_You_Only_Look_CVPR_2016_paper.pdf}
-\BIBentrySTDinterwordspacing
-
 \bibitem{thoma2021}
 \BIBentryALTinterwordspacing
 F.~Thoma, J.~Bayer, Y.~Li, and A.~Dengel, ``A public ground-truth dataset for
@@ -43,6 +35,30 @@ N.~Ahmed \emph{et~al.}, ``Digitize-hcd: A dataset for digitization of
   handwritten circuit diagrams,'' \emph{Data in Brief}, vol.~59, 2025.
   [Online]. Available:
   \url{https://www.researchgate.net/publication/388159586_Digitize-HCD_A_Dataset_for_Digitization_of_Handwritten_Circuit_Diagrams}
+\BIBentrySTDinterwordspacing
+
+\bibitem{ren2015}
+\BIBentryALTinterwordspacing
+S.~Ren, K.~He, R.~Girshick, and J.~Sun, ``Faster r-cnn: Towards real-time
+  object detection with region proposal networks,'' \emph{Advances in Neural
+  Information Processing Systems}, 2015. [Online]. Available:
+  \url{https://arxiv.org/pdf/1506.01497}
+\BIBentrySTDinterwordspacing
+
+\bibitem{liu2016}
+\BIBentryALTinterwordspacing
+W.~Liu, D.~Anguelov, D.~Erhan, C.~Szegedy, S.~Reed, C.-Y. Fu, and A.~C. Berg,
+  ``Ssd: Single shot multibox detector,'' in \emph{European Conference on
+  Computer Vision (ECCV)}, 2016. [Online]. Available:
+  \url{https://www.researchgate.net/publication/308278279_SSD_Single_Shot_MultiBox_Detector}
+\BIBentrySTDinterwordspacing
+
+\bibitem{redmon2016}
+\BIBentryALTinterwordspacing
+J.~Redmon, S.~Divvala, R.~Girshick, and A.~Farhadi, ``You only look once:
+  Unified, real-time object detection,'' in \emph{Proc. CVPR}, 2016. [Online].
+  Available:
+  \url{https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Redmon_You_Only_Look_CVPR_2016_paper.pdf}
 \BIBentrySTDinterwordspacing
 
 \bibitem{patare2016}
@@ -93,8 +109,8 @@ R.~Kevat, Y.~Badwaik, and D.~Nayak, ``Image-to-ngspice: Handwritten circuit to
 
 \bibitem{projspice}
 \BIBentryALTinterwordspacing
-------, ``Spice-playground.'' [Online]. Available:
-  \url{https://github.com/Ridham19/Spice-Playground}
+R.~Kevat, Y.~Badwaik, and D.~{\mbox{}Nayak}, ``Spice-playground.'' [Online].
+  Available: \url{https://github.com/Ridham19/Spice-Playground}
 \BIBentrySTDinterwordspacing
 
 \bibitem{reposchemdraw}

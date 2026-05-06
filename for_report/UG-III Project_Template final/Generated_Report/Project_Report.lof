@@ -1,20 +1,25 @@
 \addvspace {10\p@ }
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {2.1}{\ignorespaces Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations.}}{5}{figure.caption.7}%
-\contentsline {figure}{\numberline {2.2}{\ignorespaces An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization.}}{6}{figure.caption.8}%
+\contentsline {figure}{\numberline {2.1}{\ignorespaces An example of programmatic circuit generation using the SchemDraw library, demonstrating the syntax-heavy nature of manual digitization.}}{4}{figure.caption.7}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces Sample images from the Kaggle dataset showcasing varying sketching styles, illumination, and component orientations.}}{5}{figure.caption.8}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Project Pipeline Flowchart illustrating the journey from a raw hand-drawn circuit sketch to a validated NGSPICE netlist.}}{12}{figure.caption.9}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Visual representation of Intersection over Union (IoU).}}{14}{figure.caption.10}%
 \addvspace {10\p@ }
 \addvspace {10\p@ }
+\contentsline {figure}{\numberline {5.1}{\ignorespaces The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar.}}{20}{figure.caption.11}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces The pin calibration interface used to map mathematical connection nodes to the visual component symbol.}}{22}{figure.caption.12}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces Transient analysis of a Diode Rectifier circuit executed via NGSPICE.}}{23}{figure.caption.13}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale.}}{24}{figure.caption.14}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {5.1}{\ignorespaces The PySpice Studio graphical user interface displaying a mixed-signal circuit layout, component properties sidebar, and the dynamic toolbar.}}{16}{figure.caption.9}%
-\contentsline {figure}{\numberline {5.2}{\ignorespaces The pin calibration interface used to map mathematical connection nodes to the visual component symbol.}}{18}{figure.caption.10}%
-\contentsline {figure}{\numberline {5.3}{\ignorespaces Transient analysis of a Diode Rectifier circuit executed via NGSPICE.}}{20}{figure.caption.11}%
-\contentsline {figure}{\numberline {5.4}{\ignorespaces AC Frequency sweep analysis of a High-Pass Filter plotted on a logarithmic scale.}}{20}{figure.caption.12}%
-\addvspace {10\p@ }
-\contentsline {figure}{\numberline {6.1}{\ignorespaces The raw, hand-drawn input sketch before any digital processing or AI inference.}}{21}{figure.caption.13}%
-\contentsline {figure}{\numberline {6.2}{\ignorespaces Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch.}}{22}{figure.caption.14}%
-\contentsline {figure}{\numberline {6.3}{\ignorespaces Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point.}}{22}{figure.caption.15}%
-\contentsline {figure}{\numberline {6.4}{\ignorespaces Normalized confusion matrix of the detection model across the 9 component classes and the background.}}{24}{figure.caption.16}%
-\contentsline {figure}{\numberline {6.5}{\ignorespaces Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}}{25}{figure.caption.17}%
-\contentsline {figure}{\numberline {6.6}{\ignorespaces Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}}{26}{figure.caption.18}%
-\contentsline {figure}{\numberline {6.7}{\ignorespaces The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation.}}{27}{figure.caption.19}%
+\contentsline {figure}{\numberline {6.1}{\ignorespaces The raw, hand-drawn input sketch before any digital processing or AI inference.}}{25}{figure.caption.15}%
+\contentsline {figure}{\numberline {6.2}{\ignorespaces Feature extraction and detection output, demonstrating robust bounding box captures over the raw sketch.}}{26}{figure.caption.16}%
+\contentsline {figure}{\numberline {6.3}{\ignorespaces Heatmap overlay representing the model's detection confidence. Hotter (red) zones indicate near-certainty of a component's center point.}}{26}{figure.caption.17}%
+\contentsline {figure}{\numberline {6.4}{\ignorespaces Normalized confusion matrix of the detection model across the 9 component classes and the background.}}{27}{figure.caption.18}%
+\contentsline {figure}{\numberline {6.5}{\ignorespaces Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}}{28}{figure.caption.19}%
+\contentsline {figure}{\numberline {6.6}{\ignorespaces F1-Confidence curve demonstrating the harmonic mean of precision and recall across various confidence thresholds. The peak F1 score of 0.80 occurs at a confidence of 0.343.}}{29}{figure.caption.20}%
+\contentsline {figure}{\numberline {6.7}{\ignorespaces Precision-Confidence curve showing how the accuracy of positive predictions increases as the confidence threshold is raised.}}{30}{figure.caption.21}%
+\contentsline {figure}{\numberline {6.8}{\ignorespaces Recall-Confidence curve illustrating the trade-off as the confidence threshold increases. At higher thresholds, the model's ability to find all ground-truth objects (recall) naturally decreases.}}{30}{figure.caption.22}%
+\contentsline {figure}{\numberline {6.9}{\ignorespaces Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}}{31}{figure.caption.23}%
+\contentsline {figure}{\numberline {6.10}{\ignorespaces The final digitized circuit loaded into the PySpice Studio interactive canvas, ready for user modification and wire-routing validation.}}{32}{figure.caption.24}%
 \addvspace {10\p@ }

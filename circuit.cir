@@ -1,20 +1,21 @@
 * PySpice Studio Netlist
 
-.Model Dx diode (Is=14n Rs=0 N=1)
+.Model Tx NPN (BF=300)
 
-D1 1 2 010de
-I1 3 4 Ir01ut0y ic=0
-C1 5 6 uc1t0rCap ic=0
-R1 7 8 uc1t0rCap
-V1 9 10 DC 5
+R1 1 1 L0k
+T1 4 1 2 Tx
+V1 5 6 DC 5v
+T4 1 2 7 Tx
+R2 8 9 0k
+V2 12 13 DC 8
+V3 14 15 DC A
+R3 0 0 500r
 
-.tran 0.1m 80m 0
+.op
 .control
 run
 set color0 = white
 set color1 = black
-set color2 = red
 set xbrushwidth = 2
-plot v(1) title 'Graph Window 1'
 .endc
 .end

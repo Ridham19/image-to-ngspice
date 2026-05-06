@@ -1,6 +1,6 @@
 % Project_Report.tex
 
-\documentclass[12pt,oneside,openright]{report}
+\documentclass[12pt,a4paper,oneside,openright]{report}
 
 \usepackage{svniteced_project}
 \usepackage{graphics} 
@@ -27,16 +27,31 @@
 \usepackage{eso-pic}
 \usepackage{fancybox}
 \usepackage{lipsum}
-\usepackage{geometry}
+\usepackage[bottom=2.5cm,footskip=1cm]{geometry}
 \usepackage{makeidx}
-\usepackage[justification=centering]{caption}
+\usepackage[justification=justified]{caption}
 \usepackage{afterpage}
 \usepackage{lscape}
 \usepackage{longtable}
 \usepackage{cite}
 \usepackage[colorlinks=true,linkcolor=blue]{hyperref}
 
+\usepackage{splitbib}
+\begin{category}[A]{Research Papers}
+\SBentries{redmon2016,thoma2021,ahmed2025,patare2016,ren2015,liu2016}
+\end{category}
+\begin{category}[B]{Datasets}
+\SBentries{cghd}
+\end{category}
+\begin{category}[C]{Software and Documentation}
+\SBentries{ultralyticsdocs,schemdrawdocs,netron,ngspice}
+\end{category}
+\begin{category}[D]{Repositories}
+\SBentries{projimage,projspice,reposchemdraw,repoultralytics}
+\end{category}
+
 \begin{document}
+\sloppy
 
 % Title of the Project
 \title{Image to SPICE Netlist Generator using Deep Learning}
@@ -56,7 +71,7 @@
 \CoGuidePosn{Associate Professor}
 \CoGuideAssociation{DoECE}
 
-\date{April 2026}
+\date{May 2026}
 
 \MakeTitlePage
 

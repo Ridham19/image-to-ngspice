@@ -39,7 +39,8 @@ To scientifically quantify the performance of the object detection model, we rel
 \section{Training performance analysis}
 The model was trained over 100 epochs, allowing the neural network ample iterations to adjust its internal weights. During the early epochs, the bounding box regression loss and classification loss dropped sharply, indicating that the model quickly learned to differentiate between blank paper, wires, and actual components. 
 
-By epoch 80, the loss curves began to plateau, indicating convergence. The model successfully learned the visual signatures of the 19 classes without overfitting to the training data.
+By epoch 80, the loss curves began to plateau, indicating convergence. The model successfully learned the visual signatures of the 9 classes without overfitting to the training data.
+
 
 \section{Confusion Matrix analysis}
 The confusion matrix is a powerful diagnostic tool that visualizes exactly where the AI is making classification errors. In a normalized confusion matrix, the diagonal from top-left to bottom-right represents correct predictions (True Positives).
@@ -51,6 +52,7 @@ The confusion matrix is a powerful diagnostic tool that visualizes exactly where
     \label{fig:confusion_matrix_normalized}
 \end{figure}
 
+\newpage
 \textbf{Analysis of the Matrix:}\par
 The deep blue shading along the main diagonal indicates a high overall classification accuracy for most core components, as illustrated in Figure~\ref{fig:confusion_matrix_normalized}. The model performs exceptionally well at identifying geometrically distinct features such as \textbf{Transistors} (88\% accuracy) and \textbf{Resistors} (82\% accuracy). 
 
@@ -63,7 +65,7 @@ The Precision-Recall (PR) curve plots precision against recall for varying confi
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\textwidth]{images/BoxPR_curve.png}
+    \includegraphics[width=0.9\textwidth]{images/BoxPR_curve.png}
     \caption{Precision-Recall curve of the YOLO model, achieving an overall mAP@0.5 of 0.837.}
     \label{fig:pr_curve}
 \end{figure}
@@ -72,6 +74,29 @@ As shown in Figure \ref{fig:pr_curve}, the overall \textbf{mAP@0.5 reached 0.837
 
 Furthermore, analyzing the F1-Confidence curve generated during training revealed an optimal peak of \textbf{0.80 at a confidence threshold of 0.343}. Based on this, our PySpice Studio backend was hardcoded to use a confidence threshold of \texttt{0.40} during inference.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/BoxF1_curve.png}
+    \caption{F1-Confidence curve demonstrating the harmonic mean of precision and recall across various confidence thresholds. The peak F1 score of 0.80 occurs at a confidence of 0.343.}
+    \label{fig:f1_curve}
+\end{figure}
+
+The individual Precision-Confidence and Recall-Confidence curves provide further insight into the model's behavior. As shown in Figure~\ref{fig:p_curve}, demanding a higher confidence threshold increases the precision, ensuring that the detected bounding boxes are almost certainly correct. However, Figure~\ref{fig:r_curve} demonstrates the inherent trade-off: a higher threshold causes the recall to drop, meaning the model might miss some faint or ambiguous hand-drawn components. Balancing these two metrics is essential for the reliability of the PySpice Studio backend.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/BoxP_curve.png}
+    \caption{Precision-Confidence curve showing how the accuracy of positive predictions increases as the confidence threshold is raised.}
+    \label{fig:p_curve}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/BoxR_curve.png}
+    \caption{Recall-Confidence curve illustrating the trade-off as the confidence threshold increases. At higher thresholds, the model's ability to find all ground-truth objects (recall) naturally decreases.}
+    \label{fig:r_curve}
+\end{figure}
+
 \section{System walkthrough}
 To demonstrate the full pipeline, we trace a circuit from paper to simulation.
 
@@ -79,7 +104,7 @@ To demonstrate the full pipeline, we trace a circuit from paper to simulation.
 
 \begin{figure}[H]
     \centering
-     \includegraphics[width=0.8\textwidth]{C171_D1_P1/canvas_confirmation.png}
+     \includegraphics[width=0.95\textwidth]{C171_D1_P1/canvas_confirmation.png}
     \caption{Confirmation of the digitized elements before rendering them onto the PySpice Studio interactive canvas.}
     \label{fig:canvas_confirmation}
 \end{figure}
@@ -94,3 +119,40 @@ To demonstrate the full pipeline, we trace a circuit from paper to simulation.
 \end{figure}
 
 \textbf{Step 3: SPICE Execution.} Once the user verifies the layout, the Python logic subsystem generates the nodal netlist and invokes the NGSPICE binary. The resulting simulation is immediately plotted on the screen, successfully completing the journey from a physical sketch to a validated digital simulation.
+
+\vspace{0.5cm}
+\textbf{Generated NGSPICE Netlist:}
+\begin{verbatim}
+* PySpice Studio Netlist
+
+.Model Tx NPN (BF=300)
+
+R1 0 0 4t0k
+R2 0 0 Au0
+R3 0 0 1k
+R4 2 0 33k
+R5 2 0 33k
+C1 7 8 I00K ic=0
+R6 3 9 ak
+V1 10 11 DC 05B
+R7 12 13 2k
+C2 14 15 40u ic=0
+C3 2 2 331 ic=0
+C4 4 5 4 ic=0
+C5 6 6 351 ic=0
+C6 4 5 tp ic=0
+R8 16 17 1k
+T13 18 3 0 2Mzzz
+T17 19 6 3 2Mzzz
+V2 0 0 DC 5
+C7 20 21 40u ic=0
+
+.op
+.control
+run
+set color0 = white
+set color1 = black
+set xbrushwidth = 2
+.endc
+.end
+\end{verbatim}

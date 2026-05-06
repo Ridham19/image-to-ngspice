@@ -73,7 +73,7 @@
         \textbf{\large
             Department of Electronics and Communication Engineering\\
             Sardar Vallabhbhai National Institute of Technology, Surat\\
-            April, 2026
+            May, 2026
         }
     \end{center}
     \vspace*{\fill}
@@ -244,6 +244,14 @@ During training and inference, the neural network relies on strict mathematical 
 
 \subsubsection{Intersection over Union (IoU)}
 To determine if a predicted bounding box correctly captures a circuit component, the model calculates the IoU against the ground truth labels provided in the dataset. It is defined as the area of overlap divided by the area of union between the predicted box and the actual box:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{images/IoU.png}
+    \caption{Visual representation of Intersection over Union (IoU).}
+    \label{fig:iou_main}
+\end{figure}
+
 \begin{equation}
     IoU = \frac{\text{Area of Overlap}}{\text{Area of Union}}
 \end{equation}

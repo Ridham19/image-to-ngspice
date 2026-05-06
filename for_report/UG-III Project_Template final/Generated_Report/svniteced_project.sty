@@ -240,7 +240,7 @@
 \newcommand{\MakeTitlePage}{
 
 % Margins for the Title Page
-\newgeometry{top=2cm, bottom=2cm, left=3cm, right=2cm, hcentering}
+\newgeometry{top=2cm, bottom=2cm, left=2.5cm, right=2.5cm, bindingoffset=0pt}
 \dsp
 
 \setlength{\textheight}{9in}
@@ -276,7 +276,7 @@ in Partial Fulfilment for the Requirements for the Degree of}}\\
 	\vfill
 	\&
 	\vfill 
-	{\large \color{Blue}{\bf \@coguidenm \\ \@coguideposn, \@coguideasso}}
+	{\large \color{Blue}{\bf \@coguidenm \\ \color{Black}\@coguideposn, \@coguideasso}}
 	\fi
 	\end{center}
 \vfill
@@ -298,9 +298,7 @@ in Partial Fulfilment for the Requirements for the Degree of}}\\
 \clearpage
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[LE]{\textit{\nouppercase{\leftmark}}}
-\fancyhead[RO]{\textit{\nouppercase{\rightmark}}}
-\renewcommand{\headrulewidth}{1.0pt}
+\renewcommand{\headrulewidth}{0pt}
 \cfoot{\fancyplain{}{\thepage}}
 
 }
@@ -310,7 +308,7 @@ in Partial Fulfilment for the Requirements for the Degree of}}\\
 
 \clearemptydoublepage
 
-\newgeometry{top=1.0cm, bottom=1.5cm, hcentering}
+\newgeometry{top=1.0cm, bottom=1.5cm, left=2.5cm, right=2.5cm, bindingoffset=0pt}
 \ssp
 
 \setlength{\textheight}{9.5in}
@@ -343,11 +341,12 @@ They have successfully and satisfactorily completed their \textbf{Project Phase-
 %This is to certify that {\color{Green}{\textbf{\@author}}}, \textbf{(Adm. No. {\@rollnum})}, Full-time M.Tech student in {\color{magenta}{\textbf{Electronics Engineering}}} with specialization in  {\color{magenta}{\textbf{\@specializn}}}  has presented his/her Project on {\emph{ ``Project Title" }} during the 3rd semester- Year \textbf{\@acadyr}.
 %\vfill
 \begin{flushright}
+\vspace{1.5cm}
 \textbf{\@guidenm}\\
 (\@guideposn\ \& Project Guide)
 
 \if@coguide
-\vspace{0.5cm}
+\vspace{1.5cm}
 \textbf{\@coguidenm}\\
 (\@coguideposn\ \& Project Co-Guide)
 \fi
@@ -375,7 +374,7 @@ They have successfully and satisfactorily completed their \textbf{Project Phase-
 \textcolor{rollno}{2. \rule{5cm}{0.5pt}} & \textcolor{rollno}{\rule{5cm}{0.5pt}} & \\[0.2cm]
 \textcolor{rollno}{3. \rule{5cm}{0.5pt}} & \textcolor{rollno}{\rule{5cm}{0.5pt}} & \\[0.2cm]
 \textcolor{rollno}{4. \rule{5cm}{0.5pt}} & \textcolor{rollno}{\rule{5cm}{0.5pt}} & \\[0.2cm]
-\textcolor{rollno}{5. \rule{5cm}{0.5pt}} & \textcolor{rollno}{\rule{5cm}{0.5pt}} & \\[0.4cm]
+\textcolor{rollno}{5. \rule{5cm}{0.5pt}} & \textcolor{rollno}{\rule{5cm}{0.5pt}} & \\[1.5cm]
 \textcolor{blue}{\textbf{Dr. (Ms.) Shilpi Gupta}} & & \textcolor{blue}{Seal of The Department} \\
 \textcolor{blue}{Head, DoECE, SVNIT} & & (\@date) \\
 \end{tabular}

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.4.22)  23 APR 2026 21:56
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.4.22)  5 MAY 2026 15:25
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -448,67 +448,82 @@ Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
 Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 284.
 )
 \Hy@SectionHShift=\skip86
+) (C:\Users\ridham\AppData\Local\Programs\MiKTeX\tex/latex/splitbib\splitbib.sty
+Package: splitbib 2005/12/22 v1.17 Splits bibliography into categories
+\c@NMSB@catlevelone=\count334
+\c@NMSB@catleveltwo=\count335
+\c@NMSB@catlevel=\count336
+\c@SBresetdepth=\count337
+\c@NMSB@ent=\count338
+\c@NMSB@maxent=\count339
+\NMSB@tok=\toks38
+\NMSB@longest=\dimen192
+\NMSB@reallylongest=\dimen193
+\NMSB@currprefixtok=\toks39
+\NMSB@currprefixlevelonetok=\toks40
+\SBabovesepwidth=\dimen194
+\SBbelowsepwidth=\dimen195
 )
-LaTeX Font Info:    Trying to load font information for OT1+ptm on input line 39.
+LaTeX Font Info:    Trying to load font information for OT1+ptm on input line 53.
  (C:\Users\ridham\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\ot1ptm.fd
 File: ot1ptm.fd 2001/06/04 font definitions for OT1/ptm.
 ) (Project_Report.aux (acknowl.aux) (abstract.aux) (abbreviations.aux) (null.aux) (Chapter1/chapter1.aux) (Chapter2/chapter2.aux) (Chapter3/chapter3.aux) (Chapter4/chapter4.aux) (Chapter5/chapter5.aux) (Chapter6/chapter6.aux) (Chapter7/chapter7.aux) (conclusion.aux))
 \openout1 = `Project_Report.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 39.
-LaTeX Font Info:    ... okay on input line 39.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 53.
+LaTeX Font Info:    ... okay on input line 53.
  (C:\Users\ridham\AppData\Local\Programs\MiKTeX\tex/context/base/mkii\supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
-\scratchcounter=\count334
-\scratchdimen=\dimen192
+\scratchcounter=\count340
+\scratchdimen=\dimen196
 \scratchbox=\box70
-\nofMPsegments=\count335
-\nofMParguments=\count336
-\everyMPshowfont=\toks38
-\MPscratchCnt=\count337
-\MPscratchDim=\dimen193
-\MPnumerator=\count338
-\makeMPintoPDFobject=\count339
-\everyMPtoPDFconversion=\toks39
+\nofMPsegments=\count341
+\nofMParguments=\count342
+\everyMPshowfont=\toks41
+\MPscratchCnt=\count343
+\MPscratchDim=\dimen197
+\MPnumerator=\count344
+\makeMPintoPDFobject=\count345
+\everyMPtoPDFconversion=\toks42
 )
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
 *geometry* verbose mode - [ preamble ] result:
 * driver: pdftex
-* paper: <default>
+* paper: a4paper
 * layout: <same size as paper>
 * layoutoffset:(h,v)=(0.0pt,0.0pt)
 * modes: 
 * h-part:(L,W,R)=(89.62709pt, 418.25368pt, 89.6271pt)
-* v-part:(T,H,B)=(101.40665pt, 591.5302pt, 152.11pt)
+* v-part:(T,H,B)=(101.40665pt, 672.50832pt, 71.13188pt)
 * \paperwidth=597.50787pt
 * \paperheight=845.04684pt
 * \textwidth=418.25368pt
-* \textheight=591.5302pt
+* \textheight=672.50832pt
 * \oddsidemargin=17.3571pt
 * \evensidemargin=17.3571pt
 * \topmargin=-6.99832pt
 * \headheight=18.06749pt
 * \headsep=18.06749pt
 * \topskip=12.0pt
-* \footskip=36.135pt
-* \marginparwidth=44.0pt
+* \footskip=28.45274pt
+* \marginparwidth=35.0pt
 * \marginparsep=10.0pt
 * \columnsep=10.0pt
 * \skip\footins=10.8pt plus 4.0pt minus 2.0pt
@@ -528,32 +543,31 @@ Package caption Info: longtable package is loaded.
 Package: ltcaption 2021/01/08 v1.4c longtable captions (AR)
 )
 Package caption Info: End \AtBeginDocument code.
-Package hyperref Info: Link coloring ON on input line 39.
+Package hyperref Info: Link coloring ON on input line 53.
  (Project_Report.out) (Project_Report.out)
 \@outlinefile=\write4
 \openout4 = `Project_Report.out'.
 
 *geometry* verbose mode - [ newgeometry ] result:
 * driver: pdftex
-* paper: <default>
+* paper: a4paper
 * layout: <same size as paper>
 * layoutoffset:(h,v)=(0.0pt,0.0pt)
-* hratio: 1:1
 * modes: 
-* h-part:(L,W,R)=(85.35826pt, 455.24411pt, 56.9055pt)
+* h-part:(L,W,R)=(71.13188pt, 455.24411pt, 71.13188pt)
 * v-part:(T,H,B)=(56.9055pt, 731.23584pt, 56.9055pt)
 * \paperwidth=597.50787pt
 * \paperheight=845.04684pt
 * \textwidth=455.24411pt
 * \textheight=731.23584pt
-* \oddsidemargin=13.08827pt
-* \evensidemargin=13.08827pt
+* \oddsidemargin=-1.1381pt
+* \evensidemargin=-1.1381pt
 * \topmargin=-51.49947pt
 * \headheight=18.06749pt
 * \headsep=18.06749pt
 * \topskip=12.0pt
-* \footskip=36.135pt
-* \marginparwidth=44.0pt
+* \footskip=28.45274pt
+* \marginparwidth=35.0pt
 * \marginparsep=10.0pt
 * \columnsep=10.0pt
 * \skip\footins=10.8pt plus 4.0pt minus 2.0pt
@@ -566,40 +580,35 @@ Package hyperref Info: Link coloring ON on input line 39.
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-<svnit_logo.jpg, id=213, 80.4825pt x 70.956pt>
+<svnit_logo.jpg, id=257, 80.4825pt x 70.956pt>
 File: svnit_logo.jpg Graphic file (type jpg)
 <use svnit_logo.jpg>
-Package pdftex.def Info: svnit_logo.jpg  used on input line 61.
+Package pdftex.def Info: svnit_logo.jpg  used on input line 76.
 (pdftex.def)             Requested size: 80.48228pt x 70.9558pt.
  [1
 
 
 {C:/Users/ridham/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc} <./svnit_logo.jpg>]
-
-Package fancyhdr Warning: \fancyhead's `E' option without twoside option is useless.
-(fancyhdr)                Please consider using the `twoside' option on input line 61.
-
 *geometry* verbose mode - [ newgeometry ] result:
 * driver: pdftex
-* paper: <default>
+* paper: a4paper
 * layout: <same size as paper>
 * layoutoffset:(h,v)=(0.0pt,0.0pt)
-* hratio: 1:1
 * modes: 
-* h-part:(L,W,R)=(89.62709pt, 418.25368pt, 89.6271pt)
+* h-part:(L,W,R)=(71.13188pt, 455.24411pt, 71.13188pt)
 * v-part:(T,H,B)=(28.45274pt, 773.91498pt, 42.67912pt)
 * \paperwidth=597.50787pt
 * \paperheight=845.04684pt
-* \textwidth=418.25368pt
+* \textwidth=455.24411pt
 * \textheight=773.91498pt
-* \oddsidemargin=17.3571pt
-* \evensidemargin=17.3571pt
+* \oddsidemargin=-1.1381pt
+* \evensidemargin=-1.1381pt
 * \topmargin=-79.95222pt
 * \headheight=18.06749pt
 * \headsep=18.06749pt
 * \topskip=12.0pt
-* \footskip=36.135pt
-* \marginparwidth=44.0pt
+* \footskip=28.45274pt
+* \marginparwidth=35.0pt
 * \marginparsep=10.0pt
 * \columnsep=10.0pt
 * \skip\footins=10.8pt plus 4.0pt minus 2.0pt
@@ -614,16 +623,11 @@ Package fancyhdr Warning: \fancyhead's `E' option without twoside option is usel
 
 File: svnit_logo.jpg Graphic file (type jpg)
 <use svnit_logo.jpg>
-Package pdftex.def Info: svnit_logo.jpg  used on input line 63.
+Package pdftex.def Info: svnit_logo.jpg  used on input line 78.
 (pdftex.def)             Requested size: 80.48228pt x 70.9558pt.
 
-Underfull \hbox (badness 10000) in paragraph at lines 63--63
+Underfull \hbox (badness 10000) in paragraph at lines 78--78
 
- []
-
-
-Overfull \hbox (29.96474pt too wide) in paragraph at lines 63--63
- [] 
  []
 
 [2
@@ -660,17 +664,7 @@ File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 \tf@toc=\write5
 \openout5 = `Project_Report.toc'.
 
- [6] (Project_Report.lof
-Overfull \hbox (2.9428pt too wide) in paragraph at lines 9--9
- [][] [][][]\OT1/ptm/m/n/12 The pin cal-i-bra-tion in-ter-face used to map math-e-mat-i-cal con-nec-tion nodes 
- []
-
-
-Overfull \hbox (16.39493pt too wide) in paragraph at lines 17--17
- [][] [][][]\OT1/ptm/m/n/12 Precision-Recall curve of the YOLO model, achiev-ing an over-all mAP@0.5 
- []
-
-)
+ [6] (Project_Report.lof)
 \tf@lof=\write6
 \openout6 = `Project_Report.lof'.
 
@@ -701,17 +695,12 @@ Chapter 1.
 
 
 ]
-Overfull \hbox (7.29828pt too wide) in paragraph at lines 19--20
-[]\OT1/ptm/b/n/12 Object De-tec-tion: \OT1/ptm/m/n/12 To train and de-ploy a Con-vo-lu-tional Neu-ral Net-work (YOLOv8)
- []
-
-
-Overfull \hbox (21.99686pt too wide) in paragraph at lines 21--22
-[]\OT1/ptm/b/n/12 Interactive GUI De-vel-op-ment: \OT1/ptm/m/n/12 To en-gi-neer a cus-tom desk-top en-vi-ron-ment (``PySpice
+Underfull \hbox (badness 1248) in paragraph at lines 21--22
+[]\OT1/ptm/b/n/12 Object De-tec-tion: \OT1/ptm/m/n/12 To train and de-ploy a Con-vo-lu-tional Neu-ral Net-work
  []
 
 [2]
-LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 31.
+LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 35.
  (C:\Users\ridham\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
 )) [3]
@@ -719,236 +708,221 @@ File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
 
  (Chapter2/chapter2.tex
 Chapter 2.
-<images/sample_from_dataset.jpg, id=368, 4047.12pt x 3035.34pt>
-File: images/sample_from_dataset.jpg Graphic file (type jpg)
-<use images/sample_from_dataset.jpg>
-Package pdftex.def Info: images/sample_from_dataset.jpg  used on input line 18.
-(pdftex.def)             Requested size: 292.77629pt x 219.58177pt.
+<images/schemdraw_example.png, id=440, 621.07031pt x 344.78813pt>
+File: images/schemdraw_example.png Graphic file (type png)
+<use images/schemdraw_example.png>
+Package pdftex.def Info: images/schemdraw_example.png  used on input line 12.
+(pdftex.def)             Requested size: 397.3397pt x 220.58472pt.
 [4
 
 
 
 
-]
-Overfull \hbox (2.57013pt too wide) in paragraph at lines 32--33
-\OT1/ptm/m/n/12 To un-der-stand how soft-ware pro-gram-mat-i-cally gen-er-ates cir-cuit di-a-grams, we re-searched
- []
-
-
-Overfull \hbox (190.85156pt too wide) in paragraph at lines 32--33
-\OT1/ptm/m/n/12 draw highly pro-fes-sional schemat-ics by writ-ing Python code (e.g., \OT1/pcr/m/n/12 d += elm.Resistor().right().label('10k')\OT1/ptm/m/n/12 ). 
- []
-
-[5 <./images/sample_from_dataset.jpg>]
-<images/schemdraw_example.png, id=379, 621.07031pt x 344.78813pt>
-File: images/schemdraw_example.png Graphic file (type png)
-<use images/schemdraw_example.png>
-Package pdftex.def Info: images/schemdraw_example.png  used on input line 38.
-(pdftex.def)             Requested size: 334.60422pt x 185.75667pt.
-
-Overfull \hbox (40.56952pt too wide) in paragraph at lines 46--48
-[]\OT1/ptm/m/n/12 A stan-dard NGSPICE netlist en-try fol-lows a strict syn-tac-ti-cal for-mat: \OT1/pcr/m/n/12 [Component[]Name]
- []
-
-[6 <./images/schemdraw_example.png>]
-Overfull \hbox (18.5807pt too wide) in paragraph at lines 49--49
-[]\OT1/ptm/b/n/17.28 Finding the per-fect im-age pro-cess-ing model (YOLOv8) 
- []
-
-) [7]
+ <./images/schemdraw_example.png>]
+<images/sample_from_dataset.jpg, id=447, 4047.12pt x 3035.34pt>
+File: images/sample_from_dataset.jpg Graphic file (type jpg)
+<use images/sample_from_dataset.jpg>
+Package pdftex.def Info: images/sample_from_dataset.jpg  used on input line 29.
+(pdftex.def)             Requested size: 376.42575pt x 282.29297pt.
+ [5 <./images/sample_from_dataset.jpg>] [6] [7] [8]) [9]
 \openout2 = `Chapter3/chapter3.aux'.
 
  (Chapter3/chapter3.tex
 Chapter 3.
-
-Overfull \hbox (6.1746pt too wide) in paragraph at lines 11--11
-[]\OT1/ptm/b/n/17.28 What is YOLOv8 and how it works (Back-bone, Neck,
- []
-
-[8
+[10
 
 
 
 
 ]
-Overfull \hbox (1.10864pt too wide) in paragraph at lines 27--27
-[]\OT1/ptm/b/n/17.28 The math-e-mat-ics be-hind YOLO (IoU and Loss func-
+<images/pipeline.png, id=486, 579.66562pt x 794.2172pt>
+File: images/pipeline.png Graphic file (type png)
+<use images/pipeline.png>
+Package pdftex.def Info: images/pipeline.png  used on input line 28.
+(pdftex.def)             Requested size: 418.25368pt x 573.05994pt.
+ [11] [12 <./images/pipeline.png>] [13]
+Underfull \hbox (badness 1077) in paragraph at lines 54--54
+[]\OT1/ptm/b/n/17.28 The math-e-mat-ics be-hind YOLO (IoU and Loss
  []
 
-[9] [10]) [11]
+<images/IoU.png, id=501, 1184.425pt x 685.56125pt>
+File: images/IoU.png Graphic file (type png)
+<use images/IoU.png>
+Package pdftex.def Info: images/IoU.png  used on input line 62.
+(pdftex.def)             Requested size: 250.95476pt x 145.24832pt.
+[14 <./images/IoU.png>]) [15]
 \openout2 = `Chapter4/chapter4.aux'.
 
  (Chapter4/chapter4.tex
 Chapter 4.
-
-Overfull \hbox (4.29056pt too wide) in paragraph at lines 6--6
-[]\OT1/ptm/b/n/17.28 Domain-Specific Fine-Tuning for 19 Elec-tronic Com-
- []
-
-[12
+[16
 
 
 
 
-]
-Overfull \hbox (15.35097pt too wide) in paragraph at lines 26--27
-\OT1/ptm/m/n/12 Upon com-ple-tion of the train-ing phase, the op-ti-mized weights were ex-ported as a \OT1/pcr/m/n/12 best.pt
- []
-
-
-Overfull \hbox (0.45833pt too wide) in paragraph at lines 29--30
-\OT1/ptm/m/n/12 The most crit-i-cal in-te-gra-tion point of the project oc-curs when the Deep Learn-ing pipeline
- []
-
-[13]) [14]
+] [17]) [18]
 \openout2 = `Chapter5/chapter5.aux'.
 
  (Chapter5/chapter5.tex
 Chapter 5.
-
-Overfull \hbox (33.9258pt too wide) in paragraph at lines 11--12
-[]\OT1/ptm/b/n/12 Dynamic Tool-bar: \OT1/ptm/m/n/12 Lo-cated at the top, it parses the com-po-nent database (\OT1/pcr/m/n/12 library.py\OT1/ptm/m/n/12 )
- []
-
-<images/editor.png, id=429, 1444.64719pt x 765.6103pt>
+<images/editor.png, id=532, 1444.64719pt x 765.6103pt>
 File: images/editor.png Graphic file (type png)
 <use images/editor.png>
 Package pdftex.def Info: images/editor.png  used on input line 18.
 (pdftex.def)             Requested size: 418.25368pt x 221.65915pt.
-[15
+[19
 
 
 
 
-]
-Overfull \hbox (0.73424pt too wide) in paragraph at lines 30--31
-[]\OT1/ptm/b/n/12 Image Caching: \OT1/ptm/m/n/12 To main-tain a high frame rate dur-ing pan-ning, com-po-nent graph-
- []
-
-[16 <./images/editor.png>]
-<images/pin_calibration.png, id=443, 843.15pt x 679.78969pt>
+] [20 <./images/editor.png>]
+<images/pin_calibration.png, id=546, 843.15pt x 679.78969pt>
 File: images/pin_calibration.png Graphic file (type png)
 <use images/pin_calibration.png>
 Package pdftex.def Info: images/pin_calibration.png  used on input line 45.
-(pdftex.def)             Requested size: 334.60422pt x 269.77426pt.
- [17] [18 <./images/pin_calibration.png>]
-Overfull \hbox (13.70662pt too wide) in paragraph at lines 61--61
-[]\OT1/ptm/b/n/17.28 Executing NGSPICE bi-nary sim-u-la-tions di-rectly from
- []
-
-<images/transient_rectifier.png, id=457, 1444.64719pt x 764.8575pt>
+(pdftex.def)             Requested size: 397.3397pt x 320.36214pt.
+ [21] [22 <./images/pin_calibration.png>]
+<images/transient_rectifier.png, id=559, 1444.64719pt x 764.8575pt>
 File: images/transient_rectifier.png Graphic file (type png)
 <use images/transient_rectifier.png>
 Package pdftex.def Info: images/transient_rectifier.png  used on input line 75.
 (pdftex.def)             Requested size: 418.25368pt x 221.4412pt.
-[19]
-<images/AC_HPF.png, id=466, 1444.64719pt x 736.25063pt>
+<images/AC_HPF.png, id=560, 1444.64719pt x 736.25063pt>
 File: images/AC_HPF.png Graphic file (type png)
 <use images/AC_HPF.png>
 Package pdftex.def Info: images/AC_HPF.png  used on input line 82.
 (pdftex.def)             Requested size: 418.25368pt x 213.15895pt.
-) [20 <./images/transient_rectifier.png> <./images/AC_HPF.png>]
+) [23 <./images/transient_rectifier.png>] [24 <./images/AC_HPF.png>]
 \openout2 = `Chapter6/chapter6.aux'.
 
  (Chapter6/chapter6.tex
 Chapter 6.
-<C171_D1_P1/C171_D1_P1.jpeg, id=473, 1606.0pt x 994.71625pt>
+<C171_D1_P1/C171_D1_P1.jpeg, id=576, 1606.0pt x 994.71625pt>
 File: C171_D1_P1/C171_D1_P1.jpeg Graphic file (type jpg)
 <use C171_D1_P1/C171_D1_P1.jpeg>
 Package pdftex.def Info: C171_D1_P1/C171_D1_P1.jpeg  used on input line 8.
 (pdftex.def)             Requested size: 418.25368pt x 259.0451pt.
-
-Overfull \hbox (0.25128pt too wide) in paragraph at lines 13--14
-[]\OT1/ptm/m/n/12 The fea-si-bil-ity of au-to-mated cir-cuit dig-i-ti-za-tion has proven suc-cess-ful. The YOLOv8
- []
-
-<C171_D1_P1/3_feature_extraction.png, id=476, 715.473pt x 168.63pt>
+<C171_D1_P1/3_feature_extraction.png, id=579, 715.473pt x 168.63pt>
 File: C171_D1_P1/3_feature_extraction.png Graphic file (type png)
 <use C171_D1_P1/3_feature_extraction.png>
 Package pdftex.def Info: C171_D1_P1/3_feature_extraction.png  used on input line 17.
 (pdftex.def)             Requested size: 418.25368pt x 98.57738pt.
-[21
+[25
 
 
 
 
  <./C171_D1_P1/C171_D1_P1.jpeg>]
-<C171_D1_P1/0_yolo_heatmap.png, id=481, 3212.0pt x 994.71625pt>
+<C171_D1_P1/0_yolo_heatmap.png, id=584, 3212.0pt x 994.71625pt>
 File: C171_D1_P1/0_yolo_heatmap.png Graphic file (type png)
 <use C171_D1_P1/0_yolo_heatmap.png>
 Package pdftex.def Info: C171_D1_P1/0_yolo_heatmap.png  used on input line 24.
 (pdftex.def)             Requested size: 418.25368pt x 129.51497pt.
 
-Overfull \hbox (14.55476pt too wide) in paragraph at lines 29--29
-[]\OT1/ptm/b/n/17.28 Evaluation met-rics (Pre-ci-sion, Re-call, F1-Score, mAP) 
+Underfull \hbox (badness 1436) in paragraph at lines 29--29
+[]\OT1/ptm/b/n/17.28 Evaluation met-rics (Pre-ci-sion, Re-call, F1-Score,
  []
 
-[22 <./C171_D1_P1/3_feature_extraction.png> <./C171_D1_P1/0_yolo_heatmap.png (PNG copy)>]
-<images/confusion_matrix_normalized.png, id=487, 867.24pt x 650.43pt>
+[26 <./C171_D1_P1/3_feature_extraction.png> <./C171_D1_P1/0_yolo_heatmap.png (PNG copy)>]
+<images/confusion_matrix_normalized.png, id=590, 867.24pt x 650.43pt>
 File: images/confusion_matrix_normalized.png Graphic file (type png)
 <use images/confusion_matrix_normalized.png>
-Package pdftex.def Info: images/confusion_matrix_normalized.png  used on input line 49.
+Package pdftex.def Info: images/confusion_matrix_normalized.png  used on input line 50.
 (pdftex.def)             Requested size: 418.25368pt x 313.69156pt.
- [23] [24 <./images/confusion_matrix_normalized.png>]
-<images/BoxPR_curve.png, id=499, 650.43pt x 433.62pt>
+ [27 <./images/confusion_matrix_normalized.png>]
+<images/BoxPR_curve.png, id=597, 650.43pt x 433.62pt>
 File: images/BoxPR_curve.png Graphic file (type png)
 <use images/BoxPR_curve.png>
-Package pdftex.def Info: images/BoxPR_curve.png  used on input line 66.
-(pdftex.def)             Requested size: 292.77629pt x 195.18674pt.
- [25 <./images/BoxPR_curve.png>]
-<C171_D1_P1/canvas_confirmation.png, id=507, 1443.14156pt x 760.34062pt>
+Package pdftex.def Info: images/BoxPR_curve.png  used on input line 68.
+(pdftex.def)             Requested size: 376.42575pt x 250.95721pt.
+ [28 <./images/BoxPR_curve.png>]
+<images/BoxF1_curve.png, id=604, 650.43pt x 433.62pt>
+File: images/BoxF1_curve.png Graphic file (type png)
+<use images/BoxF1_curve.png>
+Package pdftex.def Info: images/BoxF1_curve.png  used on input line 79.
+(pdftex.def)             Requested size: 376.42575pt x 250.95721pt.
+<images/BoxP_curve.png, id=607, 650.43pt x 433.62pt>
+File: images/BoxP_curve.png Graphic file (type png)
+<use images/BoxP_curve.png>
+Package pdftex.def Info: images/BoxP_curve.png  used on input line 88.
+(pdftex.def)             Requested size: 376.42575pt x 250.95721pt.
+ [29 <./images/BoxF1_curve.png>]
+<images/BoxR_curve.png, id=614, 650.43pt x 433.62pt>
+File: images/BoxR_curve.png Graphic file (type png)
+<use images/BoxR_curve.png>
+Package pdftex.def Info: images/BoxR_curve.png  used on input line 95.
+(pdftex.def)             Requested size: 376.42575pt x 250.95721pt.
+ [30 <./images/BoxP_curve.png> <./images/BoxR_curve.png>]
+<C171_D1_P1/canvas_confirmation.png, id=622, 1443.14156pt x 760.34062pt>
 File: C171_D1_P1/canvas_confirmation.png Graphic file (type png)
 <use C171_D1_P1/canvas_confirmation.png>
-Package pdftex.def Info: C171_D1_P1/canvas_confirmation.png  used on input line 82.
-(pdftex.def)             Requested size: 334.60422pt x 176.29008pt.
-<C171_D1_P1/canvas_output.png, id=509, 1444.64719pt x 767.86874pt>
+Package pdftex.def Info: C171_D1_P1/canvas_confirmation.png  used on input line 107.
+(pdftex.def)             Requested size: 397.3397pt x 209.34375pt.
+<C171_D1_P1/canvas_output.png, id=624, 1444.64719pt x 767.86874pt>
 File: C171_D1_P1/canvas_output.png Graphic file (type png)
 <use C171_D1_P1/canvas_output.png>
-Package pdftex.def Info: C171_D1_P1/canvas_output.png  used on input line 91.
+Package pdftex.def Info: C171_D1_P1/canvas_output.png  used on input line 116.
 (pdftex.def)             Requested size: 418.25368pt x 222.313pt.
- [26 <./C171_D1_P1/canvas_confirmation.png>]) [27 <./C171_D1_P1/canvas_output.png>]
+ [31 <./C171_D1_P1/canvas_confirmation.png>] [32 <./C171_D1_P1/canvas_output.png>]) [33]
 \openout2 = `Chapter7/chapter7.aux'.
 
  (Chapter7/chapter7.tex
 Chapter 7.
-[28
+[34
 
 
 
 
-]) [29]
+]) [35]
 \openout2 = `conclusion.aux'.
 
- (conclusion.tex) [30
+ (conclusion.tex) [36
 
 
 
 
-] (Project_Report.bbl [31
+] (Project_Report.bbl [37
 
 
 
 
-]) [32] (Project_Report.aux (acknowl.aux) (abstract.aux) (abbreviations.aux) (null.aux) (Chapter1/chapter1.aux) (Chapter2/chapter2.aux) (Chapter3/chapter3.aux) (Chapter4/chapter4.aux) (Chapter5/chapter5.aux) (Chapter6/chapter6.aux) (Chapter7/chapter7.aux) (conclusion.aux))
+] ---- Splitbib warning ----
+-- The longest label appears to be [D12] instead of [10]
+) [38] (Project_Report.aux (acknowl.aux) (abstract.aux) (abbreviations.aux) (null.aux) (Chapter1/chapter1.aux) (Chapter2/chapter2.aux) (Chapter3/chapter3.aux) (Chapter4/chapter4.aux) (Chapter5/chapter5.aux) (Chapter6/chapter6.aux) (Chapter7/chapter7.aux) (conclusion.aux))
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-03-20>
  ***********
 Package rerunfilecheck Info: File `Project_Report.out' has not changed.
-(rerunfilecheck)             Checksum: 6F3C6AD940759E4F93112E834C28E59E;11998.
+(rerunfilecheck)             Checksum: 848D55742B625C9E3FC4A62BD0F79A09;14706.
  ) 
 Here is how much of TeX's memory you used:
- 15227 strings out of 467691
- 255857 string characters out of 5414503
- 759355 words of memory out of 5000000
- 43794 multiletter control sequences out of 15000+600000
+ 15553 strings out of 467691
+ 261287 string characters out of 5414503
+ 768662 words of memory out of 5000000
+ 44087 multiletter control sequences out of 15000+600000
  653686 words of font info for 101 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 73i,9n,98p,1677b,606s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 73i,9n,98p,1677b,659s stack positions out of 10000i,1000n,20000p,200000b,200000s
+
+pdfTeX warning (dest): name{cite.redmon2016} has been referenced but does not exist, replaced by a fixed one
+
+
+pdfTeX warning (dest): name{cite.liu2016} has been referenced but does not exist, replaced by a fixed one
+
+
+pdfTeX warning (dest): name{cite.ren2015} has been referenced but does not exist, replaced by a fixed one
+
+
+pdfTeX warning (dest): name{cite.ahmed2025} has been referenced but does not exist, replaced by a fixed one
+
+
+pdfTeX warning (dest): name{cite.thoma2021} has been referenced but does not exist, replaced by a fixed one
+
 <C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmbx10.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmbx12.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi12.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi8.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr12.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/urw/courier/ucrb8a.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/urw/courier/ucrr8a.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/ridham/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
-Output written on Project_Report.pdf (40 pages, 7561416 bytes).
+Output written on Project_Report.pdf (46 pages, 8400922 bytes).
 PDF statistics:
- 660 PDF objects out of 1000 (max. 8388607)
- 141 named destinations out of 1000 (max. 500000)
- 501 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 788 PDF objects out of 1000 (max. 8388607)
+ 170 named destinations out of 1000 (max. 500000)
+ 614 words of extra memory for PDF output out of 10000 (max. 10000000)
 

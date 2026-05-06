@@ -3,6 +3,33 @@
 
 To successfully convert a raw, hand-drawn sketch into a functional digital simulation, the system relies on a hybrid pipeline combining cutting-edge Deep Learning object detection with traditional, deterministic Computer Vision algorithms. This chapter details the theoretical and mathematical foundations of the vision subsystem.
 
+\section{Project Pipeline: Hand-Drawn Circuit to Validated SPICE Netlist}
+The digitization of hand-drawn circuits is a complex Electronic Design Automation (EDA) task that transforms unstructured physical data (pixels) into a structured mathematical model (a SPICE netlist). This process is critical for modernizing rapid prototyping and educational workflows. The pipeline is designed around a hybrid logic approach, combining state-of-the-art Deep Learning with deterministic Computer Vision algorithms.
+
+This pipeline can be summarized in three main logical phases:
+
+\subsection{Phase 1: Component Localization and Classification (The "Eyes")}
+The input is a raw photograph of a hand-drawn circuit sketch. The challenge is to identify and differentiate between dozens of components drawn with varying styles, orientations, and scales. This system employs the \textbf{YOLO (You Only Look Once)} deep learning architecture, specifically fine-tuned for electronic symbols. As an end-to-end detector, YOLOv8 performs classification and localization simultaneously, outputting a set of bounding boxes with associated component labels (e.g., "Resistor", "Capacitor", "Voltage Source"). This is a critical domain-specific application of transfer learning in image processing.
+
+\subsection{Phase 2: Topological and Parameter-Value Extraction (The "Logic")}
+Once the components are identified, the system must understand how they are connected.
+\begin{itemize}
+    \item \textbf{Wire Tracing and Interconnects:} This deterministic phase utilizes the \textbf{OpenCV} library. Image preprocessing techniques like adaptive thresholding and morphological operations (dilation and closing) are used to clean the image and repair any discontinuities in the sketched wire traces. Specialized line-tracing algorithms then convert these enhanced pixel paths into mathematical representations of nodes and connections.
+    \item \textbf{Parameter Extraction (Optical Character Recognition - OCR):} To read numerical values like "10k$\Omega$" or "5V" off the page, an OCR engine like EasyOCR is deployed. It transcribes handwritten text within or near a component's bounding box and applies a spatial-association algorithm to map the recognized value to the correct electronic part in the system's memory.
+\end{itemize}
+
+\subsection{Phase 3: Interactive Verification and Netlist Generation (The "Output")}
+The raw machine learning outputs (component lists, bounding boxes, wire paths) are unified within the interactive PySpice Studio Graphical User Interface (GUI). This digital canvas allows the user to click, drag, and modify the AI's predictions—such as correcting a misclassified source type or manually editing a default component value—providing a necessary human-in-the-loop validation layer.
+
+Once validated, the backend executes the mathematical netlist generation algorithm. This script algorithmically maps all connected wire segments into shared mathematical nodes (e.g., Ground node "0", Node "1", Node "OUT"). Finally, it iterates through the validated component list, formatting their specific SPICE syntax (e.g., \texttt{[Component\_Name] [Node\_1] [Node\_2] [Value]}) to synthesize the final executable \texttt{.cir} netlist file for NGSPICE simulation.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{images/pipeline.png}
+    \caption{Project Pipeline Flowchart illustrating the journey from a raw hand-drawn circuit sketch to a validated NGSPICE netlist.}
+    \label{fig:pipeline_flowchart}
+\end{figure}
+
 \section{The evolution of Deep Learning in image processing}
 Traditional image processing relies heavily on manual feature extraction techniques, such as Haar cascades or template matching, to identify objects. While effective in highly controlled environments, these methods struggle severely with varying lighting, scale discrepancies, and the inherent inconsistencies of human handwriting. Deep Learning, specifically Convolutional Neural Networks (CNNs), revolutionized this domain by automatically learning hierarchical features from massive datasets.
 
@@ -29,6 +56,14 @@ During training and inference, the neural network relies on strict mathematical 
 
 \subsection{Intersection over Union (IoU)}
 To determine if a predicted bounding box correctly captures a circuit component, the model calculates the IoU against the ground truth labels provided in the dataset. It is defined as the area of overlap divided by the area of union between the predicted box and the actual box:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{images/IoU.png}
+    \caption{Visual representation of Intersection over Union (IoU).}
+    \label{fig:iou}
+\end{figure}
+
 \begin{equation}
     IoU = \frac{\text{Area of Overlap}}{\text{Area of Union}}
 \end{equation}
@@ -39,7 +74,7 @@ During the training phase, YOLOv8 optimizes its weights using a composite loss f
 \begin{equation}
     \mathcal{L}_{total} = \lambda_{box} \mathcal{L}_{box} + \lambda_{cls} \mathcal{L}_{cls} + \lambda_{dfl} \mathcal{L}_{dfl}
 \end{equation}
-By minimizing $\mathcal{L}_{total}$ over hundreds of epochs, the neural network converges, learning the precise visual signatures of the 19 distinct electronic classes.
+By minimizing $\mathcal{L}_{total}$ over hundreds of epochs, the neural network converges, learning the precise visual signatures of the 9 distinct electronic classes.
 
 \section{OpenCV image preprocessing}
 While YOLO handles the classification of distinct components, extracting the hand-drawn wires requires deterministic pixel-level analysis. Before the system can mathematically route wires, the raw image must be cleaned using OpenCV to remove shadows, paper textures, and lighting gradients.
