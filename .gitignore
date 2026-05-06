@@ -31,3 +31,4 @@ for_report
 *.bib
 *.sty
 for_report/
+**/for_report/
