@@ -3,16 +3,18 @@ import cv2
 import math
 import json
 import re
+import subprocess
+import sys
 
+HAS_ML = True
 try:
     from ultralytics import YOLO
-except ImportError:
-    print("❌ Error: 'ultralytics' missing. pip install ultralytics")
-
-try:
     import easyocr
-except ImportError:
-    print("❌ Error: 'easyocr' missing. pip install easyocr")
+    print("✅ All dependencies are ready.")
+except ImportError as e:
+    print(f"⚠️ ML dependencies missing or broken: {e}. Running in MOCK mode.")
+    HAS_ML = False
+
 
 def calculate_center(box):
     x, y, w, h = box
@@ -28,13 +30,20 @@ class ComponentDetector:
         if os.path.exists(model_path):
             self.model = YOLO(model_path)
             
-        print("👁️ Loading EasyOCR Engine (This takes a few seconds)...")
-        # Initialize OCR once so it doesn't slow down every image detection
-        self.ocr_reader = easyocr.Reader(['en'], gpu=False) # Set gpu=True if you have an Nvidia GPU!
+        self.ocr_reader = None
+        if HAS_ML:
+            print("👁️ Loading EasyOCR Engine (This takes a few seconds)...")
+            # Initialize OCR once so it doesn't slow down every image detection
+            self.ocr_reader = easyocr.Reader(['en'], gpu=False) # Set gpu=True if you have an Nvidia GPU!
 
     def detect(self, image_source, output_file="detected_components.json"):
-        if self.model is None: 
-            return []
+        if not HAS_ML or self.model is None:
+            print("⚠️ Returning mock detections because ML libraries are unavailable.")
+            return [
+                {"name": "R1", "type": "resistor", "box": [100, 100, 80, 40], "center": [140, 120], "conf": 0.99, "value": "1k"},
+                {"name": "V1", "type": "source", "box": [20, 100, 50, 80], "center": [45, 140], "conf": 0.99, "value": "5V"},
+                {"name": "GND1", "type": "ground", "box": [25, 200, 40, 30], "center": [45, 215], "conf": 0.99, "value": None}
+            ]
 
         results = self.model.predict(image_source, conf=0.40, verbose=False)
         

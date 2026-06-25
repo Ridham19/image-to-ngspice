@@ -3,16 +3,28 @@ import cv2
 import math
 import json
 import re
+import subprocess
+import sys
 
+def install_package(package_name):
+    print(f"⏳ Missing '{package_name}'. Installing now...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+
+# Automated check and install for Ultralytics (YOLOv8)
 try:
     from ultralytics import YOLO
 except ImportError:
-    print("❌ Error: 'ultralytics' missing. pip install ultralytics")
+    install_package("ultralytics")
+    from ultralytics import YOLO
 
+# Automated check and install for EasyOCR
 try:
     import easyocr
 except ImportError:
-    print("❌ Error: 'easyocr' missing. pip install easyocr")
+    install_package("easyocr")
+    import easyocr
+
+print("✅ All dependencies are ready.")
 
 def calculate_center(box):
     x, y, w, h = box

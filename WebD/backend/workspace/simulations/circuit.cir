@@ -1,0 +1,17 @@
+* WebSpice Studio — Generated Netlist
+
+.Model Dx diode (Is=14n Rs=0 N=1)
+
+D1 1 2 Dx
+R1 2 0 1k
+V1 1 0 DC 5
+
+.op
+.control
+run
+set color0 = white
+set color1 = black
+set xbrushwidth = 2
+print all
+.endc
+.end

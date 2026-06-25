@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSpice Studio - Professional</title>
+    <meta name="description" content="WebSpice Studio — AI-powered circuit schematic editor with SPICE simulation">
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="css/editor.css">
 </head>
 <body>
@@ -11,32 +18,54 @@
 
     <div class="toolbar">
         <div class="toolbar-group">
-            <button id="btnLoadImage" class="btn-primary">📸 Import AI</button>
+            <button id="btnLoadImage" class="btn-primary">Import AI</button>
             <span id="statusText" class="status-text">Ready.</span>
         </div>
         
         <div class="toolbar-group tools">
-            <button id="tool-select" class="btn-tool active">👆 Select</button>
-            <button id="tool-wire" class="btn-tool">✏️ Wire</button>
-            <button id="tool-resistor" class="btn-tool">⚡ Resistor</button>
-            <button id="tool-capacitor" class="btn-tool">🔋 Capacitor</button>
-            <button id="tool-source" class="btn-tool">🔌 Source</button>
+            <button id="tool-select" class="btn-tool active">Select</button>
+            <button id="tool-wire" class="btn-tool">Wire</button>
+            <span class="tool-separator"></span>
+            <button id="tool-resistor" class="btn-tool">Resistor</button>
+            <button id="tool-capacitor" class="btn-tool">Capacitor</button>
+            <button id="tool-inductor" class="btn-tool">Inductor</button>
+            <button id="tool-diode" class="btn-tool">Diode</button>
+            <span class="tool-separator"></span>
+            <button id="tool-source" class="btn-tool">DC Src</button>
+            <button id="tool-ac_source" class="btn-tool">AC Src</button>
+            <button id="tool-ground" class="btn-tool">GND</button>
+            <span class="tool-separator"></span>
+            <button id="tool-bjt_npn" class="btn-tool">NPN</button>
+            <button id="tool-bjt_pnp" class="btn-tool">PNP</button>
         </div>
 
         <div class="toolbar-group">
-            <button class="btn-success">▶ RUN</button>
+            <button id="btnSimulate" class="btn-success">RUN SIMULATION</button>
         </div>
     </div>
 
     <div class="main-container">
         <div class="canvas-container" id="canvasWrapper">
+            <div class="grid-background"></div>
             <canvas id="circuitCanvas"></canvas>
         </div>
 
         <div class="sidebar">
             <div class="sidebar-header">PROPERTIES</div>
             <div id="propertiesPanel" class="sidebar-content">
-                <p style="color: #888; text-align: center;">Select an object</p>
+                <p class="placeholder-text">Select a component</p>
+            </div>
+
+            <div class="sidebar-header netlist-header" id="netlistToggle">
+                NETLIST <span class="toggle-icon">▼</span>
+            </div>
+            <div id="netlistPreview" class="sidebar-content netlist-panel">
+                <pre id="netlistText" class="netlist-code">Click RUN to generate</pre>
+            </div>
+
+            <div class="sidebar-header">SIMULATION OUTPUT</div>
+            <div id="simulationOutput" class="sidebar-content sim-output">
+                <p class="placeholder-text">No simulation data</p>
             </div>
         </div>
     </div>
