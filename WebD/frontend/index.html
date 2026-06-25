@@ -40,7 +40,8 @@
         </div>
 
         <div class="toolbar-group">
-            <button id="btnSimulate" class="btn-success">RUN SIMULATION</button>
+            <button id="btnSimSetup" class="btn-sim-setup" title="Simulation Setup">⚙️ Setup</button>
+            <button id="btnSimulate" class="btn-success">▶ RUN</button>
         </div>
     </div>
 
@@ -66,6 +67,102 @@
             <div class="sidebar-header">SIMULATION OUTPUT</div>
             <div id="simulationOutput" class="sidebar-content sim-output">
                 <p class="placeholder-text">No simulation data</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- SIMULATION SETUP MODAL                       -->
+    <!-- Matches PySpice Studio SimulationDialog       -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="simModal" class="modal-overlay" style="display:none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Simulation Setup</h2>
+                <button id="modalClose" class="modal-close-btn">&times;</button>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="modal-tabs">
+                <button class="modal-tab active" data-tab="tab-analysis">Analysis Config</button>
+                <button class="modal-tab" data-tab="tab-plot">Plot &amp; Colors</button>
+            </div>
+
+            <!-- Tab: Analysis Config -->
+            <div id="tab-analysis" class="modal-tab-content active">
+                <div class="modal-form-row">
+                    <label class="modal-label">Simulation Mode</label>
+                    <select id="simModeSelect" class="modal-select">
+                        <option value="op">Operating Point</option>
+                        <option value="tran">Transient</option>
+                        <option value="dc">DC Sweep</option>
+                        <option value="ac">AC Analysis</option>
+                    </select>
+                </div>
+                <div id="simParamsContainer" class="modal-params-area">
+                    <!-- Dynamic form fields rendered by JS -->
+                </div>
+            </div>
+
+            <!-- Tab: Plot & Colors -->
+            <div id="tab-plot" class="modal-tab-content">
+                <div class="modal-section-title">Graph Appearance</div>
+                <div class="modal-form-row">
+                    <label class="modal-label">Background</label>
+                    <select id="plotBgColor" class="modal-select modal-select-sm">
+                        <option value="white" selected>white</option>
+                        <option value="black">black</option>
+                        <option value="#1E1E1E">#1E1E1E (dark)</option>
+                    </select>
+                </div>
+
+                <div class="modal-section-title">Active Signals</div>
+                <div id="signalList" class="signal-list">
+                    <p class="placeholder-text" id="noSignalsMsg">No signals added yet</p>
+                </div>
+
+                <div class="modal-section-title">Add New Signal</div>
+                <div class="modal-form-row-inline">
+                    <label class="modal-label-sm">Color</label>
+                    <select id="sigColorSelect" class="modal-select modal-select-sm">
+                        <option value="red">red</option>
+                        <option value="blue">blue</option>
+                        <option value="green">green</option>
+                        <option value="orange">orange</option>
+                        <option value="magenta">magenta</option>
+                        <option value="cyan">cyan</option>
+                        <option value="yellow">yellow</option>
+                        <option value="brown">brown</option>
+                    </select>
+                    <label class="modal-label-sm">Window</label>
+                    <select id="sigWindowSelect" class="modal-select modal-select-sm">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                    </select>
+                </div>
+
+                <div class="modal-form-row">
+                    <label class="modal-label">Voltage v(node)</label>
+                    <select id="sigNodeSelect" class="modal-select">
+                        <option value="">— solve nodes first —</option>
+                    </select>
+                    <button id="btnAddVoltage" class="modal-btn-add">+ Add</button>
+                </div>
+                <div class="modal-form-row">
+                    <label class="modal-label">Current i(source)</label>
+                    <select id="sigSourceSelect" class="modal-select">
+                        <option value="">— solve nodes first —</option>
+                    </select>
+                    <button id="btnAddCurrent" class="modal-btn-add">+ Add</button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer">
+                <button id="btnModalCancel" class="modal-btn-cancel">Cancel</button>
+                <button id="btnModalRun" class="modal-btn-run">▶ Run Simulation</button>
             </div>
         </div>
     </div>

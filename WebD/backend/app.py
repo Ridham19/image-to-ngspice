@@ -3,6 +3,7 @@ WebSpice Studio — FastAPI Backend
 Endpoints:
   POST /api/detect     — Upload image, run YOLO + OCR, return components
   POST /api/simulate   — Receive canvas state, generate SPICE netlist, run ngspice
+  GET  /api/plots/{fn} — Serve generated plot images
 """
 import os
 import sys
@@ -10,18 +11,20 @@ import shutil
 import json
 import subprocess
 import re
+import glob
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 # Import ML Logic
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from core.model import ComponentDetector
+from core.node_solver import solve_canvas, NON_DEVICE_TYPES
 
 # ═══════════════════════════════════════════
 # APP INIT
@@ -66,21 +69,6 @@ if os.path.exists(CONFIG_FILE):
 # ═══════════════════════════════════════════
 GRID_SIZE = 20
 
-PIN_MAP = {
-    'resistor':       [(-40, 0), (40, 0)],
-    'capacitor':      [(-40, 0), (40, 0)],
-    'inductor':       [(-40, 0), (40, 0)],
-    'diode':          [(-40, 0), (40, 0)],
-    'source':         [(0, -40), (0, 40)],
-    'voltage_source': [(0, -40), (0, 40)],
-    'current_source': [(0, -40), (0, 40)],
-    'ac_source':      [(0, -40), (0, 40)],
-    'ground':         [(0, -20)],
-    'bjt_npn':        [(-20, 0), (20, -40), (20, 40)],  # Base, Collector, Emitter
-    'bjt_pnp':        [(-20, 0), (20, -40), (20, 40)],
-    'bjt':            [(-20, 0), (20, -40), (20, 40)],
-}
-
 SPICE_TEMPLATES = {
     'resistor':       '{name} {n1} {n2} {value}',
     'capacitor':      '{name} {n1} {n2} {value} ic={ic}',
@@ -95,8 +83,8 @@ SPICE_TEMPLATES = {
     'bjt':            '{name} {n2} {n1} {n3} {model}',
 }
 
-# Types that are not circuit devices (no SPICE line emitted)
-NON_DEVICE_TYPES = {'ground', 'label', 'junction', 'wire', 'text'}
+# SPICE prefix order for sorted netlist output
+SPICE_PREFIX_ORDER = {'C': 0, 'D': 1, 'I': 2, 'L': 3, 'Q': 4, 'R': 5, 'V': 6}
 
 # ═══════════════════════════════════════════
 # PYDANTIC MODELS
@@ -114,8 +102,22 @@ class ComponentPayload(BaseModel):
     rotation: int = 0
 
 class SimConfig(BaseModel):
+    """
+    Simulation configuration matching PySpice Studio's SimulationDialog.
+
+    Fields
+    ------
+    mode   : "op" | "tran" | "dc" | "ac"
+    params : mode-specific parameters (step, stop, start, source, etc.)
+    plots  : dict mapping window_id → list of signal expressions
+             e.g. {"1": ["v(1)", "v(2)"], "2": ["i(V1)"]}
+    colors : dict mapping color index → color name
+             e.g. {"0": "white", "1": "black", "2": "red"}
+    """
     mode: str = "op"
     params: Dict[str, str] = {}
+    plots: Dict[str, List[str]] = {}
+    colors: Dict[str, str] = {}
 
 class SimulateRequest(BaseModel):
     components: List[ComponentPayload]
@@ -193,84 +195,15 @@ async def detect_circuit(file: UploadFile = File(...)):
 async def simulate_circuit(request: SimulateRequest):
     """
     Receive canvas state, generate SPICE netlist via DFS graph traversal,
-    write to file, run ngspice, return results.
+    write to file, run ngspice, return results + plot images.
     """
     try:
-        # ─── STEP 1: Compute pin coordinates for all components ───
-        comp_pins = []  # List of (component, [pin_coords])
-        for comp in request.components:
-            pins = compute_pins(comp)
-            comp_pins.append((comp, pins))
+        # ─── STEP 1: Solve node topology via DFS ───
+        node_map, comp_pins = solve_canvas(
+            request.components, request.wires, GRID_SIZE
+        )
 
-        # ─── STEP 2: Build coordinate adjacency list ───
-        adj = defaultdict(set)
-
-        # Add wire segments to adjacency
-        for wire in request.wires:
-            if len(wire) >= 2:
-                p1 = snap_coord(wire[0].x, wire[0].y)
-                p2 = snap_coord(wire[1].x, wire[1].y)
-                adj[p1].add(p2)
-                adj[p2].add(p1)
-
-        # Add component pin positions as graph nodes
-        for comp, pins in comp_pins:
-            for pin in pins:
-                pt = (pin[0], pin[1])
-                if pt not in adj:
-                    adj[pt] = set()
-
-        # ─── STEP 3: DFS to cluster connected coordinates into nodes ───
-        visited = set()
-        node_map = {}  # coordinate -> node_id
-        node_counter = 1
-
-        # Find all ground locations
-        gnd_coords = set()
-        for comp, pins in comp_pins:
-            if comp.type == 'ground':
-                for pin in pins:
-                    gnd_coords.add((pin[0], pin[1]))
-
-        # DFS traversal
-        all_points = set(adj.keys())
-        for comp, pins in comp_pins:
-            for pin in pins:
-                all_points.add((pin[0], pin[1]))
-
-        for start_pt in all_points:
-            if start_pt in visited:
-                continue
-
-            # DFS to find all connected coordinates
-            cluster = []
-            is_ground = False
-            stack = [start_pt]
-
-            while stack:
-                curr = stack.pop()
-                if curr in visited:
-                    continue
-                visited.add(curr)
-                cluster.append(curr)
-
-                if curr in gnd_coords:
-                    is_ground = True
-
-                # Traverse adjacency
-                for neighbor in adj.get(curr, set()):
-                    if neighbor not in visited:
-                        stack.append(neighbor)
-
-            # Assign node ID
-            node_id = "0" if is_ground else str(node_counter)
-            if not is_ground:
-                node_counter += 1
-
-            for pt in cluster:
-                node_map[pt] = node_id
-
-        # ─── STEP 4: Generate SPICE netlist ───
+        # ─── STEP 2: Generate SPICE netlist ───
         lines = ["* WebSpice Studio — Generated Netlist", ""]
 
         # Collect required .model statements
@@ -288,7 +221,8 @@ async def simulate_circuit(request: SimulateRequest):
         if models_needed:
             lines.append("")
 
-        # Generate device lines
+        # Generate device lines — sorted by SPICE prefix character
+        device_lines = []
         for comp, pins in comp_pins:
             if comp.type in NON_DEVICE_TYPES:
                 continue
@@ -300,8 +234,7 @@ async def simulate_circuit(request: SimulateRequest):
             # Look up node IDs for this component's pins
             nodes = []
             for pin in pins:
-                pt = (pin[0], pin[1])
-                nodes.append(node_map.get(pt, "NC"))
+                nodes.append(node_map.get(pin, "NC"))
 
             # Build context dict for template formatting
             ctx = {
@@ -317,11 +250,19 @@ async def simulate_circuit(request: SimulateRequest):
 
             try:
                 line = template.format(**ctx)
-                lines.append(line)
+                # Sort key: first char of the component name (SPICE prefix)
+                prefix = comp.name[0].upper() if comp.name else 'Z'
+                sort_key = SPICE_PREFIX_ORDER.get(prefix, 99)
+                device_lines.append((sort_key, comp.name, line))
             except KeyError as e:
-                lines.append(f"* ERROR: Missing param {e} for {comp.name}")
+                device_lines.append((99, comp.name, f"* ERROR: Missing param {e} for {comp.name}"))
 
-        # ─── STEP 5: Append simulation command ───
+        # Sort by SPICE prefix order, then by name
+        device_lines.sort(key=lambda t: (t[0], t[1]))
+        for _, _, line in device_lines:
+            lines.append(line)
+
+        # ─── STEP 3: Append simulation command ───
         lines.append("")
         sim_mode = request.simConfig.mode.lower()
         sim_params = request.simConfig.params
@@ -332,11 +273,19 @@ async def simulate_circuit(request: SimulateRequest):
             start = sim_params.get("start", "0")
             lines.append(f".tran {step} {stop} {start}")
         elif sim_mode == "dc":
-            src = sim_params.get("source", "V1")
-            start = sim_params.get("start", "0")
-            stop = sim_params.get("stop", "5")
-            incr = sim_params.get("incr", "0.1")
-            lines.append(f".dc {src} {start} {stop} {incr}")
+            src1 = sim_params.get("source1", sim_params.get("source", "V1"))
+            start1 = sim_params.get("start", "0")
+            stop1 = sim_params.get("stop", "5")
+            incr1 = sim_params.get("incr", "0.1")
+            dc_cmd = f".dc {src1} {start1} {stop1} {incr1}"
+            # Secondary sweep (optional, matches Python app)
+            src2 = sim_params.get("source2", "")
+            if src2 and src2.lower() != "none":
+                start2 = sim_params.get("start2", "0")
+                stop2 = sim_params.get("stop2", "5")
+                incr2 = sim_params.get("incr2", "1")
+                dc_cmd += f" {src2} {start2} {stop2} {incr2}"
+            lines.append(dc_cmd)
         elif sim_mode == "ac":
             atype = sim_params.get("type", "DEC")
             pts = sim_params.get("points", "10")
@@ -346,25 +295,53 @@ async def simulate_circuit(request: SimulateRequest):
         else:
             lines.append(".op")
 
-        # Control block
+        # ─── STEP 4: Control block (matches PySpice_studio/netlist.py) ───
         lines.append(".control")
         lines.append("run")
-        lines.append("set color0 = white")
-        lines.append("set color1 = black")
+
+        # Color settings
+        colors = request.simConfig.colors
+        if not colors:
+            lines.append("set color0 = white")
+            lines.append("set color1 = black")
+        else:
+            for idx in sorted(colors.keys(), key=lambda k: int(k) if k.isdigit() else 999):
+                lines.append(f"set color{idx} = {colors[idx]}")
+
         lines.append("set xbrushwidth = 2")
+
+        # Print all for data extraction
         lines.append("print all")
+
+        # Plot commands — generate hardcopy SVG images for each plot window
+        # Clean up old plot files first
+        for old_file in glob.glob(os.path.join(SIM_DIR, "plot_win*.svg")):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass
+
+        plots = request.simConfig.plots
+        if plots and sim_mode != "op":
+            lines.append("set hcopydevtype = svg")
+            sorted_wins = sorted(plots.keys())
+            for win_id in sorted_wins:
+                sigs = " ".join(plots[win_id])
+                svg_file = f"plot_win{win_id}.svg"
+                lines.append(f"hardcopy {svg_file} {sigs} title 'Graph Window {win_id}'")
+
         lines.append(".endc")
         lines.append(".end")
 
         netlist_text = "\n".join(lines)
 
-        # ─── STEP 6: Write netlist to file ───
+        # ─── STEP 5: Write netlist to file ───
         cir_path = os.path.join(SIM_DIR, "circuit.cir")
         with open(cir_path, "w", encoding="utf-8") as f:
             f.write(netlist_text)
         print(f"📝 Netlist written to {cir_path}")
 
-        # ─── STEP 7: Run ngspice subprocess ───
+        # ─── STEP 6: Run ngspice subprocess ───
         raw_output = ""
         sim_data = {}
 
@@ -374,7 +351,8 @@ async def simulate_circuit(request: SimulateRequest):
                     "status": "error",
                     "message": f"ngspice binary not found at: {NGSPICE_PATH}",
                     "netlist": netlist_text,
-                    "raw_output": ""
+                    "raw_output": "",
+                    "plot_images": []
                 })
 
             proc = subprocess.Popen(
@@ -394,10 +372,11 @@ async def simulate_circuit(request: SimulateRequest):
                     "status": "error",
                     "message": "Simulation timed out after 30 seconds.",
                     "netlist": netlist_text,
-                    "raw_output": raw_output
+                    "raw_output": raw_output,
+                    "plot_images": []
                 })
 
-            # ─── STEP 8: Parse ngspice output ───
+            # ─── STEP 7: Parse ngspice output ───
             sim_data = parse_ngspice_output(raw_output)
 
             if proc.returncode != 0 and not sim_data:
@@ -405,7 +384,8 @@ async def simulate_circuit(request: SimulateRequest):
                     "status": "error",
                     "message": f"ngspice exited with code {proc.returncode}",
                     "netlist": netlist_text,
-                    "raw_output": raw_output
+                    "raw_output": raw_output,
+                    "plot_images": []
                 })
 
         except FileNotFoundError:
@@ -413,14 +393,50 @@ async def simulate_circuit(request: SimulateRequest):
                 "status": "error",
                 "message": f"ngspice executable not found. Tried: {NGSPICE_PATH}. Install ngspice or update config.json.",
                 "netlist": netlist_text,
-                "raw_output": ""
+                "raw_output": "",
+                "plot_images": []
             })
+
+        # ─── STEP 8: Collect generated plot images ───
+        plot_images = []
+
+        # Check for SVG files generated by ngspice hardcopy
+        for svg_path in sorted(glob.glob(os.path.join(SIM_DIR, "plot_win*.svg"))):
+            filename = os.path.basename(svg_path)
+            plot_images.append(f"/api/plots/{filename}")
+
+        # If ngspice didn't generate SVGs (older version / no hardcopy support),
+        # fall back to matplotlib for server-side plot generation
+        if not plot_images and plots and sim_mode != "op":
+            fallback_images = generate_plot_images_matplotlib(
+                sim_data, plots, colors, SIM_DIR, sim_mode
+            )
+            for fname in fallback_images:
+                plot_images.append(f"/api/plots/{fname}")
+
+        # Build the unique node list for the frontend
+        unique_nodes = sorted(set(node_map.values()))
+
+        # Build the source list for the frontend (sources available for sweep)
+        source_names = []
+        sweepable_names = []
+        source_types = {'source', 'voltage_source', 'current_source', 'ac_source'}
+        sweepable_types = source_types | {'resistor'}
+        for comp, _ in comp_pins:
+            if comp.type in source_types:
+                source_names.append(comp.name)
+            if comp.type in sweepable_types:
+                sweepable_names.append(comp.name)
 
         return JSONResponse(content={
             "status": "success",
             "netlist": netlist_text,
             "raw_output": raw_output,
-            "data": sim_data
+            "data": sim_data,
+            "plot_images": plot_images,
+            "nodes": unique_nodes,
+            "sources": source_names,
+            "sweepables": sweepable_names,
         })
 
     except Exception as e:
@@ -430,43 +446,70 @@ async def simulate_circuit(request: SimulateRequest):
             "status": "error",
             "message": str(e),
             "netlist": "",
-            "raw_output": ""
+            "raw_output": "",
+            "plot_images": []
+        })
+
+
+@app.get("/api/plots/{filename}")
+async def get_plot_image(filename: str):
+    """Serve a generated plot image (SVG or PNG) from the simulations directory."""
+    filepath = os.path.join(SIM_DIR, filename)
+    if not os.path.exists(filepath):
+        return JSONResponse(status_code=404, content={"error": "Plot not found"})
+
+    # Determine media type
+    if filename.endswith(".svg"):
+        media_type = "image/svg+xml"
+    elif filename.endswith(".png"):
+        media_type = "image/png"
+    else:
+        media_type = "application/octet-stream"
+
+    return FileResponse(filepath, media_type=media_type)
+
+
+@app.post("/api/solve_nodes")
+async def solve_nodes_endpoint(request: SimulateRequest):
+    """
+    Pre-simulation helper: solve the node topology and return available
+    nodes, sources, and sweepable components for the simulation dialog.
+    """
+    try:
+        node_map, comp_pins = solve_canvas(
+            request.components, request.wires, GRID_SIZE
+        )
+
+        unique_nodes = sorted(set(node_map.values()))
+
+        source_names = []
+        sweepable_names = []
+        source_types = {'source', 'voltage_source', 'current_source', 'ac_source'}
+        sweepable_types = source_types | {'resistor'}
+        for comp, _ in comp_pins:
+            if comp.type in source_types:
+                source_names.append(comp.name)
+            if comp.type in sweepable_types:
+                sweepable_names.append(comp.name)
+
+        return JSONResponse(content={
+            "status": "success",
+            "nodes": unique_nodes,
+            "sources": source_names,
+            "sweepables": sweepable_names,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": str(e),
         })
 
 
 # ═══════════════════════════════════════════
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════
-
-def snap_coord(x: float, y: float):
-    """Snap a coordinate to the grid and return as a hashable tuple."""
-    return (round(x / GRID_SIZE) * GRID_SIZE, round(y / GRID_SIZE) * GRID_SIZE)
-
-
-def compute_pins(comp: ComponentPayload):
-    """
-    Compute absolute pin positions for a component based on its type,
-    position, and rotation. Returns list of (x, y) tuples snapped to grid.
-    """
-    pin_offsets = PIN_MAP.get(comp.type, [(-40, 0), (40, 0)])
-    rotation_rad = (comp.rotation % 360) * 3.14159265 / 180.0
-
-    import math
-    cos_r = round(math.cos(rotation_rad))
-    sin_r = round(math.sin(rotation_rad))
-
-    pins = []
-    for dx, dy in pin_offsets:
-        # Apply rotation
-        rx = dx * cos_r - dy * sin_r
-        ry = dx * sin_r + dy * cos_r
-        # Absolute position, snapped
-        px = round((comp.x + rx) / GRID_SIZE) * GRID_SIZE
-        py = round((comp.y + ry) / GRID_SIZE) * GRID_SIZE
-        pins.append((px, py))
-
-    return pins
-
 
 def parse_ngspice_output(raw: str) -> dict:
     """
@@ -514,6 +557,122 @@ def parse_ngspice_output(raw: str) -> dict:
                         data_started = False
 
     return result
+
+
+def generate_plot_images_matplotlib(
+    sim_data: dict,
+    plot_config: Dict[str, List[str]],
+    colors_config: Dict[str, str],
+    sim_dir: str,
+    sim_mode: str,
+) -> List[str]:
+    """
+    Fallback: Generate PNG plot images from parsed simulation data using
+    matplotlib when ngspice hardcopy/SVG output is unavailable.
+
+    Returns a list of generated filenames.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Non-interactive backend for server use
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("⚠️ matplotlib not available for fallback plot generation")
+        return []
+
+    # Only tabular data (list of lists) can be plotted
+    if not sim_data.get("values") or not isinstance(sim_data["values"], list):
+        return []
+    if len(sim_data["values"]) == 0:
+        return []
+    if not isinstance(sim_data["values"][0], list):
+        return []
+
+    vectors = sim_data["vectors"]
+    values = sim_data["values"]
+
+    # Convert to columnar format
+    num_cols = len(vectors)
+    columns: Dict[str, List[float]] = {}
+    for i in range(num_cols):
+        col_data = []
+        for row in values:
+            if i < len(row):
+                col_data.append(row[i])
+        columns[vectors[i]] = col_data
+
+    # x-axis is always the first column (time, frequency, source value)
+    x_var = vectors[0]
+    x_data = columns[x_var]
+
+    # Color configuration
+    bg_color = colors_config.get("0", "white")
+    text_color = colors_config.get("1", "black")
+
+    plot_files: List[str] = []
+    color_idx = 2
+
+    for win_id in sorted(plot_config.keys()):
+        signals = plot_config[win_id]
+
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(bg_color)
+        ax.tick_params(colors=text_color)
+        ax.xaxis.label.set_color(text_color)
+        ax.yaxis.label.set_color(text_color)
+        ax.title.set_color(text_color)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(text_color)
+
+        plotted_any = False
+        for sig in signals:
+            sig_lower = sig.lower()
+            # Find matching column (case-insensitive)
+            matched_col = None
+            for col_name in vectors:
+                if col_name.lower() == sig_lower:
+                    matched_col = col_name
+                    break
+
+            if matched_col and matched_col in columns:
+                sig_color = colors_config.get(str(color_idx), "red")
+                ax.plot(
+                    x_data, columns[matched_col],
+                    color=sig_color, linewidth=2, label=sig
+                )
+                color_idx += 1
+                plotted_any = True
+
+        if not plotted_any:
+            plt.close(fig)
+            continue
+
+        # Axis labels
+        x_labels = {
+            "tran": "Time (s)",
+            "dc": "Voltage (V)",
+            "ac": "Frequency (Hz)",
+        }
+        ax.set_xlabel(x_labels.get(sim_mode, x_var))
+        ax.set_ylabel("Amplitude")
+        ax.legend(
+            facecolor=bg_color, edgecolor=text_color,
+            labelcolor=text_color, framealpha=0.8
+        )
+        ax.set_title(f"Graph Window {win_id}")
+        ax.grid(True, alpha=0.3, color=text_color)
+
+        filename = f"plot_win{win_id}.png"
+        filepath = os.path.join(sim_dir, filename)
+        fig.savefig(
+            filepath, dpi=120, bbox_inches='tight',
+            facecolor=fig.get_facecolor(), edgecolor='none'
+        )
+        plt.close(fig)
+        plot_files.append(filename)
+
+    return plot_files
 
 
 # ═══════════════════════════════════════════

@@ -108,6 +108,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const gridSize = 20;
     let nameCounts = {};  // Per-prefix auto-naming counters
 
+    // Simulation config state (mirrors PySpice Studio's sim_data)
+    let simConfig = {
+        mode: 'op',
+        params: {},
+        plots: {},    // window_id → [signal_names]
+        colors: {},   // color_index → color_name
+    };
+    let plotSignals = [];  // [{signal, color, window}]
+    // Available nodes/sources/sweepables (populated after solving)
+    let availableNodes = [];
+    let availableSources = [];
+    let availableSweepables = [];
+
     // Camera & Viewport
     let zoom = 1.0;
     let offsetX = 0;
@@ -1120,79 +1133,370 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ═══════════════════════════════════════════
-    // SIMULATION INTEGRATION
+    // SIMULATION SETUP MODAL
+    // (Matches PySpice Studio SimulationDialog)
     // ═══════════════════════════════════════════
-    document.getElementById("btnSimulate").addEventListener("click", async () => {
-        const statusText = document.getElementById("statusText");
-        const netlistEl = document.getElementById("netlistText");
-        const simOutput = document.getElementById("simulationOutput");
+    const simModal = document.getElementById('simModal');
+    const simModeSelect = document.getElementById('simModeSelect');
+    const simParamsContainer = document.getElementById('simParamsContainer');
 
+    function openSimModal() {
         if (components.length === 0) {
-            statusText.innerText = "⚠️ No components to simulate.";
+            document.getElementById('statusText').innerText = '⚠️ No components to simulate.';
+            return;
+        }
+        // Restore last-used mode
+        simModeSelect.value = simConfig.mode;
+        rebuildSimForm();
+        rebuildSignalList();
+        simModal.style.display = 'flex';
+        // Solve nodes in the background to populate dropdowns
+        solveNodesForDialog();
+    }
+
+    function closeSimModal() {
+        simModal.style.display = 'none';
+    }
+
+    // Tab switching
+    document.querySelectorAll('.modal-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.tab).classList.add('active');
+        });
+    });
+
+    // Mode change → rebuild form
+    simModeSelect.addEventListener('change', () => {
+        simConfig.mode = simModeSelect.value;
+        rebuildSimForm();
+    });
+
+    // Open modal from Setup or RUN button
+    document.getElementById('btnSimSetup').addEventListener('click', openSimModal);
+    document.getElementById('btnSimulate').addEventListener('click', openSimModal);
+    document.getElementById('modalClose').addEventListener('click', closeSimModal);
+    document.getElementById('btnModalCancel').addEventListener('click', closeSimModal);
+
+    // Close modal when clicking the overlay background
+    simModal.addEventListener('click', (e) => {
+        if (e.target === simModal) closeSimModal();
+    });
+
+    // ── Dynamic Form Builder (matching Python app's rebuild_form) ──
+    function rebuildSimForm() {
+        simParamsContainer.innerHTML = '';
+        const m = simModeSelect.value;
+
+        if (m === 'op') {
+            simParamsContainer.innerHTML = '<p class="params-op-message">Operating Point analysis requires no additional parameters.</p>';
             return;
         }
 
-        statusText.innerText = "⚙️ Generating netlist...";
+        if (m === 'tran') {
+            addParamField('step', 'Step Time', simConfig.params.step || '0.1m');
+            addParamField('stop', 'Stop Time', simConfig.params.stop || '80m');
+            addParamField('start', 'Start Time', simConfig.params.start || '0');
+        } else if (m === 'dc') {
+            addParamSelect('source1', 'Source 1', availableSweepables, simConfig.params.source1 || '');
+            addParamField('start', 'Start', simConfig.params.start || '0');
+            addParamField('stop', 'Stop', simConfig.params.stop || '5');
+            addParamField('incr', 'Increment', simConfig.params.incr || '0.1');
+            // Separator
+            const sep = document.createElement('hr');
+            sep.className = 'params-separator';
+            simParamsContainer.appendChild(sep);
+            const sepLabel = document.createElement('p');
+            sepLabel.className = 'params-separator-label';
+            sepLabel.textContent = '— Secondary Sweep (Optional) —';
+            simParamsContainer.appendChild(sepLabel);
+            addParamSelect('source2', 'Source 2', ['None', ...availableSweepables], simConfig.params.source2 || 'None');
+            addParamField('start2', 'Start 2', simConfig.params.start2 || '0');
+            addParamField('stop2', 'Stop 2', simConfig.params.stop2 || '5');
+            addParamField('incr2', 'Incr 2', simConfig.params.incr2 || '1');
+        } else if (m === 'ac') {
+            addParamSelect('type', 'Type', ['DEC', 'LIN'], simConfig.params.type || 'DEC');
+            addParamField('points', 'Points', simConfig.params.points || '10');
+            addParamField('fstart', 'Start Freq', simConfig.params.fstart || '1');
+            addParamField('fstop', 'Stop Freq', simConfig.params.fstop || '10meg');
+        }
+    }
+
+    function addParamField(key, label, defaultVal) {
+        const row = document.createElement('div');
+        row.className = 'modal-form-row';
+        row.innerHTML = `
+            <label class="modal-label">${label}</label>
+            <input class="modal-input" type="text" data-param-key="${key}" value="${defaultVal}">
+        `;
+        row.querySelector('input').addEventListener('input', (e) => {
+            simConfig.params[key] = e.target.value;
+        });
+        simParamsContainer.appendChild(row);
+    }
+
+    function addParamSelect(key, label, options, defaultVal) {
+        const row = document.createElement('div');
+        row.className = 'modal-form-row';
+        const optHtml = options.map(o =>
+            `<option value="${o}"${o === defaultVal ? ' selected' : ''}>${o}</option>`
+        ).join('');
+        row.innerHTML = `
+            <label class="modal-label">${label}</label>
+            <select class="modal-select" data-param-key="${key}">${optHtml}</select>
+        `;
+        row.querySelector('select').addEventListener('change', (e) => {
+            simConfig.params[key] = e.target.value;
+        });
+        simParamsContainer.appendChild(row);
+    }
+
+    // ── Node Solving (pre-populates dropdowns) ──
+    async function solveNodesForDialog() {
+        try {
+            const payload = {
+                components: components.map(c => ({
+                    type: c.type, name: c.name,
+                    x: c.x, y: c.y,
+                    params: c.params || {}, rotation: 0
+                })),
+                wires: wires.map(w => [
+                    { x: w[0].x, y: w[0].y },
+                    { x: w[1].x, y: w[1].y }
+                ]),
+                simConfig: { mode: 'op', params: {} }
+            };
+
+            const resp = await fetch('http://127.0.0.1:8000/api/solve_nodes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+
+            if (data.status === 'success') {
+                availableNodes = data.nodes || [];
+                availableSources = data.sources || [];
+                availableSweepables = data.sweepables || [];
+                // Refresh dropdowns
+                populateSelect('sigNodeSelect', availableNodes);
+                populateSelect('sigSourceSelect', availableSources);
+                // Rebuild form to refresh sweepable selects
+                rebuildSimForm();
+            }
+        } catch (e) {
+            console.warn('Could not solve nodes:', e);
+        }
+    }
+
+    function populateSelect(selectId, options) {
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        sel.innerHTML = '';
+        if (options.length === 0) {
+            sel.innerHTML = '<option value="">— none —</option>';
+            return;
+        }
+        options.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt; o.textContent = opt;
+            sel.appendChild(o);
+        });
+    }
+
+    // ── Signal List Management ──
+    document.getElementById('btnAddVoltage').addEventListener('click', () => {
+        const node = document.getElementById('sigNodeSelect').value;
+        if (!node) return;
+        const sig = `v(${node})`;
+        const color = document.getElementById('sigColorSelect').value;
+        const win = document.getElementById('sigWindowSelect').value;
+        plotSignals.push({ signal: sig, color, window: win });
+        rebuildSignalList();
+    });
+
+    document.getElementById('btnAddCurrent').addEventListener('click', () => {
+        const src = document.getElementById('sigSourceSelect').value;
+        if (!src) return;
+        const sig = `i(${src})`;
+        const color = document.getElementById('sigColorSelect').value;
+        const win = document.getElementById('sigWindowSelect').value;
+        plotSignals.push({ signal: sig, color, window: win });
+        rebuildSignalList();
+    });
+
+    function rebuildSignalList() {
+        const list = document.getElementById('signalList');
+        const noMsg = document.getElementById('noSignalsMsg');
+        list.innerHTML = '';
+
+        if (plotSignals.length === 0) {
+            list.innerHTML = '<p class="placeholder-text" id="noSignalsMsg">No signals added yet</p>';
+            return;
+        }
+
+        plotSignals.forEach((sig, idx) => {
+            const item = document.createElement('div');
+            item.className = 'signal-item';
+            item.innerHTML = `
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="signal-color-dot" style="background:${sig.color}"></span>
+                    <span class="signal-item-label">${sig.signal}</span>
+                    <span class="signal-item-meta">Win ${sig.window}</span>
+                </div>
+                <button class="signal-remove-btn" data-idx="${idx}">&times;</button>
+            `;
+            item.querySelector('.signal-remove-btn').addEventListener('click', () => {
+                plotSignals.splice(idx, 1);
+                rebuildSignalList();
+            });
+            list.appendChild(item);
+        });
+    }
+
+    // ── Build final sim config from dialog state ──
+    function collectSimConfig() {
+        // Collect params from form inputs
+        const paramInputs = simParamsContainer.querySelectorAll('[data-param-key]');
+        paramInputs.forEach(el => {
+            simConfig.params[el.dataset.paramKey] = el.value;
+        });
+
+        // Build plots dict: window_id → [signals]
+        simConfig.plots = {};
+        // Build colors dict
+        const bgColor = document.getElementById('plotBgColor').value;
+        simConfig.colors = {
+            '0': bgColor,
+            '1': (bgColor === 'black' || bgColor === '#1E1E1E') ? 'white' : 'black'
+        };
+
+        let colorIdx = 2;
+        plotSignals.forEach(sig => {
+            if (!simConfig.plots[sig.window]) {
+                simConfig.plots[sig.window] = [];
+            }
+            simConfig.plots[sig.window].push(sig.signal);
+            simConfig.colors[String(colorIdx)] = sig.color;
+            colorIdx++;
+        });
+
+        simConfig.mode = simModeSelect.value;
+        return simConfig;
+    }
+
+    // ═══════════════════════════════════════════
+    // SIMULATION EXECUTION
+    // ═══════════════════════════════════════════
+    document.getElementById('btnModalRun').addEventListener('click', async () => {
+        const config = collectSimConfig();
+        closeSimModal();
+        await runSimulation(config);
+    });
+
+    async function runSimulation(config) {
+        const statusText = document.getElementById('statusText');
+        const netlistEl = document.getElementById('netlistText');
+        const simOutput = document.getElementById('simulationOutput');
+
+        statusText.innerText = '⚙️ Generating netlist & running simulation...';
         simOutput.innerHTML = '<p class="placeholder-text">Running simulation...</p>';
 
-        // Build the payload
         const payload = {
             components: components.map(c => ({
-                type: c.type,
-                name: c.name,
-                x: c.x,
-                y: c.y,
-                params: c.params || {},
-                rotation: 0
+                type: c.type, name: c.name,
+                x: c.x, y: c.y,
+                params: c.params || {}, rotation: 0
             })),
             wires: wires.map(w => [
                 { x: w[0].x, y: w[0].y },
                 { x: w[1].x, y: w[1].y }
             ]),
-            simConfig: {
-                mode: "op",
-                params: {}
-            }
+            simConfig: config
         };
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/api/simulate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            const response = await fetch('http://127.0.0.1:8000/api/simulate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const data = await response.json();
 
-            if (data.status === "success") {
-                statusText.innerText = "✅ Simulation complete.";
-                netlistEl.textContent = data.netlist || "No netlist generated";
+            if (data.status === 'success') {
+                statusText.innerText = '✅ Simulation complete.';
+                netlistEl.textContent = data.netlist || 'No netlist generated';
 
-                // Show raw output
-                if (data.raw_output) {
-                    simOutput.innerHTML = `<pre>${escapeHtml(data.raw_output)}</pre>`;
-                } else {
-                    simOutput.innerHTML = '<p class="sim-success">Simulation completed successfully.</p>';
+                // Update available nodes/sources from response
+                if (data.nodes) availableNodes = data.nodes;
+                if (data.sources) availableSources = data.sources;
+                if (data.sweepables) availableSweepables = data.sweepables;
+
+                // Build output display
+                let outputHtml = '';
+
+                // Show plot images first
+                if (data.plot_images && data.plot_images.length > 0) {
+                    data.plot_images.forEach((imgUrl, idx) => {
+                        const fullUrl = `http://127.0.0.1:8000${imgUrl}?t=${Date.now()}`;
+                        outputHtml += `
+                            <div class="plot-image-container">
+                                <img src="${fullUrl}" alt="Plot Window ${idx + 1}"
+                                     onclick="openLightbox(this.src)">
+                                <p class="plot-image-label">Graph Window ${idx + 1}</p>
+                            </div>
+                        `;
+                    });
                 }
+
+                // Show raw output (collapsed if plots exist)
+                if (data.raw_output) {
+                    if (data.plot_images && data.plot_images.length > 0) {
+                        outputHtml += `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:12px;">Raw ngspice output</summary><pre>${escapeHtml(data.raw_output)}</pre></details>`;
+                    } else {
+                        outputHtml += `<pre>${escapeHtml(data.raw_output)}</pre>`;
+                    }
+                }
+
+                if (!outputHtml) {
+                    outputHtml = '<p class="sim-success">Simulation completed successfully.</p>';
+                }
+
+                simOutput.innerHTML = outputHtml;
             } else {
-                statusText.innerText = "❌ Simulation failed.";
-                netlistEl.textContent = data.netlist || "Error";
+                statusText.innerText = '❌ Simulation failed.';
+                netlistEl.textContent = data.netlist || 'Error';
                 simOutput.innerHTML = `<p class="sim-error">${escapeHtml(data.message || 'Unknown error')}</p>`;
                 if (data.raw_output) {
                     simOutput.innerHTML += `<pre>${escapeHtml(data.raw_output)}</pre>`;
                 }
             }
         } catch (err) {
-            console.error("Simulation request failed:", err);
-            statusText.innerText = "❌ Connection error.";
+            console.error('Simulation request failed:', err);
+            statusText.innerText = '❌ Connection error.';
             simOutput.innerHTML = `<p class="sim-error">Could not reach backend at http://127.0.0.1:8000. Is the server running?</p>`;
         }
-    });
+    }
 
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
+
+    // ═══════════════════════════════════════════
+    // LIGHTBOX (Full-screen plot image viewer)
+    // ═══════════════════════════════════════════
+    // Exposed globally for onclick in dynamic HTML
+    window.openLightbox = function(src) {
+        const overlay = document.createElement('div');
+        overlay.className = 'lightbox-overlay';
+        overlay.innerHTML = `<img src="${src}" alt="Plot">`;
+        overlay.addEventListener('click', () => overlay.remove());
+        document.body.appendChild(overlay);
+    };
 
     // ═══════════════════════════════════════════
     // AI IMPORT LOGIC
@@ -1251,6 +1555,21 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }
                 });
+
+                // Load Wires
+                wires = [];
+                if (data.connections) {
+                    data.connections.forEach(conn => {
+                        const pts = conn.points;
+                        if (!pts || pts.length < 2) return;
+                        for (let i = 0; i < pts.length - 1; i++) {
+                            wires.push([
+                                { x: snap(pts[i].x), y: snap(pts[i].y) },
+                                { x: snap(pts[i+1].x), y: snap(pts[i+1].y) }
+                            ]);
+                        }
+                    });
+                }
 
                 // Auto-Center Camera
                 offsetX = 100; offsetY = 100; zoom = 1.0;
