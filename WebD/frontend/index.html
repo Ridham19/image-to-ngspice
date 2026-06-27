@@ -31,8 +31,17 @@
             <button id="tool-inductor" class="btn-tool">Inductor</button>
             <button id="tool-diode" class="btn-tool">Diode</button>
             <span class="tool-separator"></span>
-            <button id="tool-source" class="btn-tool">DC Src</button>
-            <button id="tool-ac_source" class="btn-tool">AC Src</button>
+            <select id="tool-source-select" class="toolbar-select" style="width: auto; appearance: none; -moz-appearance: none; -webkit-appearance: none; padding-right: 15px; cursor: pointer;">
+                <option value="" disabled selected>Sources ▼</option>
+                <option value="source">DC Source</option>
+                <option value="ac_source">AC Source</option>
+                <option value="pulse_source">PULSE Source</option>
+                <option value="sine_source">SINE Source</option>
+                <option value="exp_source">EXP Source</option>
+                <option value="pwl_source">PWL Source</option>
+                <option value="sffm_source">SFFM Source</option>
+                <option value="am_source">AM Source</option>
+            </select>
             <button id="tool-ground" class="btn-tool">GND</button>
             <span class="tool-separator"></span>
             <button id="tool-bjt_npn" class="btn-tool">NPN</button>
@@ -163,6 +172,27 @@
             <div class="modal-footer">
                 <button id="btnModalCancel" class="modal-btn-cancel">Cancel</button>
                 <button id="btnModalRun" class="modal-btn-run">▶ Run Simulation</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- AI DETECTION PREVIEW MODAL                   -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="aiDebugModal" class="modal-overlay" style="display:none;">
+        <div class="modal-container" style="max-width: 90%; max-height: 90%;">
+            <div class="modal-header">
+                <h2>AI Detection Preview</h2>
+                <button id="aiDebugModalClose" class="modal-close-btn">&times;</button>
+            </div>
+            
+            <div class="modal-tab-content active" style="text-align: center; overflow: auto; max-height: 65vh; padding: 10px;">
+                <img id="debugPreviewImage" src="" alt="AI Detection Debug Output" style="max-width: 100%; border: 1px solid #333; border-radius: 4px;">
+            </div>
+
+            <div class="modal-footer">
+                <button id="btnAiDebugCancel" class="modal-btn-cancel">Cancel</button>
+                <button id="btnAiDebugImport" class="modal-btn-run">Import to Canvas</button>
             </div>
         </div>
     </div>

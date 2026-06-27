@@ -5,6 +5,7 @@ for the image-based wire-tracing pipeline.
 """
 
 import numpy as np
+import cv2
 from collections import defaultdict
 from typing import List, Dict, Any, Tuple, Set, Optional
 
@@ -146,28 +147,46 @@ def trace_nodes(
         ]
     """
     # ── 1. Compute pin anchors ──
-    pin_anchors = compute_pin_anchors(detections)
+    pin_anchors = compute_pin_anchors(detections, wire_mask=wire_mask)
 
-    # ── 2. Build pixel adjacency list ──
-    adj = build_adjacency_list(wire_mask)
-
-    # ── 3. Snap pins onto the wire graph ──
-    # For each pin anchor, find the nearest wire pixel and record the
-    # mapping: snapped_coord → list of pin_anchor dicts that map there
+    # ── Draw ports and bridge lines on wire_mask ──
+    h_m, w_m = wire_mask.shape[:2]
     pin_snap_map: Dict[Tuple[int, int], List[Dict[str, Any]]] = defaultdict(list)
     snapped_pins: List[Optional[Tuple[int, int]]] = []
 
     for anchor in pin_anchors:
-        snapped = snap_pin_to_wire(
-            anchor["x"], anchor["y"], wire_mask, radius=snap_radius
-        )
-        snapped_pins.append(snapped)
+        ax, ay = anchor["x"], anchor["y"]
+        if 0 <= ax < w_m and 0 <= ay < h_m:
+            comp_idx = anchor["comp_idx"]
+            det = detections[comp_idx]
+            box = det.get("box")
+            dynamic_radius = snap_radius
+            if box and len(box) >= 4:
+                bw, bh = float(box[2]), float(box[3])
+                dynamic_radius = max(snap_radius, int(min(bw, bh) * 0.35))
+            
+            # 1. Snap to nearest wire pixel in original mask
+            snapped = snap_pin_to_wire(ax, ay, wire_mask, radius=dynamic_radius)
+            # 2. Draw the port dot
+            cv2.circle(wire_mask, (ax, ay), radius=3, color=255, thickness=-1)
+            # 3. Draw bridge line if snapped to connect port to wire
+            if snapped is not None:
+                cv2.line(wire_mask, (ax, ay), snapped, color=255, thickness=2)
+            
+            # Since (ax, ay) is painted white, it is the snapped node coordinate
+            node_coord = (ax, ay)
+            snapped_pins.append(node_coord)
+            pin_snap_map[node_coord].append(anchor)
+        else:
+            snapped_pins.append(None)
 
-        if snapped is not None:
-            pin_snap_map[snapped].append(anchor)
-            # Ensure the snapped coordinate exists in the adjacency list
-            if snapped not in adj:
-                adj[snapped] = set()
+    # ── 2. Build pixel adjacency list ──
+    adj = build_adjacency_list(wire_mask)
+
+    # Ensure all resolved snapped coords are in the adjacency list
+    for snapped in snapped_pins:
+        if snapped is not None and snapped not in adj:
+            adj[snapped] = set()
 
     # ── 4. Identify ground pin coordinates ──
     ground_coords: Set[Tuple[int, int]] = set()
@@ -196,20 +215,6 @@ def trace_nodes(
         for px in cluster:
             if px in pin_snap_map:
                 pins_in_cluster.extend(pin_snap_map[px])
-        cluster_pin_anchors.append(pins_in_cluster)
-
-    # Also DFS from remaining unvisited wire pixels (orphan wires)
-    all_wire_pixels = set(adj.keys())
-    for px in all_wire_pixels:
-        if px in visited:
-            continue
-        cluster = _dfs_collect(px, adj, visited)
-        clusters.append(cluster)
-
-        pins_in_cluster = []
-        for pt in cluster:
-            if pt in pin_snap_map:
-                pins_in_cluster.extend(pin_snap_map[pt])
         cluster_pin_anchors.append(pins_in_cluster)
 
     # ── 6. Assign node IDs ──
@@ -266,7 +271,7 @@ def trace_nodes(
     for cluster_idx, cluster in enumerate(clusters):
         # Only include clusters that actually connect pins
         pins = cluster_pin_anchors[cluster_idx]
-        if not cluster:
+        if not cluster or not pins:
             continue
 
         # Extract simplified wire path points

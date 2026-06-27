@@ -158,6 +158,24 @@ canvas {
     box-shadow: inset 0 0 10px rgba(0, 229, 255, 0.1);
 }
 
+.toolbar-select {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.toolbar-select:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+.toolbar-select option {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+}
+
 /* ============================================
    PROPERTIES INSPECTOR
    ============================================ */

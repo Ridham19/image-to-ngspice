@@ -15,6 +15,38 @@ import glob
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
+
+# ═══════════════════════════════════════════
+# FILENAME SANITIZATION HELPER
+# ═══════════════════════════════════════════
+def _safe_filename(name: str) -> str:
+    """
+    Sanitize an uploaded filename to be safe for local filesystem storage.
+
+    Replaces whitespace and any character outside [A-Za-z0-9._-] with
+    underscores, collapses consecutive underscores, and strips leading
+    and trailing dots / underscores to prevent path-traversal vectors.
+
+    Parameters
+    ----------
+    name : str
+        Original filename as received from the multipart upload.
+
+    Returns
+    -------
+    str -- Sanitized filename (basename only, no directory component).
+    """
+    # Take only the basename to strip any path-traversal prefix
+    name = os.path.basename(name)
+    # Replace whitespace and forbidden characters with underscores
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    # Collapse consecutive underscores
+    name = re.sub(r"_+", "_", name)
+    # Strip leading/trailing dots and underscores
+    name = name.strip("._")
+    # Fallback for edge-case empty result
+    return name or "upload"
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -141,54 +173,109 @@ def read_root():
 
 @app.post("/api/detect")
 async def detect_circuit(file: UploadFile = File(...)):
-    """Upload an image, run YOLO detection + OCR, return detected components."""
+    """
+    Upload a circuit image, run YOLO + OCR component detection, then execute
+    the full wire-tracing vision pipeline to yield a connectivity matrix.
+
+    Pipeline
+    --------
+    1. Sanitize filename and save upload to workspace/uploads/
+    2. Confirm OpenCV can read the saved file
+    3. Run YOLO + EasyOCR detection on the preloaded image matrix
+    4. Preprocess image with dual-path binarization (adaptive + Canny)
+    5. Separate wire layer by BBOX collision masking
+    6. DFS pixel-graph traversal -> node connectivity list
+    7. Return JSON with components + connections (null on tracing failure)
+    """
     try:
-        file_location = os.path.join(UPLOAD_DIR, file.filename)
+        # Step 1 -- Sanitize filename and resolve cross-platform save path
+        safe_name = _safe_filename(file.filename or "upload.png")
+        file_location = os.path.join(UPLOAD_DIR, safe_name)
+
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
+        saved_bytes = os.path.getsize(file_location)
+        print(f"📁 Saved upload: {file_location!r} ({saved_bytes} bytes)")
+
+        # Step 2 -- Verify OpenCV can decode the saved file before any ML work
+        import cv2 as _cv2
+        bgr_image = _cv2.imread(file_location)
+        if bgr_image is None:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "error",
+                    "message": (
+                        f"The uploaded file '{safe_name}' could not be decoded as an image. "
+                        "Please upload a valid PNG, JPG, or BMP file."
+                    ),
+                },
+            )
+
+        print(f"🖼️  Image decoded: {bgr_image.shape[1]}x{bgr_image.shape[0]} px")
+
+        # Step 3 -- YOLO + OCR detection
+        # Pass the preloaded BGR matrix to avoid a second disk read inside detect()
         json_output_path = os.path.join(WORKSPACE_DIR, "latest_detection.json")
-        detected_comps = detector.detect(file_location, output_file=json_output_path)
+        detected_comps = detector.detect(bgr_image, output_file=json_output_path)
+        print(f"🔍 Detected {len(detected_comps)} component(s)")
 
-        # ── Wire Tracing Pipeline ──
-        # Step 1: Edge detection + morphological cleanup
-        # Step 2: BBOX collision masking (blanks component interiors)
-        # Step 3: DFS graph traversal for nodal analysis
+        # Steps 4-6 -- Wire Tracing Pipeline
         connections = None
+        debug_image_b64 = ""
         try:
-            from core.processing import preprocess_image, separate_layers
+            from core.processing import preprocess_image, separate_layers, compute_pin_anchors
             from core.netlist import trace_nodes
+            from core.visualize import generate_debug_image
 
-            # Step 1 — Preprocessing
-            original, gray, binary = preprocess_image(file_location)
+            # Step 4 -- Dual-path binarization (adaptive threshold + Canny)
+            # Pass the already-loaded BGR matrix to skip a third disk read
+            original, gray, binary = preprocess_image(bgr_image)
 
-            # Step 2 — Collision masking: pass detections so component
-            # interiors are blanked out, leaving only external wire traces
-            _, wire_mask, _ = separate_layers(gray, binary, detections=detected_comps)
+            # Step 5 -- Collision masking: blank component interiors so only
+            # external wire traces remain in wire_mask
+            _, wire_mask, debug_overlay = separate_layers(
+                gray, binary, detections=detected_comps
+            )
 
-            # Step 3 — DFS traversal from pin anchors through wire pixels
-            # This mutates detected_comps in-place (adds "nodes" key)
+            # Step 6 -- DFS traversal from pin anchors through wire pixels
+            # Mutates detected_comps in-place, adding a 'nodes' key
             connections = trace_nodes(wire_mask, detected_comps)
+            
+            # Step 6.5 -- Generate AI Debug Preview Base64 Image
+            pin_anchors = compute_pin_anchors(detected_comps, wire_mask=wire_mask)
+            debug_image_b64 = generate_debug_image(original, binary, debug_overlay, detected_comps, connections, pin_anchors)
 
-            print(f"✅ Wire tracing complete: {len(connections or [])} wire segments found")
-        except Exception as e:
+            print(f"✅ Wire tracing complete: {len(connections or [])} wire segment(s) found")
+
+        except Exception as wire_err:
             import traceback
             traceback.print_exc()
-            print(f"⚠️ Wire tracing failed, skipping connections: {e}")
+            print(
+                f"⚠️  Wire tracing failed for '{safe_name}' "
+                f"({type(wire_err).__name__}: {wire_err}) — returning connections: null"
+            )
+            # connections stays None; the API returns a partial success
 
+        # Step 7 -- Serialize and return
         safe_components = jsonable_encoder(detected_comps)
         safe_connections = jsonable_encoder(connections)
 
         return JSONResponse(content={
             "status": "success",
             "components": safe_components,
-            "connections": safe_connections
+            "connections": safe_connections,
+            "debug_image": debug_image_b64,
         })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)},
+        )
 
 
 @app.post("/api/simulate")

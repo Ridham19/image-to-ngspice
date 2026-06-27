@@ -1,13 +1,25 @@
 * WebSpice Studio — Generated Netlist
 
-V1 1 2 DC 5
+.Model Dx diode (Is=14n Rs=0 N=1)
 
-.op
+D1 1 3 Dx
+R1 3 0 1k
+
+.tran 0.01m 2m 0
 .control
 run
 set color0 = white
 set color1 = black
+set color2 = brown
+set color3 = brown
+set color4 = brown
+set color5 = brown
 set xbrushwidth = 2
 print all
+set hcopydevtype = svg
+hardcopy plot_win1.svg v(1) title 'Graph Window 1'
+hardcopy plot_win2.svg v(2) title 'Graph Window 2'
+hardcopy plot_win3.svg v(3) title 'Graph Window 3'
+hardcopy plot_win4.svg v(4) title 'Graph Window 4'
 .endc
 .end

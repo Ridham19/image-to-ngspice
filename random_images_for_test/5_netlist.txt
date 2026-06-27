@@ -1,0 +1,3 @@
+* D:\codes\ML\image_to_ngspice\random_images_for_test\5_netlist.txt
+.tran 0.1s 1s 0s
+.end

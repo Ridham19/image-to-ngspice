@@ -64,8 +64,25 @@ class ComponentDetector:
                 label = self.model.names[cls_id]
                 conf = float(box.conf[0])
                 
-                prefix = label[0].upper() if label not in ['voltage', 'source'] else 'V'
-                if label == 'ground': prefix = 'GND'
+                # Map 'transistor' to 'bjt' for downstream compatibility
+                if label == 'transistor':
+                    label = 'bjt'
+                
+                prefix_map = {
+                    'resistor': 'R',
+                    'capacitor': 'C',
+                    'inductor': 'L',
+                    'diode': 'D',
+                    'source': 'V',
+                    'voltage_source': 'V',
+                    'current_source': 'I',
+                    'ac_source': 'V',
+                    'ground': 'GND',
+                    'bjt': 'Q',
+                    'bjt_npn': 'Q',
+                    'bjt_pnp': 'Q'
+                }
+                prefix = prefix_map.get(label, label[0].upper() if label else 'U')
                 
                 counters[prefix] = counters.get(prefix, 0) + 1
                 name = f"{prefix}{counters[prefix]}"

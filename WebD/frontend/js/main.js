@@ -69,6 +69,48 @@ document.addEventListener("DOMContentLoaded", () => {
             pins: [[0, -40], [0, 40]],
             hitbox: { w: 50, h: 80 }
         },
+        pulse_source: {
+            prefix: 'V', label: 'Pulse Source',
+            params: { v1: '0', v2: '5', td: '0', tr: '1n', tf: '1n', pw: '10u', per: '20u' },
+            spice: '{name} {n1} {n2} PULSE({v1} {v2} {td} {tr} {tf} {pw} {per})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        sine_source: {
+            prefix: 'V', label: 'Sine Source',
+            params: { vo: '0', va: '5', freq: '1k', td: '0', theta: '0', phase: '0' },
+            spice: '{name} {n1} {n2} SINE({vo} {va} {freq} {td} {theta} {phase})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        exp_source: {
+            prefix: 'V', label: 'Exp Source',
+            params: { v1: '0', v2: '5', td1: '2u', tau1: '2u', td2: '5u', tau2: '5u' },
+            spice: '{name} {n1} {n2} EXP({v1} {v2} {td1} {tau1} {td2} {tau2})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        pwl_source: {
+            prefix: 'V', label: 'PWL Source',
+            params: { pwl_data: '0 0 1m 5' },
+            spice: '{name} {n1} {n2} PWL({pwl_data})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        sffm_source: {
+            prefix: 'V', label: 'SFFM Source',
+            params: { vo: '0', va: '1', fc: '1k', mdi: '5', fs: '200' },
+            spice: '{name} {n1} {n2} SFFM({vo} {va} {fc} {mdi} {fs})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        am_source: {
+            prefix: 'V', label: 'AM Source',
+            params: { va: '5', fc: '1k', mf: '100', ph: '0' },
+            spice: '{name} {n1} {n2} AM({va} {fc} {mf} {ph})',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
         ground: {
             prefix: 'GND', label: 'Ground',
             params: {},
@@ -91,6 +133,13 @@ document.addEventListener("DOMContentLoaded", () => {
             hitbox: { w: 60, h: 80 }
         },
         bjt: {  // Generic BJT alias (from AI detection)
+            prefix: 'Q', label: 'NPN BJT',
+            params: { model: 'Tx' },
+            spice: '{name} {n2} {n1} {n3} {model}',
+            pins: [[-20, 0], [20, -40], [20, 40]],
+            hitbox: { w: 60, h: 80 }
+        },
+        transistor: {  // YOLO model class label
             prefix: 'Q', label: 'NPN BJT',
             params: { model: 'Tx' },
             spice: '{name} {n2} {n1} {n3} {model}',
@@ -134,6 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let dragStart = { x: 0, y: 0 };
     let wireStart = null;
     let mousePos = { x: 0, y: 0 };
+    let attachedWireEndpoints = [];
 
     // ═══════════════════════════════════════════
     // CANVAS RESIZE
@@ -223,11 +273,43 @@ document.addEventListener("DOMContentLoaded", () => {
         return bestPin;
     }
 
-    /** Smart snap: prefer the nearest pin, fall back to grid. */
+    /** Find the nearest point along any wire segment (T-junction snapping) */
+    function findNearestWireSegment(rawWorldX, rawWorldY) {
+        let bestDist = PIN_SNAP_RADIUS;
+        let bestPt = null;
+        for (const wire of wires) {
+            for (let i = 0; i < wire.length - 1; i++) {
+                const p1 = wire[i];
+                const p2 = wire[i+1];
+                const l2 = (p1.x - p2.x)**2 + (p1.y - p2.y)**2;
+                if (l2 === 0) continue;
+                
+                // Point to line segment projection
+                let t = ((rawWorldX - p1.x) * (p2.x - p1.x) + (rawWorldY - p1.y) * (p2.y - p1.y)) / l2;
+                t = Math.max(0, Math.min(1, t));
+                const projX = p1.x + t * (p2.x - p1.x);
+                const projY = p1.y + t * (p2.y - p1.y);
+                
+                const dist = Math.sqrt((rawWorldX - projX)**2 + (rawWorldY - projY)**2);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    // Snap the intersection point strictly to the grid to ensure netlist continuity
+                    bestPt = { x: snap(projX), y: snap(projY) };
+                }
+            }
+        }
+        return bestPt;
+    }
+
+    /** Smart snap: prefer nearest pin, then nearest wire body (T-junction), fall back to grid. */
     function smartSnap(screenX, screenY) {
         const raw = screenToWorldRaw(screenX, screenY);
         const pinHit = findNearestPin(raw.x, raw.y);
         if (pinHit) return pinHit;
+        
+        const wireHit = findNearestWireSegment(raw.x, raw.y);
+        if (wireHit) return wireHit;
+        
         return { x: snap(raw.x), y: snap(raw.y) };
     }
 
@@ -296,6 +378,20 @@ document.addEventListener("DOMContentLoaded", () => {
                     selectedComp = hit;
                     isDragging = true;
                     dragStart = { x: worldPos.x, y: worldPos.y };
+                    
+                    // Find attached wire endpoints for rubber-banding
+                    const pins = getCompPins(selectedComp);
+                    attachedWireEndpoints = [];
+                    wires.forEach(wire => {
+                        if (wire.length < 2) return;
+                        [wire[0], wire[wire.length - 1]].forEach(pt => {
+                            const pinIdx = pins.findIndex(pin => Math.abs(pin.x - pt.x) < 1 && Math.abs(pin.y - pt.y) < 1);
+                            if (pinIdx !== -1) {
+                                attachedWireEndpoints.push({ pt, pinIdx });
+                            }
+                        });
+                    });
+
                     updatePropertiesPanel();
                 } else {
                     selectedComp = null;
@@ -362,6 +458,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const dy = mousePos.y - dragStart.y;
             selectedComp.x += dx;
             selectedComp.y += dy;
+            
+            // Move attached wires
+            attachedWireEndpoints.forEach(att => {
+                att.pt.x += dx;
+                att.pt.y += dy;
+            });
+            
             dragStart = { x: mousePos.x, y: mousePos.y };
             hoveredPin = null;
         }
@@ -392,6 +495,33 @@ document.addEventListener("DOMContentLoaded", () => {
             // Snap component back to grid on drop
             selectedComp.x = snap(selectedComp.x);
             selectedComp.y = snap(selectedComp.y);
+            
+            // Snap attached wire endpoints precisely to the grid-aligned pins
+            const snappedPins = getCompPins(selectedComp);
+            attachedWireEndpoints.forEach(att => {
+                const pin = snappedPins[att.pinIdx];
+                att.pt.x = pin.x;
+                att.pt.y = pin.y;
+            });
+            
+            // Auto-orthogonalize any wires that became diagonal during drag
+            const newWires = [];
+            wires.forEach(wire => {
+                if (wire.length === 2) {
+                    if (wire[0].x !== wire[1].x && wire[0].y !== wire[1].y) {
+                        // Split into two orthogonal segments
+                        newWires.push([ {x: wire[0].x, y: wire[0].y}, {x: wire[1].x, y: wire[0].y} ]);
+                        newWires.push([ {x: wire[1].x, y: wire[0].y}, {x: wire[1].x, y: wire[1].y} ]);
+                    } else {
+                        newWires.push(wire);
+                    }
+                } else {
+                    newWires.push(wire);
+                }
+            });
+            wires = newWires;
+            attachedWireEndpoints = [];
+            
             updatePropertiesPanel();
             render();
         }
@@ -459,10 +589,17 @@ document.addEventListener("DOMContentLoaded", () => {
         voltage_source: drawDCSource,
         current_source: drawCurrentSource,
         ac_source: drawACSource,
+        pulse_source: drawACSource,
+        sine_source: drawACSource,
+        exp_source: drawACSource,
+        pwl_source: drawACSource,
+        sffm_source: drawACSource,
+        am_source: drawACSource,
         ground: drawGround,
         bjt_npn: drawBJT_NPN,
         bjt_pnp: drawBJT_PNP,
-        bjt: drawBJT_NPN
+        bjt: drawBJT_NPN,
+        transistor: drawBJT_NPN
     };
 
     function drawResistor(ctx, sx, sy, z) {
@@ -866,10 +1003,16 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.strokeStyle = "#4FC1FF";
         ctx.lineWidth = Math.max(1, 2 * zoom);
         wires.forEach(wire => {
+            if (wire.length < 2) return;
             const p1 = worldToScreen(wire[0].x, wire[0].y);
             const p2 = worldToScreen(wire[1].x, wire[1].y);
+            
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
+            // Force orthogonal routing visually if diagonal
+            if (wire[0].x !== wire[1].x && wire[0].y !== wire[1].y) {
+                ctx.lineTo(p2.x, p1.y);
+            }
             ctx.lineTo(p2.x, p2.y);
             ctx.stroke();
 
@@ -1109,14 +1252,37 @@ document.addEventListener("DOMContentLoaded", () => {
             mode = e.target.id.replace('tool-', '');
             wireStart = null;
             updateToolUI();
+            
+            // Reset select dropdown if a standard button was clicked
+            const selectEl = document.getElementById('tool-source-select');
+            if (selectEl) selectEl.value = '';
+            
             render();
         });
     });
+
+    const sourceSelect = document.getElementById('tool-source-select');
+    if (sourceSelect) {
+        sourceSelect.addEventListener('change', (e) => {
+            mode = e.target.value;
+            wireStart = null;
+            updateToolUI();
+            render();
+        });
+    }
 
     function updateToolUI() {
         document.querySelectorAll('.btn-tool').forEach(btn => btn.classList.remove('active'));
         const activeBtn = document.getElementById(`tool-${mode}`);
         if (activeBtn) activeBtn.classList.add('active');
+        
+        // Highlight select dropdown if a source is active
+        const sourceSelect = document.getElementById('tool-source-select');
+        if (sourceSelect && sourceSelect.value === mode && mode !== '') {
+            sourceSelect.style.color = 'var(--accent-cyan)';
+        } else if (sourceSelect) {
+            sourceSelect.style.color = '';
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -1499,6 +1665,133 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // ═══════════════════════════════════════════
+    // A* ROUTER FOR IMPORT
+    // ═══════════════════════════════════════════
+    function routeAStar(start, goal, componentsList, gSize) {
+        if (start.x === goal.x && start.y === goal.y) return [];
+        
+        const getObstacleAt = (x, y) => {
+            if (Math.abs(x - start.x) < 1 && Math.abs(y - start.y) < 1) return false;
+            if (Math.abs(x - goal.x) < 1 && Math.abs(y - goal.y) < 1) return false;
+            
+            for (const c of componentsList) {
+                const db = COMPONENT_DB[c.type];
+                const hb = db ? db.hitbox : { w: 40, h: 40 };
+                // Inflate slightly to prevent wires grazing the bounding box
+                const hw = (hb.w / 2) + gSize * 0.5;
+                const hh = (hb.h / 2) + gSize * 0.5;
+                if (x > c.x - hw && x < c.x + hw && y > c.y - hh && y < c.y + hh) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const openSet = [];
+        const openMap = new Map();
+        const closedSet = new Set();
+        
+        const startNode = {
+            x: start.x, y: start.y,
+            g: 0, f: 0,
+            dir: null, parent: null
+        };
+        const key = (x, y) => `${x},${y}`;
+        const h = (x, y) => Math.abs(x - goal.x) + Math.abs(y - goal.y);
+        
+        openSet.push(startNode);
+        openMap.set(key(start.x, start.y), startNode);
+        
+        const dirs = [
+            { dx: gSize, dy: 0, dir: 'R' },
+            { dx: -gSize, dy: 0, dir: 'L' },
+            { dx: 0, dy: gSize, dir: 'D' },
+            { dx: 0, dy: -gSize, dir: 'U' }
+        ];
+
+        let bestGoal = null;
+        let iter = 0;
+        
+        while (openSet.length > 0 && iter < 10000) {
+            iter++;
+            let minFIdx = 0;
+            for (let i = 1; i < openSet.length; i++) {
+                if (openSet[i].f < openSet[minFIdx].f) {
+                    minFIdx = i;
+                }
+            }
+            const curr = openSet.splice(minFIdx, 1)[0];
+            const cKey = key(curr.x, curr.y);
+            openMap.delete(cKey);
+            closedSet.add(cKey);
+            
+            if (curr.x === goal.x && curr.y === goal.y) {
+                bestGoal = curr;
+                break;
+            }
+            
+            for (const d of dirs) {
+                const nx = curr.x + d.dx;
+                const ny = curr.y + d.dy;
+                const nKey = key(nx, ny);
+                
+                if (closedSet.has(nKey)) continue;
+                if (getObstacleAt(nx, ny)) continue;
+                
+                // Heavy penalty for changing direction to encourage straight lines
+                let turnCost = 0;
+                if (curr.dir && curr.dir !== d.dir) turnCost = gSize * 3;
+                
+                const tentativeG = curr.g + gSize + turnCost;
+                
+                let neighbor = openMap.get(nKey);
+                if (!neighbor) {
+                    neighbor = { x: nx, y: ny, g: tentativeG, f: tentativeG + h(nx, ny), dir: d.dir, parent: curr };
+                    openSet.push(neighbor);
+                    openMap.set(nKey, neighbor);
+                } else if (tentativeG < neighbor.g) {
+                    neighbor.g = tentativeG;
+                    neighbor.f = tentativeG + h(nx, ny);
+                    neighbor.dir = d.dir;
+                    neighbor.parent = curr;
+                }
+            }
+        }
+        
+        if (!bestGoal) return null; // Pathfinding failed
+        
+        const path = [];
+        let p = bestGoal;
+        while (p) {
+            path.push({ x: p.x, y: p.y });
+            p = p.parent;
+        }
+        path.reverse();
+        
+        const segments = [];
+        let segStart = path[0];
+        for (let i = 1; i < path.length - 1; i++) {
+            const prev = path[i-1];
+            const curr = path[i];
+            const next = path[i+1];
+            
+            const dx1 = curr.x - prev.x;
+            const dy1 = curr.y - prev.y;
+            const dx2 = next.x - curr.x;
+            const dy2 = next.y - curr.y;
+            
+            if (Math.sign(dx1) !== Math.sign(dx2) || Math.sign(dy1) !== Math.sign(dy2)) {
+                segments.push([{ x: segStart.x, y: segStart.y }, { x: curr.x, y: curr.y }]);
+                segStart = curr;
+            }
+        }
+        if (path.length > 1) {
+            segments.push([{ x: segStart.x, y: segStart.y }, { x: path[path.length - 1].x, y: path[path.length - 1].y }]);
+        }
+        return segments;
+    }
+
+    // ═══════════════════════════════════════════
     // AI IMPORT LOGIC
     // ═══════════════════════════════════════════
     const fileInput = document.getElementById("fileInput");
@@ -1517,71 +1810,174 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (data.status === "success") {
-                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components.`;
-
-                // Load AI Data into our interactive state
-                components = data.components
-                    .filter(c => !['wire', 'junction', 'text'].includes(c.type))
-                    .map(c => {
-                        const type = c.type;
-                        const db = COMPONENT_DB[type];
-                        const params = db ? Object.assign({}, db.params) : { value: '1k' };
-
-                        // Override value from OCR if available
-                        if (c.value && c.value !== "TEXT_FOUND") {
-                            if (params.value !== undefined) params.value = c.value;
-                            else if (params.dc !== undefined) params.dc = c.value;
-                        }
-
-                        return {
-                            type,
-                            name: c.name,
-                            value: c.value === "TEXT_FOUND" ? (params.value || '') : (c.value || ''),
-                            x: snap(c.center[0]),
-                            y: snap(c.center[1]),
-                            params
-                        };
-                    });
-
-                // Rebuild name counters from imported data
-                nameCounts = {};
-                components.forEach(c => {
-                    const db = COMPONENT_DB[c.type];
-                    if (db) {
-                        const match = c.name.match(/\d+$/);
-                        if (match) {
-                            const num = parseInt(match[0]);
-                            nameCounts[db.prefix] = Math.max(nameCounts[db.prefix] || 0, num);
-                        }
-                    }
-                });
-
-                // Load Wires
-                wires = [];
-                if (data.connections) {
-                    data.connections.forEach(conn => {
-                        const pts = conn.points;
-                        if (!pts || pts.length < 2) return;
-                        for (let i = 0; i < pts.length - 1; i++) {
-                            wires.push([
-                                { x: snap(pts[i].x), y: snap(pts[i].y) },
-                                { x: snap(pts[i+1].x), y: snap(pts[i+1].y) }
-                            ]);
-                        }
-                    });
+                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components. Waiting for approval.`;
+                
+                // Show modal
+                const modal = document.getElementById("aiDebugModal");
+                const img = document.getElementById("debugPreviewImage");
+                if (data.debug_image) {
+                    img.src = data.debug_image;
+                    img.style.display = "inline-block";
+                } else {
+                    img.style.display = "none";
                 }
+                modal.style.display = "flex";
 
-                // Auto-Center Camera
-                offsetX = 100; offsetY = 100; zoom = 1.0;
-                selectedComp = null;
-                updatePropertiesPanel();
-                render();
+                // Setup import logic for when user clicks "Import to Canvas"
+                const btnImport = document.getElementById("btnAiDebugImport");
+                // Remove any old listeners by cloning (simple way)
+                const newBtnImport = btnImport.cloneNode(true);
+                btnImport.parentNode.replaceChild(newBtnImport, btnImport);
+
+                newBtnImport.addEventListener("click", () => {
+                    modal.style.display = "none";
+                    document.getElementById("statusText").innerText = `✅ Imported ${data.components.length} components.`;
+
+                    // Load AI Data into our interactive state
+                    const SCALE_FACTOR = 1.8;
+                    components = data.components
+                        .filter(c => !['wire', 'junction', 'text'].includes(c.type))
+                        .map(c => {
+                            const type = c.type;
+                            const db = COMPONENT_DB[type];
+                            const params = db ? Object.assign({}, db.params) : { value: '1k' };
+
+                            // Override value from OCR if available
+                            if (c.value && c.value !== "TEXT_FOUND") {
+                                if (params.value !== undefined) params.value = c.value;
+                                else if (params.dc !== undefined) params.dc = c.value;
+                            }
+
+                            return {
+                                type,
+                                name: c.name,
+                                value: c.value === "TEXT_FOUND" ? (params.value || '') : (c.value || ''),
+                                x: snap(c.center[0] * SCALE_FACTOR),
+                                y: snap(c.center[1] * SCALE_FACTOR),
+                                params,
+                                nodes: c.nodes || []
+                            };
+                        });
+
+                    // Rebuild name counters from imported data
+                    nameCounts = {};
+                    components.forEach(c => {
+                        const db = COMPONENT_DB[c.type];
+                        if (db) {
+                            const match = c.name.match(/\d+$/);
+                            if (match) {
+                                const num = parseInt(match[0]);
+                                nameCounts[db.prefix] = Math.max(nameCounts[db.prefix] || 0, num);
+                            }
+                        }
+                    });
+
+                    // Load Wires (Logical Pin-to-Pin connection)
+                    wires = [];
+                    const nodePins = {};
+                    components.forEach(comp => {
+                        const pins = getCompPins(comp);
+                        if (comp.nodes) {
+                            comp.nodes.forEach((nodeId, idx) => {
+                                if (nodeId && nodeId !== "NC") {
+                                    if (!nodePins[nodeId]) nodePins[nodeId] = [];
+                                    if (pins[idx]) {
+                                        nodePins[nodeId].push({ x: pins[idx].x, y: pins[idx].y });
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    Object.values(nodePins).forEach(pins => {
+                        // Connect all pins for this node sequentially
+                        for (let i = 0; i < pins.length - 1; i++) {
+                            const p1 = pins[i];
+                            const p2 = pins[i + 1];
+                            if (p1.x !== p2.x || p1.y !== p2.y) {
+                                // Try A* routing first
+                                const astarSegments = routeAStar(p1, p2, components, gridSize);
+                                if (astarSegments && astarSegments.length > 0) {
+                                    wires.push(...astarSegments);
+                                } else {
+                                    // Fallback to naive Manhattan routing if A* blocked
+                                    if (p1.x === p2.x || p1.y === p2.y) {
+                                        wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                                    } else {
+                                        const mid = { x: p2.x, y: p1.y };
+                                        wires.push([{ x: p1.x, y: p1.y }, { x: mid.x, y: mid.y }]);
+                                        wires.push([{ x: mid.x, y: mid.y }, { x: p2.x, y: p2.y }]);
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    // Auto-Center and Zoom Camera dynamically to fit the imported circuit
+                    if (components.length > 0 || wires.length > 0) {
+                        let minX = Infinity, maxX = -Infinity;
+                        let minY = Infinity, maxY = -Infinity;
+
+                        components.forEach(c => {
+                            minX = Math.min(minX, c.x);
+                            maxX = Math.max(maxX, c.x);
+                            minY = Math.min(minY, c.y);
+                            maxY = Math.max(maxY, c.y);
+                        });
+
+                        wires.forEach(w => {
+                            w.forEach(pt => {
+                                minX = Math.min(minX, pt.x);
+                                maxX = Math.max(maxX, pt.x);
+                                minY = Math.min(minY, pt.y);
+                                maxY = Math.max(maxY, pt.y);
+                            });
+                        });
+
+                        // Add a margin
+                        const margin = 80;
+                        const circuitWidth = (maxX - minX) || 100;
+                        const circuitHeight = (maxY - minY) || 100;
+
+                        const canvasW = canvas.width || 800;
+                        const canvasH = canvas.height || 600;
+
+                        // Compute optimal zoom to fit all components/wires within the canvas
+                        const zoomX = (canvasW - margin * 2) / circuitWidth;
+                        const zoomY = (canvasH - margin * 2) / circuitHeight;
+                        zoom = Math.min(zoomX, zoomY);
+
+                        // Clamp zoom to reasonable levels (0.2 to 2.0)
+                        zoom = Math.max(0.2, Math.min(2.0, zoom));
+
+                        // Center the circuit on the canvas
+                        const circuitCenterX = (minX + maxX) / 2;
+                        const circuitCenterY = (minY + maxY) / 2;
+                        offsetX = canvasW / 2 - circuitCenterX * zoom;
+                        offsetY = canvasH / 2 - circuitCenterY * zoom;
+                    } else {
+                        offsetX = 100;
+                        offsetY = 100;
+                        zoom = 1.0;
+                    }
+                    selectedComp = null;
+                    updatePropertiesPanel();
+                    render();
+                });
             }
         } catch (err) {
             console.error(err);
             document.getElementById("statusText").innerText = "❌ AI import failed.";
         }
     });
+
+    // Close logic for the AI Debug modal
+    const closeAiDebugModal = () => {
+        document.getElementById("aiDebugModal").style.display = "none";
+        document.getElementById("statusText").innerText = "❌ Import cancelled.";
+    };
+    document.getElementById("aiDebugModalClose").addEventListener("click", closeAiDebugModal);
+    document.getElementById("btnAiDebugCancel").addEventListener("click", closeAiDebugModal);
 
     // ═══════════════════════════════════════════
     // INITIAL DRAW
