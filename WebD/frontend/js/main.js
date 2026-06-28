@@ -145,6 +145,13 @@ document.addEventListener("DOMContentLoaded", () => {
             spice: '{name} {n2} {n1} {n3} {model}',
             pins: [[-20, 0], [20, -40], [20, 40]],
             hitbox: { w: 60, h: 80 }
+        },
+        label: {
+            prefix: 'LBL', label: 'Node Label',
+            params: { name: 'Vout' },
+            spice: '',
+            pins: [[0, 0]],
+            hitbox: { w: 40, h: 20 }
         }
     };
 
@@ -599,8 +606,16 @@ document.addEventListener("DOMContentLoaded", () => {
         bjt_npn: drawBJT_NPN,
         bjt_pnp: drawBJT_PNP,
         bjt: drawBJT_NPN,
-        transistor: drawBJT_NPN
+        transistor: drawBJT_NPN,
+        label: drawLabel
     };
+
+    function drawLabel(ctx, sx, sy, z, comp) {
+        // A label is just a small pin marker, the text is drawn elsewhere
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3 * z, 0, 2 * Math.PI);
+        ctx.fill();
+    }
 
     function drawResistor(ctx, sx, sy, z) {
         // Horizontal leads + zig-zag body
@@ -1024,8 +1039,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Draw Components
         components.forEach(comp => {
+            if (comp.type === 'wire' || comp.type === 'junction' || comp.type === 'text') return;
             const pos = worldToScreen(comp.x, comp.y);
 
+            if (comp.type === 'label') {
+                const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
+                ctx.fillStyle = "#FFC107";
+                ctx.font = `bold ${14 * zoom}px 'Segoe UI', Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.fillText(labelText, pos.x, pos.y - 8 * zoom);
+                return;
+            }
             // Selection highlight
             if (comp === selectedComp) {
                 const db = COMPONENT_DB[comp.type];

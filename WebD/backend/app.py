@@ -110,6 +110,12 @@ SPICE_TEMPLATES = {
     'voltage_source': '{name} {n1} {n2} DC {dc}',
     'current_source': '{name} {n1} {n2} DC {dc}',
     'ac_source':      '{name} {n1} {n2} AC {mag} {phase}',
+    'pulse_source':   '{name} {n1} {n2} PULSE({v1} {v2} {td} {tr} {tf} {pw} {per})',
+    'sine_source':    '{name} {n1} {n2} SINE({vo} {va} {freq} {td} {theta} {phase})',
+    'exp_source':     '{name} {n1} {n2} EXP({v1} {v2} {td1} {tau1} {td2} {tau2})',
+    'pwl_source':     '{name} {n1} {n2} PWL({pwl_data})',
+    'sffm_source':    '{name} {n1} {n2} SFFM({vo} {va} {fc} {mdi} {fs})',
+    'am_source':      '{name} {n1} {n2} AM({va} {fc} {mf} {ph})',
     'bjt_npn':        '{name} {n2} {n1} {n3} {model}',
     'bjt_pnp':        '{name} {n2} {n1} {n3} {model}',
     'bjt':            '{name} {n2} {n1} {n3} {model}',
@@ -398,13 +404,20 @@ async def simulate_circuit(request: SimulateRequest):
         lines.append("set xbrushwidth = 2")
 
         # Print all for data extraction
-        lines.append("print all")
+        lines.append("print all > sim_out.txt")
 
         # Plot commands — generate hardcopy SVG images for each plot window
         # Clean up old plot files first
         for old_file in glob.glob(os.path.join(SIM_DIR, "plot_win*.svg")):
             try:
                 os.remove(old_file)
+            except OSError:
+                pass
+        
+        sim_out_path = os.path.join(SIM_DIR, "sim_out.txt")
+        if os.path.exists(sim_out_path):
+            try:
+                os.remove(sim_out_path)
             except OSError:
                 pass
 
@@ -464,7 +477,14 @@ async def simulate_circuit(request: SimulateRequest):
                 })
 
             # ─── STEP 7: Parse ngspice output ───
-            sim_data = parse_ngspice_output(raw_output)
+            sim_out_path = os.path.join(SIM_DIR, "sim_out.txt")
+            if os.path.exists(sim_out_path):
+                with open(sim_out_path, "r", encoding="utf-8") as f:
+                    file_output = f.read()
+                raw_output = raw_output + "\n\n=== DATA OUTPUT ===\n" + file_output
+                sim_data = parse_ngspice_output(file_output)
+            else:
+                sim_data = parse_ngspice_output(raw_output)
 
             if proc.returncode != 0 and not sim_data:
                 return JSONResponse(content={
@@ -507,7 +527,7 @@ async def simulate_circuit(request: SimulateRequest):
         # Build the source list for the frontend (sources available for sweep)
         source_names = []
         sweepable_names = []
-        source_types = {'source', 'voltage_source', 'current_source', 'ac_source'}
+        source_types = {'source', 'voltage_source', 'current_source', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
         sweepable_types = source_types | {'resistor'}
         for comp, _ in comp_pins:
             if comp.type in source_types:
@@ -571,7 +591,7 @@ async def solve_nodes_endpoint(request: SimulateRequest):
 
         source_names = []
         sweepable_names = []
-        source_types = {'source', 'voltage_source', 'current_source', 'ac_source'}
+        source_types = {'source', 'voltage_source', 'current_source', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
         sweepable_types = source_types | {'resistor'}
         for comp, _ in comp_pins:
             if comp.type in source_types:

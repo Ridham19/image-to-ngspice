@@ -30,7 +30,14 @@ PIN_MAP: Dict[str, List[Tuple[int, int]]] = {
     'voltage_source': [(0, -40), (0, 40)],
     'current_source': [(0, -40), (0, 40)],
     'ac_source':      [(0, -40), (0, 40)],
+    'pulse_source':   [(0, -40), (0, 40)],
+    'sine_source':    [(0, -40), (0, 40)],
+    'exp_source':     [(0, -40), (0, 40)],
+    'pwl_source':     [(0, -40), (0, 40)],
+    'sffm_source':    [(0, -40), (0, 40)],
+    'am_source':      [(0, -40), (0, 40)],
     'ground':         [(0, -20)],
+    'label':          [(0, 0)],
     'bjt_npn':        [(-20, 0), (20, -40), (20, 40)],
     'bjt_pnp':        [(-20, 0), (20, -40), (20, 40)],
     'bjt':            [(-20, 0), (20, -40), (20, 40)],
@@ -159,6 +166,7 @@ def cluster_nodes_dfs(
     comp_pins: List[Tuple[Any, List[Tuple[int, int]]]],
     wire_adj: Dict[Tuple[int, int], Set[Tuple[int, int]]],
     ground_coords: Set[Tuple[int, int]],
+    label_coords: Dict[Tuple[int, int], str],
 ) -> Dict[Tuple[int, int], str]:
     """
     Core DFS clustering algorithm.
@@ -206,6 +214,7 @@ def cluster_nodes_dfs(
 
         cluster: List[Tuple[int, int]] = []
         is_ground = False
+        label_text = None
         stack = [start_pt]
 
         while stack:
@@ -218,6 +227,10 @@ def cluster_nodes_dfs(
             # Check if this coordinate belongs to a ground terminal
             if curr in ground_coords:
                 is_ground = True
+            
+            # Check if this coordinate belongs to a label
+            if curr in label_coords:
+                label_text = label_coords[curr]
 
             # Traverse adjacency edges
             for neighbor in adj.get(curr, set()):
@@ -225,8 +238,12 @@ def cluster_nodes_dfs(
                     stack.append(neighbor)
 
         # Ground override: the SPICE ground token is always "0"
-        node_id = "0" if is_ground else str(node_counter)
-        if not is_ground:
+        if is_ground:
+            node_id = "0"
+        elif label_text is not None:
+            node_id = label_text
+        else:
+            node_id = str(node_counter)
             node_counter += 1
 
         for pt in cluster:
@@ -296,15 +313,21 @@ def solve_canvas(
 
     wire_adj = build_wire_adjacency(wire_dicts, grid_size)
 
-    # ── Step 3: Identify ground terminal coordinates ──
+    # ── Step 3: Identify ground and label terminal coordinates ──
     ground_coords: Set[Tuple[int, int]] = set()
+    label_coords: Dict[Tuple[int, int], str] = {}
     for comp, pins in comp_pins:
         ctype = comp.type if hasattr(comp, 'type') else comp['type']
         if ctype == 'ground':
             for pin in pins:
                 ground_coords.add(pin)
+        elif ctype == 'label':
+            cparams = comp.params if hasattr(comp, 'params') else comp.get('params', {})
+            val = cparams.get('name', 'LBL')
+            for pin in pins:
+                label_coords[pin] = val
 
-    # ── Step 4: DFS clustering with ground override ──
-    node_map = cluster_nodes_dfs(comp_pins, wire_adj, ground_coords)
+    # ── Step 4: DFS clustering with ground and label override ──
+    node_map = cluster_nodes_dfs(comp_pins, wire_adj, ground_coords, label_coords)
 
     return node_map, comp_pins
