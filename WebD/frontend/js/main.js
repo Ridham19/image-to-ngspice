@@ -596,12 +596,12 @@ document.addEventListener("DOMContentLoaded", () => {
         voltage_source: drawDCSource,
         current_source: drawCurrentSource,
         ac_source: drawACSource,
-        pulse_source: drawACSource,
-        sine_source: drawACSource,
-        exp_source: drawACSource,
-        pwl_source: drawACSource,
-        sffm_source: drawACSource,
-        am_source: drawACSource,
+        pulse_source: drawPulseSource,
+        sine_source: drawSineSource,
+        exp_source: drawExpSource,
+        pwl_source: drawPWLSource,
+        sffm_source: drawSFFMSource,
+        am_source: drawAMSource,
         ground: drawGround,
         bjt_npn: drawBJT_NPN,
         bjt_pnp: drawBJT_PNP,
@@ -833,7 +833,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.arc(sx, sy, r, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Sine wave inside
+        // AC Sine wave inside with AC text
         ctx.beginPath();
         const waveW = 10 * z;
         const waveH = 6 * z;
@@ -843,6 +843,172 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // Bottom lead
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawSineSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Stylized Sine wave
+        ctx.beginPath();
+        const waveW = 11 * z;
+        const waveH = 7 * z;
+        ctx.moveTo(sx - waveW, sy);
+        ctx.quadraticCurveTo(sx - waveW / 2, sy - waveH * 2, sx, sy);
+        ctx.quadraticCurveTo(sx + waveW / 2, sy + waveH * 2, sx + waveW, sy);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawPulseSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Square pulse shape inside
+        ctx.beginPath();
+        ctx.moveTo(sx - 10 * z, sy + 5 * z);
+        ctx.lineTo(sx - 10 * z, sy - 5 * z);
+        ctx.lineTo(sx, sy - 5 * z);
+        ctx.lineTo(sx, sy + 5 * z);
+        ctx.lineTo(sx + 10 * z, sy + 5 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawPWLSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Piecewise linear shape (rising ramp/stairs)
+        ctx.beginPath();
+        ctx.moveTo(sx - 10 * z, sy + 7 * z);
+        ctx.lineTo(sx - 4 * z, sy + 7 * z);
+        ctx.lineTo(sx + 2 * z, sy - 5 * z);
+        ctx.lineTo(sx + 10 * z, sy - 5 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawExpSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Exponential curve rising shape
+        ctx.beginPath();
+        ctx.moveTo(sx - 10 * z, sy + 6 * z);
+        ctx.quadraticCurveTo(sx + 2 * z, sy + 6 * z, sx + 10 * z, sy - 8 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawSFFMSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // SFFM Label inside
+        ctx.fillStyle = "#E0E0E0";
+        ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("FM", sx, sy);
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawAMSource(ctx, sx, sy, z) {
+        const r = 18 * z;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // AM Label inside
+        ctx.fillStyle = "#E0E0E0";
+        ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("AM", sx, sy);
+
         ctx.beginPath();
         ctx.moveTo(sx, sy + r);
         ctx.lineTo(sx, sy + 40 * z);

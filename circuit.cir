@@ -1,28 +1,8 @@
-* PySpice Studio Netlist
-
-.Model Dx diode (Is=14n Rs=0 N=1)
-.Model Tx_pnp PNP (BF=300)
-.Model Tx NPN (BF=300)
-
-R1 1 2 1k
-R2 3 4 1k
-C1 5 6 1u ic=0
-R3 7 8 1k
-T3 10 9 11 Tx
-C2 12 13 1u ic=0
-C3 OUT 15 1u ic=0
-R4 16 17 1k
-D1 18 OUT Dx
-V1 20 21 DC 5
-Q1 23 22 24 Tx_pnp
-Q2 26 25 27 Tx
-V1 30 31 PULSE(0 5 10m 1n 1n 10m 20m)
-
-.op
-.control
-run
-set color0 = white
-set color1 = black
-set xbrushwidth = 2
-.endc
+* Linter-Corrected SPICE Netlist
+V1 0 0 5v
+C1 0 0 1u
+R1 0 0 I0k
+R2 0 0 1K
+T8 0 0 1k
+R3 0 0 1k
 .end

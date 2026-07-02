@@ -21,6 +21,8 @@ source.docx
 # cghd1152/
 # runs/
 
+epoch_40.pt
+
 # Images
 *.png
 *.jpg
