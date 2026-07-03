@@ -36,6 +36,46 @@ class ComponentDetector:
             # Initialize OCR once so it doesn't slow down every image detection
             self.ocr_reader = easyocr.Reader(['en'], gpu=False) # Set gpu=True if you have an Nvidia GPU!
 
+    # ═══════════════════════════════════════════
+    # CLASS REMAPPING — epoch_40.pt model labels → canvas types
+    # ═══════════════════════════════════════════
+    CLASS_REMAP = {
+        # Direct mappings (dot-notation → underscore canvas type)
+        'gnd':                    'ground',
+        'vss':                    'vss',
+        'voltage.dc':             'source',
+        'voltage.ac':             'ac_source',
+        'voltage.battery':        'source',
+        'resistor.photo':         'resistor_photo',
+        'capacitor.unpolarized':  'capacitor',
+        'capacitor.polarized':    'capacitor_polarized',
+        'diode.light_emitting':   'diode_led',
+        'diode.zener':            'diode_zener',
+        'transistor.bjt':         'bjt',
+        'transistor.fet':         'mosfet',
+        'transistor.photo':       'phototransistor',
+        'operational_amplifier':  'opamp',
+        'integrated_circuit':     'ic',
+        # Legacy remap
+        'transistor':             'bjt',
+    }
+
+    # SPICE prefix for auto-naming
+    PREFIX_MAP = {
+        'resistor': 'R', 'resistor_photo': 'R',
+        'capacitor': 'C', 'capacitor_polarized': 'C',
+        'inductor': 'L',
+        'diode': 'D', 'diode_led': 'D', 'diode_zener': 'D',
+        'source': 'V', 'voltage_source': 'V', 'ac_source': 'V',
+        'current_source': 'I',
+        'ground': 'GND', 'vss': 'VSS',
+        'bjt': 'Q', 'bjt_npn': 'Q', 'bjt_pnp': 'Q',
+        'mosfet': 'M', 'phototransistor': 'Q',
+        'opamp': 'U', 'ic': 'U',
+        'transformer': 'T',
+        'junction': 'J', 'crossover': 'X', 'terminal': 'P',
+    }
+
     def detect(self, image_source, output_file="detected_components.json"):
         if not HAS_ML or self.model is None:
             print("⚠️ Returning mock detections because ML libraries are unavailable.")
@@ -61,28 +101,13 @@ class ComponentDetector:
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                 w, h = x2 - x1, y2 - y1
                 cls_id = int(box.cls[0])
-                label = self.model.names[cls_id]
+                raw_label = self.model.names[cls_id]
                 conf = float(box.conf[0])
                 
-                # Map 'transistor' to 'bjt' for downstream compatibility
-                if label == 'transistor':
-                    label = 'bjt'
+                # Remap model class label to canvas type
+                label = self.CLASS_REMAP.get(raw_label, raw_label)
                 
-                prefix_map = {
-                    'resistor': 'R',
-                    'capacitor': 'C',
-                    'inductor': 'L',
-                    'diode': 'D',
-                    'source': 'V',
-                    'voltage_source': 'V',
-                    'current_source': 'I',
-                    'ac_source': 'V',
-                    'ground': 'GND',
-                    'bjt': 'Q',
-                    'bjt_npn': 'Q',
-                    'bjt_pnp': 'Q'
-                }
-                prefix = prefix_map.get(label, label[0].upper() if label else 'U')
+                prefix = self.PREFIX_MAP.get(label, label[0].upper() if label else 'U')
                 
                 counters[prefix] = counters.get(prefix, 0) + 1
                 name = f"{prefix}{counters[prefix]}"
@@ -97,11 +122,13 @@ class ComponentDetector:
                 })
         
         # --- SPATIAL TEXT MATCHING & OCR ---
+        # Junction detections are kept but separated — they act as wire merge points
+        NON_OCR_TYPES = {'wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'}
         components = [d for d in raw_detections if d['type'] != 'text']
         texts = [d for d in raw_detections if d['type'] == 'text']
 
         for comp in components:
-            if comp['type'] in ['wire', 'junction', 'ground']:
+            if comp['type'] in NON_OCR_TYPES:
                 continue
                 
             comp_center = comp['center']

@@ -103,12 +103,17 @@ GRID_SIZE = 20
 
 SPICE_TEMPLATES = {
     'resistor':       '{name} {n1} {n2} {value}',
+    'resistor_photo': '{name} {n1} {n2} {value}',
     'capacitor':      '{name} {n1} {n2} {value} ic={ic}',
+    'capacitor_polarized': '{name} {n1} {n2} {value} ic={ic}',
     'inductor':       '{name} {n1} {n2} {value} ic={ic}',
     'diode':          '{name} {n1} {n2} {model}',
+    'diode_led':      '{name} {n1} {n2} {model}',
+    'diode_zener':    '{name} {n1} {n2} {model}',
     'source':         '{name} {n1} {n2} DC {dc}',
     'voltage_source': '{name} {n1} {n2} DC {dc}',
     'current_source': '{name} {n1} {n2} DC {dc}',
+    'vss':            '{name} {n1} {n2} DC {dc}',
     'ac_source':      '{name} {n1} {n2} AC {mag} {phase}',
     'pulse_source':   '{name} {n1} {n2} PULSE({v1} {v2} {td} {tr} {tf} {pw} {per})',
     'sine_source':    '{name} {n1} {n2} SINE({vo} {va} {freq} {td} {theta} {phase})',
@@ -119,6 +124,12 @@ SPICE_TEMPLATES = {
     'bjt_npn':        '{name} {n2} {n1} {n3} {model}',
     'bjt_pnp':        '{name} {n2} {n1} {n3} {model}',
     'bjt':            '{name} {n2} {n1} {n3} {model}',
+    'mosfet':         '{name} {n2} {n1} {n3} {n3} {model}',
+    'phototransistor': '{name} {n2} {n1} {n3} {model}',
+    # Placeholder templates — require subcircuit definitions
+    # 'opamp':       '.subckt needed',
+    # 'ic':          '.subckt needed',
+    # 'transformer': '.subckt needed',
 }
 
 # SPICE prefix order for sorted netlist output
@@ -304,10 +315,16 @@ async def simulate_circuit(request: SimulateRequest):
         for comp, _ in comp_pins:
             if comp.type == 'diode':
                 models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
-            elif comp.type in ('bjt_npn', 'bjt'):
+            elif comp.type == 'diode_led':
+                models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
+            elif comp.type == 'diode_zener':
+                models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1 BV=5.1)")
+            elif comp.type in ('bjt_npn', 'bjt', 'phototransistor'):
                 models_needed.add(".Model Tx NPN (BF=300)")
             elif comp.type == 'bjt_pnp':
                 models_needed.add(".Model Tx_pnp PNP (BF=300)")
+            elif comp.type == 'mosfet':
+                models_needed.add(".Model Mx NMOS (VTO=1 KP=2m)")
 
         for m in sorted(models_needed):
             lines.append(m)
@@ -527,8 +544,8 @@ async def simulate_circuit(request: SimulateRequest):
         # Build the source list for the frontend (sources available for sweep)
         source_names = []
         sweepable_names = []
-        source_types = {'source', 'voltage_source', 'current_source', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
-        sweepable_types = source_types | {'resistor'}
+        source_types = {'source', 'voltage_source', 'current_source', 'vss', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
+        sweepable_types = source_types | {'resistor', 'resistor_photo'}
         for comp, _ in comp_pins:
             if comp.type in source_types:
                 source_names.append(comp.name)
@@ -591,8 +608,8 @@ async def solve_nodes_endpoint(request: SimulateRequest):
 
         source_names = []
         sweepable_names = []
-        source_types = {'source', 'voltage_source', 'current_source', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
-        sweepable_types = source_types | {'resistor'}
+        source_types = {'source', 'voltage_source', 'current_source', 'vss', 'ac_source', 'pulse_source', 'sine_source', 'exp_source', 'pwl_source', 'sffm_source', 'am_source'}
+        sweepable_types = source_types | {'resistor', 'resistor_photo'}
         for comp, _ in comp_pins:
             if comp.type in source_types:
                 source_names.append(comp.name)

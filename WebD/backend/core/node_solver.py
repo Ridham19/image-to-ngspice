@@ -22,29 +22,48 @@ from typing import List, Dict, Any, Tuple, Set, Optional
 # COMPONENT_DB pin offsets.  Units are canvas world pixels.
 # ═══════════════════════════════════════════════════════════════════════
 PIN_MAP: Dict[str, List[Tuple[int, int]]] = {
-    'resistor':       [(-40, 0), (40, 0)],
-    'capacitor':      [(-40, 0), (40, 0)],
-    'inductor':       [(-40, 0), (40, 0)],
-    'diode':          [(-40, 0), (40, 0)],
-    'source':         [(0, -40), (0, 40)],
-    'voltage_source': [(0, -40), (0, 40)],
-    'current_source': [(0, -40), (0, 40)],
-    'ac_source':      [(0, -40), (0, 40)],
-    'pulse_source':   [(0, -40), (0, 40)],
-    'sine_source':    [(0, -40), (0, 40)],
-    'exp_source':     [(0, -40), (0, 40)],
-    'pwl_source':     [(0, -40), (0, 40)],
-    'sffm_source':    [(0, -40), (0, 40)],
-    'am_source':      [(0, -40), (0, 40)],
-    'ground':         [(0, -20)],
-    'label':          [(0, 0)],
-    'bjt_npn':        [(-20, 0), (20, -40), (20, 40)],
-    'bjt_pnp':        [(-20, 0), (20, -40), (20, 40)],
-    'bjt':            [(-20, 0), (20, -40), (20, 40)],
+    # ── Passive Components ──
+    'resistor':             [(-40, 0), (40, 0)],
+    'resistor_photo':       [(-40, 0), (40, 0)],
+    'capacitor':            [(-40, 0), (40, 0)],
+    'capacitor_polarized':  [(-40, 0), (40, 0)],
+    'inductor':             [(-40, 0), (40, 0)],
+    'transformer':          [(-40, -20), (-40, 20), (40, -20), (40, 20)],
+    # ── Diodes ──
+    'diode':                [(-40, 0), (40, 0)],
+    'diode_led':            [(-40, 0), (40, 0)],
+    'diode_zener':          [(-40, 0), (40, 0)],
+    # ── Sources ──
+    'source':               [(0, -40), (0, 40)],
+    'voltage_source':       [(0, -40), (0, 40)],
+    'current_source':       [(0, -40), (0, 40)],
+    'ac_source':            [(0, -40), (0, 40)],
+    'pulse_source':         [(0, -40), (0, 40)],
+    'sine_source':          [(0, -40), (0, 40)],
+    'exp_source':           [(0, -40), (0, 40)],
+    'pwl_source':           [(0, -40), (0, 40)],
+    'sffm_source':          [(0, -40), (0, 40)],
+    'am_source':            [(0, -40), (0, 40)],
+    'vss':                  [(0, -40), (0, 40)],
+    # ── Ground / Labels / Junctions ──
+    'ground':               [(0, -20)],
+    'label':                [(0, 0)],
+    'junction':             [(0, 0)],
+    'terminal':             [(0, 0)],
+    'crossover':            [(0, 0)],
+    # ── Transistors ──
+    'bjt_npn':              [(-20, 0), (20, -40), (20, 40)],
+    'bjt_pnp':              [(-20, 0), (20, -40), (20, 40)],
+    'bjt':                  [(-20, 0), (20, -40), (20, 40)],
+    'mosfet':               [(-20, 0), (20, -40), (20, 40)],
+    'phototransistor':      [(-20, 0), (20, -40), (20, 40)],
+    # ── ICs / Op-Amps ──
+    'opamp':                [(-30, -20), (-30, 20), (30, 0)],
+    'ic':                   [(-40, 0), (40, 0)],
 }
 
 # Types that don't generate SPICE device lines
-NON_DEVICE_TYPES = {'ground', 'label', 'junction', 'wire', 'text'}
+NON_DEVICE_TYPES = {'ground', 'label', 'junction', 'crossover', 'terminal', 'wire', 'text'}
 
 
 # ═══════════════════════════════════════════════════════════════════════

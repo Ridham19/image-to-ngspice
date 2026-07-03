@@ -146,6 +146,100 @@ document.addEventListener("DOMContentLoaded", () => {
             pins: [[-20, 0], [20, -40], [20, 40]],
             hitbox: { w: 60, h: 80 }
         },
+        // ═══════════════════════════════════════════
+        // NEW — epoch_40.pt model classes
+        // ═══════════════════════════════════════════
+        vss: {
+            prefix: 'V', label: 'VSS Supply',
+            params: { dc: '-5' },
+            spice: '{name} {n1} {n2} DC {dc}',
+            pins: [[0, -40], [0, 40]],
+            hitbox: { w: 50, h: 80 }
+        },
+        capacitor_polarized: {
+            prefix: 'C', label: 'Polarized Capacitor',
+            params: { value: '10u', ic: '0' },
+            spice: '{name} {n1} {n2} {value} ic={ic}',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 40 }
+        },
+        resistor_photo: {
+            prefix: 'R', label: 'Photoresistor (LDR)',
+            params: { value: '10k' },
+            spice: '{name} {n1} {n2} {value}',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 40 }
+        },
+        diode_led: {
+            prefix: 'D', label: 'LED',
+            params: { model: 'Dx' },
+            spice: '{name} {n1} {n2} {model}',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 40 }
+        },
+        diode_zener: {
+            prefix: 'D', label: 'Zener Diode',
+            params: { model: 'Dx' },
+            spice: '{name} {n1} {n2} {model}',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 40 }
+        },
+        mosfet: {
+            prefix: 'M', label: 'N-MOSFET',
+            params: { model: 'Mx' },
+            spice: '{name} {n2} {n1} {n3} {n3} {model}',
+            pins: [[-20, 0], [20, -40], [20, 40]],  // Gate, Drain, Source
+            hitbox: { w: 60, h: 80 }
+        },
+        phototransistor: {
+            prefix: 'Q', label: 'Phototransistor',
+            params: { model: 'Tx' },
+            spice: '{name} {n2} {n1} {n3} {model}',
+            pins: [[-20, 0], [20, -40], [20, 40]],
+            hitbox: { w: 60, h: 80 }
+        },
+        opamp: {
+            prefix: 'U', label: 'Op-Amp',
+            params: {},
+            spice: '',
+            pins: [[-30, -20], [-30, 20], [30, 0]],  // V+, V−, Out
+            hitbox: { w: 70, h: 60 }
+        },
+        ic: {
+            prefix: 'U', label: 'IC',
+            params: {},
+            spice: '',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 50 }
+        },
+        transformer: {
+            prefix: 'T', label: 'Transformer',
+            params: {},
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, -20], [40, 20]],
+            hitbox: { w: 80, h: 60 }
+        },
+        junction: {
+            prefix: 'J', label: 'Junction',
+            params: {},
+            spice: '',
+            pins: [[0, 0]],
+            hitbox: { w: 10, h: 10 }
+        },
+        crossover: {
+            prefix: 'X', label: 'Crossover',
+            params: {},
+            spice: '',
+            pins: [[0, 0]],
+            hitbox: { w: 20, h: 20 }
+        },
+        terminal: {
+            prefix: 'P', label: 'Terminal',
+            params: {},
+            spice: '',
+            pins: [[0, 0]],
+            hitbox: { w: 20, h: 20 }
+        },
         label: {
             prefix: 'LBL', label: 'Node Label',
             params: { name: 'Vout' },
@@ -607,7 +701,21 @@ document.addEventListener("DOMContentLoaded", () => {
         bjt_pnp: drawBJT_PNP,
         bjt: drawBJT_NPN,
         transistor: drawBJT_NPN,
-        label: drawLabel
+        label: drawLabel,
+        // ── New epoch_40.pt renderers ──
+        vss: drawVSS,
+        capacitor_polarized: drawCapacitorPolarized,
+        resistor_photo: drawResistorPhoto,
+        diode_led: drawDiodeLED,
+        diode_zener: drawDiodeZener,
+        mosfet: drawMOSFET,
+        phototransistor: drawPhototransistor,
+        opamp: drawOpAmp,
+        ic: drawIC,
+        transformer: drawTransformer,
+        junction: drawJunction,
+        crossover: drawCrossover,
+        terminal: drawTerminal
     };
 
     function drawLabel(ctx, sx, sy, z, comp) {
@@ -1126,6 +1234,466 @@ document.addEventListener("DOMContentLoaded", () => {
         drawPinDot(ctx, sx + 20 * z, sy + 40 * z, z);
     }
 
+    // ═══════════════════════════════════════════
+    // NEW SYMBOL RENDERERS — epoch_40.pt classes
+    // ═══════════════════════════════════════════
+
+    function drawVSS(ctx, sx, sy, z) {
+        // VSS is a negative supply voltage source — drawn like DC source with V- label
+        const r = 18 * z;
+
+        // Top lead (pin at [0,-40])
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 40 * z);
+        ctx.lineTo(sx, sy - r);
+        ctx.stroke();
+
+        // Circle
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // V- label inside
+        ctx.fillStyle = "#E0E0E0";
+        ctx.font = `bold ${11 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("V−", sx, sy);
+
+        // Bottom lead (pin at [0,40])
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + r);
+        ctx.lineTo(sx, sy + 40 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy - 40 * z, z);
+        drawPinDot(ctx, sx, sy + 40 * z, z);
+    }
+
+    function drawCapacitorPolarized(ctx, sx, sy, z) {
+        const gap = 4 * z;
+        const plateH = 16 * z;
+
+        // Left lead
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy);
+        ctx.lineTo(sx - gap, sy);
+        ctx.stroke();
+
+        // Left plate (straight — positive side)
+        ctx.beginPath();
+        ctx.moveTo(sx - gap, sy - plateH);
+        ctx.lineTo(sx - gap, sy + plateH);
+        ctx.stroke();
+
+        // Right plate (curved — negative side)
+        ctx.beginPath();
+        ctx.arc(sx + gap + 12 * z, sy, 14 * z, Math.PI * 0.65, Math.PI * 1.35);
+        ctx.stroke();
+
+        // Right lead
+        ctx.beginPath();
+        ctx.moveTo(sx + gap + 2 * z, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        // Plus sign near positive plate
+        ctx.fillStyle = "#FF9800";
+        ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText("+", sx - gap - 6 * z, sy - plateH);
+
+        drawPinDot(ctx, sx - 40 * z, sy, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawResistorPhoto(ctx, sx, sy, z) {
+        // Draw standard resistor first
+        drawResistor(ctx, sx, sy, z);
+
+        // Add light arrows (two diagonal arrows pointing at the body)
+        ctx.strokeStyle = "#FFD54F";
+        ctx.lineWidth = Math.max(1, 1.5 * z);
+        // Arrow 1
+        ctx.beginPath();
+        ctx.moveTo(sx - 14 * z, sy - 18 * z);
+        ctx.lineTo(sx - 4 * z, sy - 10 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 4 * z, sy - 10 * z);
+        ctx.lineTo(sx - 10 * z, sy - 10 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 4 * z, sy - 10 * z);
+        ctx.lineTo(sx - 4 * z, sy - 16 * z);
+        ctx.stroke();
+        // Arrow 2
+        ctx.beginPath();
+        ctx.moveTo(sx + 0 * z, sy - 18 * z);
+        ctx.lineTo(sx + 10 * z, sy - 10 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy - 10 * z);
+        ctx.lineTo(sx + 4 * z, sy - 10 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy - 10 * z);
+        ctx.lineTo(sx + 10 * z, sy - 16 * z);
+        ctx.stroke();
+        // Restore stroke color
+        ctx.strokeStyle = "#E0E0E0";
+        ctx.lineWidth = Math.max(1, 2 * z);
+    }
+
+    function drawDiodeLED(ctx, sx, sy, z) {
+        // Draw standard diode first
+        drawDiode(ctx, sx, sy, z);
+
+        // Add emission arrows (pointing away from the diode)
+        ctx.strokeStyle = "#FFD54F";
+        ctx.lineWidth = Math.max(1, 1.5 * z);
+        // Arrow 1
+        ctx.beginPath();
+        ctx.moveTo(sx + 4 * z, sy - 12 * z);
+        ctx.lineTo(sx + 14 * z, sy - 20 * z);
+        ctx.stroke();
+        // Arrowhead
+        ctx.beginPath();
+        ctx.moveTo(sx + 14 * z, sy - 20 * z);
+        ctx.lineTo(sx + 8 * z, sy - 19 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 14 * z, sy - 20 * z);
+        ctx.lineTo(sx + 13 * z, sy - 14 * z);
+        ctx.stroke();
+        // Arrow 2
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy - 10 * z);
+        ctx.lineTo(sx + 20 * z, sy - 18 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 20 * z, sy - 18 * z);
+        ctx.lineTo(sx + 14 * z, sy - 17 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 20 * z, sy - 18 * z);
+        ctx.lineTo(sx + 19 * z, sy - 12 * z);
+        ctx.stroke();
+        // Restore
+        ctx.strokeStyle = "#E0E0E0";
+        ctx.lineWidth = Math.max(1, 2 * z);
+    }
+
+    function drawDiodeZener(ctx, sx, sy, z) {
+        const triW = 14 * z;
+        const triH = 10 * z;
+
+        // Left lead
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy);
+        ctx.lineTo(sx - triW, sy);
+        ctx.stroke();
+
+        // Triangle (anode)
+        ctx.beginPath();
+        ctx.moveTo(sx - triW, sy - triH);
+        ctx.lineTo(sx - triW, sy + triH);
+        ctx.lineTo(sx + triW, sy);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Zener cathode bar with bent ends
+        ctx.beginPath();
+        ctx.moveTo(sx + triW - 4 * z, sy - triH - 3 * z);  // top bend
+        ctx.lineTo(sx + triW, sy - triH);
+        ctx.lineTo(sx + triW, sy + triH);
+        ctx.lineTo(sx + triW + 4 * z, sy + triH + 3 * z);  // bottom bend
+        ctx.stroke();
+
+        // Right lead
+        ctx.beginPath();
+        ctx.moveTo(sx + triW, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawMOSFET(ctx, sx, sy, z) {
+        // Gate lead (pin at [-20, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy);
+        ctx.lineTo(sx - 6 * z, sy);
+        ctx.stroke();
+
+        // Gate vertical bar (insulated)
+        ctx.lineWidth = Math.max(1, 2.5 * z);
+        ctx.beginPath();
+        ctx.moveTo(sx - 6 * z, sy - 14 * z);
+        ctx.lineTo(sx - 6 * z, sy + 14 * z);
+        ctx.stroke();
+        ctx.lineWidth = Math.max(1, 2 * z);
+
+        // Channel bar (dashed for enhancement mode)
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy - 14 * z);
+        ctx.lineTo(sx - 2 * z, sy + 14 * z);
+        ctx.stroke();
+
+        // Drain lead (top — pin at [20, -40])
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy - 10 * z);
+        ctx.lineTo(sx + 10 * z, sy - 10 * z);
+        ctx.lineTo(sx + 10 * z, sy - 24 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy - 24 * z);
+        ctx.lineTo(sx + 20 * z, sy - 40 * z);
+        ctx.stroke();
+
+        // Source lead (bottom — pin at [20, 40])
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy + 10 * z);
+        ctx.lineTo(sx + 10 * z, sy + 10 * z);
+        ctx.lineTo(sx + 10 * z, sy + 24 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy + 24 * z);
+        ctx.lineTo(sx + 20 * z, sy + 40 * z);
+        ctx.stroke();
+
+        // Arrow on source (pointing inward for N-channel)
+        drawArrow(ctx, sx + 10 * z, sy + 10 * z, sx - 2 * z, sy + 10 * z, z);
+
+        // Body connection (substrate to source)
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy);
+        ctx.lineTo(sx + 10 * z, sy);
+        ctx.lineTo(sx + 10 * z, sy + 10 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 20 * z, sy, z);
+        drawPinDot(ctx, sx + 20 * z, sy - 40 * z, z);
+        drawPinDot(ctx, sx + 20 * z, sy + 40 * z, z);
+    }
+
+    function drawPhototransistor(ctx, sx, sy, z) {
+        // Draw standard NPN BJT
+        drawBJT_NPN(ctx, sx, sy, z);
+
+        // Add incoming light arrows
+        ctx.strokeStyle = "#FFD54F";
+        ctx.lineWidth = Math.max(1, 1.5 * z);
+        // Arrow 1
+        ctx.beginPath();
+        ctx.moveTo(sx - 24 * z, sy - 24 * z);
+        ctx.lineTo(sx - 12 * z, sy - 12 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 12 * z, sy - 12 * z);
+        ctx.lineTo(sx - 18 * z, sy - 12 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 12 * z, sy - 12 * z);
+        ctx.lineTo(sx - 12 * z, sy - 18 * z);
+        ctx.stroke();
+        // Arrow 2
+        ctx.beginPath();
+        ctx.moveTo(sx - 18 * z, sy - 18 * z);
+        ctx.lineTo(sx - 6 * z, sy - 6 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 6 * z, sy - 6 * z);
+        ctx.lineTo(sx - 12 * z, sy - 6 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 6 * z, sy - 6 * z);
+        ctx.lineTo(sx - 6 * z, sy - 12 * z);
+        ctx.stroke();
+        // Restore
+        ctx.strokeStyle = "#E0E0E0";
+        ctx.lineWidth = Math.max(1, 2 * z);
+    }
+
+    function drawOpAmp(ctx, sx, sy, z) {
+        // Triangle body
+        ctx.beginPath();
+        ctx.moveTo(sx - 24 * z, sy - 30 * z);
+        ctx.lineTo(sx - 24 * z, sy + 30 * z);
+        ctx.lineTo(sx + 24 * z, sy);
+        ctx.closePath();
+        ctx.stroke();
+
+        // V+ input lead (pin at [-30, -20])
+        ctx.beginPath();
+        ctx.moveTo(sx - 30 * z, sy - 20 * z);
+        ctx.lineTo(sx - 24 * z, sy - 20 * z);
+        ctx.stroke();
+
+        // V− input lead (pin at [-30, 20])
+        ctx.beginPath();
+        ctx.moveTo(sx - 30 * z, sy + 20 * z);
+        ctx.lineTo(sx - 24 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // Output lead (pin at [30, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z, sy);
+        ctx.lineTo(sx + 30 * z, sy);
+        ctx.stroke();
+
+        // + sign at non-inverting input
+        ctx.fillStyle = "#4FC1FF";
+        ctx.font = `bold ${12 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("+", sx - 16 * z, sy - 16 * z);
+
+        // − sign at inverting input
+        ctx.fillText("−", sx - 16 * z, sy + 16 * z);
+
+        drawPinDot(ctx, sx - 30 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 30 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 30 * z, sy, z);
+    }
+
+    function drawIC(ctx, sx, sy, z) {
+        const w = 60 * z;
+        const h = 36 * z;
+
+        // Rectangle body
+        ctx.strokeRect(sx - w / 2, sy - h / 2, w, h);
+
+        // IC label
+        ctx.fillStyle = "#E0E0E0";
+        ctx.font = `bold ${11 * z}px 'Segoe UI', Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("IC", sx, sy);
+
+        // Left lead (pin at [-40, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy);
+        ctx.lineTo(sx - w / 2, sy);
+        ctx.stroke();
+
+        // Right lead (pin at [40, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx + w / 2, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        // Notch at top center
+        ctx.beginPath();
+        ctx.arc(sx, sy - h / 2, 4 * z, 0, Math.PI);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawTransformer(ctx, sx, sy, z) {
+        // Primary coil (left side) — 3 humps
+        const humps = 3;
+        const humpH = 8 * z;
+        const totalH = humps * humpH * 2;
+        const startY = sy - totalH / 2;
+
+        // Top-left lead (pin at [-40, -20])
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 12 * z, sy - 20 * z);
+        ctx.stroke();
+
+        // Primary coil arcs
+        for (let i = 0; i < humps; i++) {
+            const cy = startY + i * humpH * 2 + humpH;
+            ctx.beginPath();
+            ctx.arc(sx - 12 * z, cy, humpH, -Math.PI / 2, Math.PI / 2, false);
+            ctx.stroke();
+        }
+
+        // Bottom-left lead (pin at [-40, 20])
+        ctx.beginPath();
+        ctx.moveTo(sx - 12 * z, startY + totalH);
+        ctx.lineTo(sx - 12 * z, sy + 20 * z);
+        ctx.lineTo(sx - 40 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // Core lines (two vertical parallel lines)
+        ctx.beginPath();
+        ctx.moveTo(sx - 4 * z, sy - 24 * z);
+        ctx.lineTo(sx - 4 * z, sy + 24 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 4 * z, sy - 24 * z);
+        ctx.lineTo(sx + 4 * z, sy + 24 * z);
+        ctx.stroke();
+
+        // Secondary coil (right side) — 3 humps
+        // Top-right lead (pin at [40, -20])
+        ctx.beginPath();
+        ctx.moveTo(sx + 40 * z, sy - 20 * z);
+        ctx.lineTo(sx + 12 * z, sy - 20 * z);
+        ctx.stroke();
+
+        for (let i = 0; i < humps; i++) {
+            const cy = startY + i * humpH * 2 + humpH;
+            ctx.beginPath();
+            ctx.arc(sx + 12 * z, cy, humpH, Math.PI / 2, -Math.PI / 2, false);
+            ctx.stroke();
+        }
+
+        // Bottom-right lead (pin at [40, 20])
+        ctx.beginPath();
+        ctx.moveTo(sx + 12 * z, startY + totalH);
+        ctx.lineTo(sx + 12 * z, sy + 20 * z);
+        ctx.lineTo(sx + 40 * z, sy + 20 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy + 20 * z, z);
+    }
+
+    function drawJunction(ctx, sx, sy, z) {
+        // Simple filled dot — wire junction marker
+        ctx.fillStyle = "#4FC1FF";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4 * z, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function drawCrossover(ctx, sx, sy, z) {
+        // Small bump/arc showing wires cross without connecting
+        const len = 10 * z;
+        // Horizontal wire through
+        ctx.beginPath();
+        ctx.moveTo(sx - len, sy);
+        ctx.lineTo(sx - 4 * z, sy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 4 * z, sy);
+        ctx.lineTo(sx + len, sy);
+        ctx.stroke();
+        // Arc (bridge) over center
+        ctx.beginPath();
+        ctx.arc(sx, sy - 3 * z, 5 * z, 0.3 * Math.PI, 0.7 * Math.PI, false);
+        ctx.stroke();
+    }
+
+    function drawTerminal(ctx, sx, sy, z) {
+        // Small open circle with a lead
+        ctx.beginPath();
+        ctx.arc(sx, sy, 5 * z, 0, Math.PI * 2);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx, sy, z);
+    }
+
     function drawArrow(ctx, fromX, fromY, toX, toY, z) {
         const angle = Math.atan2(toY - fromY, toX - fromX);
         const len = 6 * z;
@@ -1205,7 +1773,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Draw Components
         components.forEach(comp => {
-            if (comp.type === 'wire' || comp.type === 'junction' || comp.type === 'text') return;
+            const SKIP_RENDER_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'text'];
+            if (SKIP_RENDER_TYPES.includes(comp.type)) return;
             const pos = worldToScreen(comp.x, comp.y);
 
             if (comp.type === 'label') {
@@ -2026,8 +2595,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     // Load AI Data into our interactive state
                     const SCALE_FACTOR = 1.8;
+
+                    // Extract junction centers for wire merging
+                    // Junctions are NOT components — they are wire connection points
+                    const NON_COMPONENT_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'text'];
+                    const junctionPoints = data.components
+                        .filter(c => c.type === 'junction')
+                        .map(c => ({
+                            x: snap(c.center[0] * SCALE_FACTOR),
+                            y: snap(c.center[1] * SCALE_FACTOR)
+                        }));
+
                     components = data.components
-                        .filter(c => !['wire', 'junction', 'text'].includes(c.type))
+                        .filter(c => !NON_COMPONENT_TYPES.includes(c.type))
                         .map(c => {
                             const type = c.type;
                             const db = COMPONENT_DB[type];

@@ -11,8 +11,8 @@ runs
 source.docx
 
 # # PyTorch/Models
-# *.pth
-# *.pt
+*.pth
+*.pt
 
 # # Datasets (Large folders)
 # dataset_full_yolo/
@@ -34,3 +34,6 @@ for_report
 *.sty
 for_report/
 **/for_report/
+*.json
+.cir
+*.webp
