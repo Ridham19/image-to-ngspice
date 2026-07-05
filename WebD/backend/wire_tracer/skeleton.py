@@ -28,10 +28,10 @@ def classify_skeleton_pixels(skeleton: np.ndarray) -> dict[str, np.ndarray]:
     if not isinstance(skeleton, np.ndarray):
         raise ValueError("skeleton must be a numpy array")
         
-    skel_binary = (skeleton > 0).astype(np.int32)
+    skel_binary = (skeleton > 0).astype(np.uint8)
     
     # Use cv2.filter2D to count 8-connected neighbors
-    kernel = np.ones((3, 3), dtype=np.int32)
+    kernel = np.ones((3, 3), dtype=np.uint8)
     # filter2D includes the center pixel, so we subtract skel_binary
     neighbor_count = cv2.filter2D(skel_binary, -1, kernel) - skel_binary
     
@@ -93,9 +93,9 @@ def build_skeleton_graph(
             for dx in [-1, 0, 1]:
                 if dy == 0 and dx == 0:
                     continue
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < h and 0 <= nx < w and skel_binary[ny, nx]:
-                    neighbors.append((ny, nx))
+                ny, nxt_x = y + dy, x + dx
+                if 0 <= ny < h and 0 <= nxt_x < w and skel_binary[ny, nxt_x]:
+                    neighbors.append((ny, nxt_x))
         return neighbors
 
     visited = set()
@@ -104,11 +104,11 @@ def build_skeleton_graph(
     for start_node in G.nodes():
         sy, sx = start_node
         
-        for ny, nx in get_neighbors(sy, sx):
+        for ny, nxt_x in get_neighbors(sy, sx):
             # A branch is defined by a start node and an initial direction
             # If we haven't traced this exact undirected segment yet
-            edge_id1 = (start_node, (ny, nx))
-            edge_id2 = ((ny, nx), start_node)
+            edge_id1 = (start_node, (ny, nxt_x))
+            edge_id2 = ((ny, nxt_x), start_node)
             if edge_id1 in visited or edge_id2 in visited:
                 continue
                 
@@ -117,7 +117,7 @@ def build_skeleton_graph(
             
             # Trace until we hit another node or a dead end
             path = [(sy, sx)]
-            curr_y, curr_x = ny, nx
+            curr_y, curr_x = ny, nxt_x
             prev_y, prev_x = sy, sx
             
             while True:
@@ -148,27 +148,12 @@ def build_skeleton_graph(
 
     return G
 
-def nets_from_skeleton_graph(graph: nx.Graph) -> tuple[int, np.ndarray]:
+def nets_from_skeleton_graph(graph: nx.Graph, shape: tuple[int, int]) -> tuple[int, np.ndarray]:
     """
     Find connected components in the skeleton graph and produce a label_map.
     """
-    # Initialize empty label_map. We need the shape, but graph doesn't store it directly.
-    # However, node attributes have 'pixel', we can't infer max bounds easily unless we find the max.
-    # But wait, label_map is usually the size of the image. 
-    # For now, let's find max x and max y from nodes and paths to create a bounding label_map.
-    # A better way is to pass the original shape, but the signature is strict.
-    
-    max_y, max_x = 0, 0
-    for u, v, data in graph.edges(data=True):
-        for y, x in data.get('path', []):
-            if y > max_y: max_y = y
-            if x > max_x: max_x = x
-            
-    for y, x in graph.nodes():
-        if y > max_y: max_y = y
-        if x > max_x: max_x = x
-        
-    label_map = np.zeros((max_y + 1, max_x + 1), dtype=np.int32)
+    h, w = shape
+    label_map = np.zeros((h, w), dtype=np.int32)
     
     connected_components = list(nx.connected_components(graph))
     num_nets = len(connected_components)
@@ -177,12 +162,14 @@ def nets_from_skeleton_graph(graph: nx.Graph) -> tuple[int, np.ndarray]:
         label = i + 1
         # Draw the nodes
         for node in comp:
-            label_map[node[0], node[1]] = label
+            if 0 <= node[0] < h and 0 <= node[1] < w:
+                label_map[node[0], node[1]] = label
             
         # Draw the edges
         subgraph = graph.subgraph(comp)
         for u, v, data in subgraph.edges(data=True):
             for y, x in data.get('path', []):
-                label_map[y, x] = label
+                if 0 <= y < h and 0 <= x < w:
+                    label_map[y, x] = label
                 
     return num_nets, label_map

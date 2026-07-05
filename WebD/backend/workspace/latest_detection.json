@@ -1,50 +1,168 @@
 [
     {
-        "name": "R1",
-        "type": "resistor",
-        "box": [
-            763,
-            287,
-            187,
-            199
-        ],
-        "center": [
-            856.5,
-            386.5
-        ],
-        "conf": 0.95,
-        "value": null
-    },
-    {
         "name": "V1",
-        "type": "source",
+        "type": "ac_source",
         "box": [
-            70,
-            886,
-            217,
-            159
+            218,
+            1121,
+            173,
+            219
         ],
         "center": [
-            178.5,
-            965.5
+            304.5,
+            1230.5
         ],
-        "conf": 0.95,
-        "value": null
+        "conf": 0.92,
+        "value": "TEXT_FOUND",
+        "text_box": [
+            228,
+            1349,
+            57,
+            44
+        ]
     },
     {
         "name": "D1",
         "type": "diode",
         "box": [
-            1383,
-            759,
-            213,
-            143
+            939,
+            599,
+            167,
+            186
         ],
         "center": [
-            1489.5,
-            830.5
+            1022.5,
+            692.0
+        ],
+        "conf": 0.88,
+        "value": null
+    },
+    {
+        "name": "R1",
+        "type": "resistor",
+        "box": [
+            2992,
+            885,
+            179,
+            337
+        ],
+        "center": [
+            3081.5,
+            1053.5
+        ],
+        "conf": 0.88,
+        "value": null
+    },
+    {
+        "name": "J1",
+        "type": "junction",
+        "box": [
+            2035,
+            1741,
+            79,
+            76
+        ],
+        "center": [
+            2074.5,
+            1779.0
+        ],
+        "conf": 0.88,
+        "value": null
+    },
+    {
+        "name": "C1",
+        "type": "capacitor",
+        "box": [
+            1979,
+            1103,
+            203,
+            151
+        ],
+        "center": [
+            2080.5,
+            1178.5
+        ],
+        "conf": 0.86,
+        "value": null
+    },
+    {
+        "name": "J2",
+        "type": "junction",
+        "box": [
+            2066,
+            609,
+            71,
+            72
+        ],
+        "center": [
+            2101.5,
+            645.0
+        ],
+        "conf": 0.84,
+        "value": null
+    },
+    {
+        "name": "J3",
+        "type": "junction",
+        "box": [
+            3047,
+            614,
+            56,
+            53
+        ],
+        "center": [
+            3075.0,
+            640.5
+        ],
+        "conf": 0.8,
+        "value": null
+    },
+    {
+        "name": "J4",
+        "type": "junction",
+        "box": [
+            3095,
+            1676,
+            50,
+            51
+        ],
+        "center": [
+            3120.0,
+            1701.5
+        ],
+        "conf": 0.76,
+        "value": null
+    },
+    {
+        "name": "J5",
+        "type": "junction",
+        "box": [
+            330,
+            1998,
+            55,
+            55
+        ],
+        "center": [
+            357.5,
+            2025.5
         ],
         "conf": 0.73,
+        "value": null
+    },
+    {
+        "name": "J6",
+        "type": "junction",
+        "box": [
+            259,
+            683,
+            48,
+            53
+        ],
+        "center": [
+            283.0,
+            709.5
+        ],
+        "conf": 0.69,
         "value": null
     }
 ]

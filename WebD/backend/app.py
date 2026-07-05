@@ -177,7 +177,7 @@ class SimulateRequest(BaseModel):
 # LOAD ML MODEL
 # ═══════════════════════════════════════════
 print("🚀 Booting up API Server...")
-detector = ComponentDetector(model_name="../weights/best.pt")
+detector = ComponentDetector(model_name="../../epoch_40.pt")
 
 # ═══════════════════════════════════════════
 # ENDPOINTS
@@ -239,32 +239,87 @@ async def detect_circuit(file: UploadFile = File(...)):
         print(f"🔍 Detected {len(detected_comps)} component(s)")
 
         # Steps 4-6 -- Wire Tracing Pipeline
-        connections = None
+        connections = []
         debug_image_b64 = ""
         try:
-            from core.processing import preprocess_image, separate_layers, compute_pin_anchors
-            from core.netlist import trace_nodes
-            from core.visualize import generate_debug_image
+            from core.processing import compute_pin_anchors, TRANSPARENT_TYPES
+            from wire_tracer.tracer import trace_wires
+            import cv2, base64
 
-            # Step 4 -- Dual-path binarization (adaptive threshold + Canny)
-            # Pass the already-loaded BGR matrix to skip a third disk read
-            original, gray, binary = preprocess_image(bgr_image)
-
-            # Step 5 -- Collision masking: blank component interiors so only
-            # external wire traces remain in wire_mask
-            _, wire_mask, debug_overlay = separate_layers(
-                gray, binary, detections=detected_comps
-            )
-
-            # Step 6 -- DFS traversal from pin anchors through wire pixels
-            # Mutates detected_comps in-place, adding a 'nodes' key
-            connections = trace_nodes(wire_mask, detected_comps)
+            # Step 4a: Compute pin anchors using the core dual-path preprocessor
+            # for high-quality rotation calibration (this preprocessor is
+            # validated on hand-drawn circuit images).
+            from core.processing import preprocess_image as core_preprocess
+            _, _, core_binary = core_preprocess(bgr_image)
+            pin_anchors = compute_pin_anchors(detected_comps, wire_mask=core_binary)
             
-            # Step 6.5 -- Generate AI Debug Preview Base64 Image
-            pin_anchors = compute_pin_anchors(detected_comps, wire_mask=wire_mask)
-            debug_image_b64 = generate_debug_image(original, binary, debug_overlay, detected_comps, connections, pin_anchors)
+            # Step 4b: Transform detected_comps to wire_tracer format
+            wt_components = []
+            for idx, comp in enumerate(detected_comps):
+                ctype = comp.get("type", "")
+                if ctype in TRANSPARENT_TYPES:
+                    continue
+                
+                wt_comp = {
+                    "id": f"comp_{idx}",
+                    "label": ctype,
+                    "bbox": comp.get("box", [0,0,0,0]),
+                    "pins": []
+                }
+                
+                for anchor in pin_anchors:
+                    if anchor["comp_idx"] == idx:
+                        wt_comp["pins"].append({
+                            "id": f"{idx}_{anchor['pin_id']}",
+                            "loc": [anchor["x"], anchor["y"]]
+                        })
+                
+                wt_components.append(wt_comp)
+                
+            # Step 5: Run the wire_tracer pipeline (has its own preprocessing)
+            netlist, debug_info = trace_wires(
+                bgr_image, 
+                wt_components, 
+                method="connected_components", 
+                debug=True
+            )
+            
+            # Assign nodes to detected_comps for frontend state
+            for comp_idx, det in enumerate(detected_comps):
+                ctype = det.get("type", "")
+                if ctype in TRANSPARENT_TYPES:
+                    continue
+                pin_list = [p for p in pin_anchors if p["comp_idx"] == comp_idx]
+                nodes_list = []
+                for p in sorted(pin_list, key=lambda k: k["pin_id"]):
+                    pin_id_str = f"{comp_idx}_{p['pin_id']}"
+                    net_label = debug_info["pin_net_map"].get(pin_id_str)
+                    nodes_list.append(str(net_label) if net_label is not None else "NC")
+                det["nodes"] = nodes_list
 
-            print(f"✅ Wire tracing complete: {len(connections or [])} wire segment(s) found")
+            # Build sequential connections for the frontend A* router
+            for net_pins in netlist:
+                for i in range(len(net_pins) - 1):
+                    p1_idx, p1_pid = map(int, net_pins[i].split("_"))
+                    p2_idx, p2_pid = map(int, net_pins[i+1].split("_"))
+                    connections.append({
+                        "pin1": {"comp_idx": p1_idx, "pin_id": p1_pid},
+                        "pin2": {"comp_idx": p2_idx, "pin_id": p2_pid}
+                    })
+            
+            # Generate Debug Image
+            from wire_tracer.utils import draw_debug_overlay
+            debug_overlay_bgr = draw_debug_overlay(
+                bgr_image, 
+                wt_components, 
+                debug_info["label_map"], 
+                debug_info["pin_net_map"]
+            )
+            success, encoded_img = cv2.imencode('.jpg', debug_overlay_bgr)
+            if success:
+                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(encoded_img).decode('utf-8')
+
+            print(f"✅ Wire tracing complete: {len(connections)} logical wire segment(s) found across {debug_info.get('num_nets', 0)} nets")
 
         except Exception as wire_err:
             import traceback

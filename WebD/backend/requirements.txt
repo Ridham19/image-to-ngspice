@@ -5,7 +5,8 @@ ultralytics
 easyocr
 opencv-python
 numpy
-Pillowscikit-image
+Pillow
+scikit-image
 networkx
 scipy
 pytest

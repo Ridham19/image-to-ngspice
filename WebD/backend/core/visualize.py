@@ -116,32 +116,21 @@ def generate_debug_image(original, binary, debug_overlay, detected_comps, connec
     # Draw connections (traced wire paths)
     if connections:
         for conn in connections:
-            node_id = conn.get("node", "NC")
-            pts = conn.get("points", [])
-            if not pts:
+            p1 = conn.get("pin1")
+            p2 = conn.get("pin2")
+            if not p1 or not p2:
                 continue
                 
-            color = get_node_color(node_id)
+            color = (0, 165, 255) # Orange for wire links
             
-            # Draw the simplified polyline segments
-            for i in range(len(pts) - 1):
-                p1 = (int(pts[i]["x"]), int(pts[i]["y"]))
-                p2 = (int(pts[i+1]["x"]), int(pts[i+1]["y"]))
-                cv2.line(panel4, p1, p2, color, 3, cv2.LINE_AA)
-                
-            # Draw node labels on wire endpoints for readability
-            mid_pt_idx = len(pts) // 2
-            label_pos = (int(pts[mid_pt_idx]["x"]), int(pts[mid_pt_idx]["y"]))
-            cv2.rectangle(
-                panel4, 
-                (label_pos[0] - 10, label_pos[1] - 10), 
-                (label_pos[0] + 10, label_pos[1] + 10), 
-                (40, 40, 40), -1
-            )
-            cv2.putText(
-                panel4, str(node_id), (label_pos[0] - 5, label_pos[1] + 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA
-            )
+            pt1 = (int(p1["x"]), int(p1["y"]))
+            pt2 = (int(p2["x"]), int(p2["y"]))
+            cv2.line(panel4, pt1, pt2, color, 3, cv2.LINE_AA)
+            
+            # Draw a small visual indicator halfway
+            mid_x = (pt1[0] + pt2[0]) // 2
+            mid_y = (pt1[1] + pt2[1]) // 2
+            cv2.circle(panel4, (mid_x, mid_y), 4, (255, 255, 255), -1)
 
     # Draw color-coded pin nodes to show matching assignments
     for comp in detected_comps:

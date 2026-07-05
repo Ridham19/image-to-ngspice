@@ -100,7 +100,7 @@ def test_debug_overlay_returns_correct_shape():
     netlist, debug_info = trace_wires(img, components, debug=True)
     label_map = debug_info["label_map"]
     
-    overlay = draw_debug_overlay(img, components, label_map, netlist)
+    overlay = draw_debug_overlay(img, components, label_map, debug_info["pin_net_map"])
     assert overlay.shape == img.shape
     assert overlay.dtype == img.dtype
 

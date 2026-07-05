@@ -88,7 +88,7 @@ def draw_debug_overlay(
     image_bgr: np.ndarray,
     components: list[dict],
     label_map: np.ndarray,
-    netlist: list[list[str]],
+    pin_net_map: dict[str, int | None],
 ) -> np.ndarray:
     """
     Produce a colored debug visualization.
@@ -100,15 +100,6 @@ def draw_debug_overlay(
     """
     # Create a copy so we don't modify the input image directly
     overlay = image_bgr.copy()
-    
-    # We need to map pin_id to a net index (0, 1, 2...) in the netlist
-    # And we also need to map from the raw `label_map` values to net indices
-    # Wait, `label_map` has arbitrary labels 1..N. The netlist is just a list of pin arrays.
-    # To color the wire pixels accurately, we need to extract connected components 
-    # and map them, but `draw_debug_overlay` doesn't have the `pin_net_map`.
-    # Let's re-read the prompt: 
-    # "Each net gets a distinct color. Color all wire pixels of that net with its color."
-    # We can infer the color directly from `label_map` using `num_nets = label_map.max()`.
     
     max_label = int(label_map.max()) if label_map.size > 0 else 0
     color_map = net_label_to_color_map(max_label)
@@ -126,16 +117,6 @@ def draw_debug_overlay(
                 cv2.putText(overlay, f"Net {label}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 cv2.putText(overlay, f"Net {label}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
                 
-    # Build a lookup for pin colors based on the netlist
-    # Note: `netlist` uses net indices 0..M-1, which might be different from label_map labels.
-    # So we assign colors to the netlist indices instead for pins.
-    pin_to_net_idx = {}
-    for net_idx, pins in enumerate(netlist):
-        for pin_id in pins:
-            pin_to_net_idx[pin_id] = net_idx + 1 # offset by 1 to match color map indices, roughly
-            
-    netlist_color_map = net_label_to_color_map(len(netlist) + 1)
-    
     for comp in components:
         # Draw bbox in white
         bbox = comp.get("bbox")
@@ -148,10 +129,10 @@ def draw_debug_overlay(
             pin_id = pin.get("id")
             if loc and pin_id:
                 px, py = int(loc[0]), int(loc[1])
-                net_idx = pin_to_net_idx.get(pin_id)
+                net_label = pin_net_map.get(pin_id)
                 
                 # Get color for pin
-                color = netlist_color_map.get(net_idx, (128, 128, 128)) if net_idx else (128, 128, 128)
+                color = color_map.get(net_label, (128, 128, 128)) if net_label else (128, 128, 128)
                 
                 # Draw pin circle
                 cv2.circle(overlay, (px, py), 5, color, -1)

@@ -2593,8 +2593,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     modal.style.display = "none";
                     document.getElementById("statusText").innerText = `✅ Imported ${data.components.length} components.`;
 
-                    // Load AI Data into our interactive state
-                    const SCALE_FACTOR = 1.8;
+                    // Dynamically calculate SCALE_FACTOR based on average component width
+                    // This prevents components from being placed too far apart on high-res images
+                    let sumW = 0, countW = 0;
+                    data.components.forEach(c => {
+                        const NON_COMP = ['wire', 'junction', 'crossover', 'terminal', 'text'];
+                        if (c.box && !NON_COMP.includes(c.type)) {
+                            sumW += c.box[2];
+                            countW++;
+                        }
+                    });
+                    const avgW = countW > 0 ? (sumW / countW) : 100;
+                    // Standard canvas component is ~80px wide. We use 100 for a bit of breathing room.
+                    const SCALE_FACTOR = countW > 0 ? (100.0 / avgW) : 1.0;
 
                     // Extract junction centers for wire merging
                     // Junctions are NOT components — they are wire connection points
@@ -2644,45 +2655,53 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
 
                     // Load Wires (Logical Pin-to-Pin connection)
-                    wires = [];
-                    const nodePins = {};
-                    components.forEach(comp => {
-                        const pins = getCompPins(comp);
-                        if (comp.nodes) {
-                            comp.nodes.forEach((nodeId, idx) => {
-                                if (nodeId && nodeId !== "NC") {
-                                    if (!nodePins[nodeId]) nodePins[nodeId] = [];
-                                    if (pins[idx]) {
-                                        nodePins[nodeId].push({ x: pins[idx].x, y: pins[idx].y });
-                                    }
-                                }
-                            });
+                    // Map original component index to filtered components index
+                    const compIdxMap = {};
+                    let filteredIdx = 0;
+                    data.components.forEach((c, idx) => {
+                        if (!NON_COMPONENT_TYPES.includes(c.type)) {
+                            compIdxMap[idx] = filteredIdx++;
+                        } else {
+                            compIdxMap[idx] = -1;
                         }
                     });
 
-                    Object.values(nodePins).forEach(pins => {
-                        // Connect all pins for this node sequentially
-                        for (let i = 0; i < pins.length - 1; i++) {
-                            const p1 = pins[i];
-                            const p2 = pins[i + 1];
-                            if (p1.x !== p2.x || p1.y !== p2.y) {
-                                // Try A* routing first
-                                const astarSegments = routeAStar(p1, p2, components, gridSize);
-                                if (astarSegments && astarSegments.length > 0) {
-                                    wires.push(...astarSegments);
-                                } else {
-                                    // Fallback to naive Manhattan routing if A* blocked
-                                    if (p1.x === p2.x || p1.y === p2.y) {
-                                        wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                    // Load Wires (Logical Pin-to-Pin connection)
+                    wires = [];
+                    if (data.connections) {
+                        data.connections.forEach(conn => {
+                            const idx1 = compIdxMap[conn.pin1.comp_idx];
+                            const idx2 = compIdxMap[conn.pin2.comp_idx];
+                            
+                            if (idx1 !== undefined && idx1 !== -1 && idx2 !== undefined && idx2 !== -1) {
+                                const comp1 = components[idx1];
+                                const comp2 = components[idx2];
+                                
+                                const pins1 = getCompPins(comp1);
+                                const pins2 = getCompPins(comp2);
+                                
+                                const p1 = pins1[conn.pin1.pin_id];
+                                const p2 = pins2[conn.pin2.pin_id];
+                                
+                                if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
+                                    // Try A* routing first
+                                    const astarSegments = routeAStar(p1, p2, components, gridSize);
+                                    if (astarSegments && astarSegments.length > 0) {
+                                        wires.push(...astarSegments);
                                     } else {
-                                        const mid = { x: p2.x, y: p1.y };
-                                        wires.push([{ x: p1.x, y: p1.y }, { x: mid.x, y: mid.y }]);
-                                        wires.push([{ x: mid.x, y: mid.y }, { x: p2.x, y: p2.y }]);
+                                        // Fallback to naive Manhattan routing if A* blocked
+                                        if (p1.x === p2.x || p1.y === p2.y) {
+                                            wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                                        } else {
+                                            const mid = { x: p2.x, y: p1.y };
+                                            wires.push([{ x: p1.x, y: p1.y }, { x: mid.x, y: mid.y }]);
+                                            wires.push([{ x: mid.x, y: mid.y }, { x: p2.x, y: p2.y }]);
+                                        }
                                     }
                                 }
                             }
-                        }
-                    });
+                        });
+                    }
 
                     // Auto-Center and Zoom Camera dynamically to fit the imported circuit
                     if (components.length > 0 || wires.length > 0) {

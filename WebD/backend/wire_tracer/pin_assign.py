@@ -104,10 +104,11 @@ def assign_pins_to_nets(
                         # Top row, Bottom row, Left col, Right col of the region
                         # (Careful with overlaps, unique is better)
                         
-                        top = region[0, :] if y1 == py - r else []
-                        bottom = region[-1, :] if y2 == py + r + 1 else []
-                        left = region[:, 0] if x1 == px - r else []
-                        right = region[:, -1] if x2 == px + r + 1 else []
+                        empty = np.array([], dtype=label_map.dtype)
+                        top = region[0, :] if y1 == py - r else empty
+                        bottom = region[-1, :] if y2 == py + r + 1 else empty
+                        left = region[:, 0] if x1 == px - r else empty
+                        right = region[:, -1] if x2 == px + r + 1 else empty
                         
                         ring_vals = np.concatenate([top, bottom, left, right])
                         ring_vals = ring_vals[ring_vals > 0]

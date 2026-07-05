@@ -264,26 +264,53 @@ def trace_nodes(
 
         det["nodes"] = nodes_list
 
-    # ── 8. Package connections response ──
-    connections: List[Dict[str, Any]] = []
-    wire_id = 1
+    # ── 8. Package connections response (Path Following) ──
+    connections = []
+    seen_pairs = set()
 
-    for cluster_idx, cluster in enumerate(clusters):
-        # Only include clusters that actually connect pins
-        pins = cluster_pin_anchors[cluster_idx]
-        if not cluster or not pins:
+    # 8a. Connect pins that snapped to the exact same coordinate
+    for coord, pins in pin_snap_map.items():
+        for i in range(len(pins)):
+            for j in range(i + 1, len(pins)):
+                p1 = pins[i]
+                p2 = pins[j]
+                id1 = f"{p1['comp_idx']}_{p1['pin_id']}"
+                id2 = f"{p2['comp_idx']}_{p2['pin_id']}"
+                if id1 != id2:
+                    pair = tuple(sorted([id1, id2]))
+                    if pair not in seen_pairs:
+                        seen_pairs.add(pair)
+                        connections.append({"pin1": p1, "pin2": p2})
+
+    # 8b. BFS from each pin to find other connected pins
+    for start_pt in snapped_pins:
+        if start_pt is None:
             continue
-
-        # Extract simplified wire path points
-        points = extract_wire_segments(cluster)
-
-        if points:
-            connections.append({
-                "wire_id": wire_id,
-                "points": points,
-                "node": cluster_node_ids[cluster_idx],
-                "pin_count": len(pins),
-            })
-            wire_id += 1
+            
+        queue = [start_pt]
+        visited_for_pin = {start_pt}
+        
+        while queue:
+            curr = queue.pop(0)
+            for neighbor in adj.get(curr, set()):
+                if neighbor not in visited_for_pin:
+                    visited_for_pin.add(neighbor)
+                    if neighbor in pin_snap_map:
+                        # Reached another pin! Record connection
+                        for p1 in pin_snap_map[start_pt]:
+                            for p2 in pin_snap_map[neighbor]:
+                                id1 = f"{p1['comp_idx']}_{p1['pin_id']}"
+                                id2 = f"{p2['comp_idx']}_{p2['pin_id']}"
+                                
+                                if id1 != id2:
+                                    pair = tuple(sorted([id1, id2]))
+                                    if pair not in seen_pairs:
+                                        seen_pairs.add(pair)
+                                        connections.append({
+                                            "pin1": p1,
+                                            "pin2": p2
+                                        })
+                    else:
+                        queue.append(neighbor)
 
     return connections

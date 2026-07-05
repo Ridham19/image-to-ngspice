@@ -66,7 +66,10 @@ def trace_wires(
         adaptive_c=config.adaptive_c,
         morph_close_ksize=config.morph_close_ksize,
         morph_close_iterations=config.morph_close_iterations,
-        min_blob_area=config.min_blob_area
+        min_blob_area=config.min_blob_area,
+        canny_low=config.canny_low,
+        canny_high=config.canny_high,
+        canny_blur_ksize=config.canny_blur_ksize,
     )
     timing["preprocess"] = (time.time() - t0) * 1000
     if debug:
@@ -78,7 +81,10 @@ def trace_wires(
         binary,
         components,
         pin_pad=config.pin_pad,
-        erode_bbox=config.erode_bbox
+        erode_bbox=config.erode_bbox,
+        enhance_wire_continuity=config.enhance_wire_continuity,
+        h_wire_kernel_len=config.h_wire_kernel_len,
+        v_wire_kernel_len=config.v_wire_kernel_len,
     )
     timing["mask_components"] = (time.time() - t0) * 1000
     if debug:
@@ -100,7 +106,7 @@ def trace_wires(
             
         class_res = classify_skeleton_pixels(skeleton)
         graph = build_skeleton_graph(skeleton, class_res, config.treat_crossings_as_junctions)
-        num_nets, label_map = nets_from_skeleton_graph(graph)
+        num_nets, label_map = nets_from_skeleton_graph(graph, wire_mask.shape)
     else:
         raise ValueError(f"Unknown method '{method}'")
         
