@@ -105,16 +105,15 @@ def preprocess_image(
     # PATH B — Canny Edge Detection
     #   Heavier blur suppresses paper texture.
     # =========================================
-    _blur_b = canny_blur_ksize if canny_blur_ksize % 2 == 1 else canny_blur_ksize + 1
-    _blur_b = max(1, _blur_b)
+    if canny_low > 0 and canny_high > 0:
+        _blur_b = canny_blur_ksize if canny_blur_ksize % 2 == 1 else canny_blur_ksize + 1
+        _blur_b = max(1, _blur_b)
 
-    blurred_b = cv2.GaussianBlur(gray, (_blur_b, _blur_b), 0)
-    canny_map = cv2.Canny(blurred_b, canny_low, canny_high)
-
-    # =========================================
-    # MERGE + REPAIR
-    # =========================================
-    merged = cv2.bitwise_or(adapt_map, canny_map)
+        blurred_b = cv2.GaussianBlur(gray, (_blur_b, _blur_b), 0)
+        canny_map = cv2.Canny(blurred_b, canny_low, canny_high)
+        merged = cv2.bitwise_or(adapt_map, canny_map)
+    else:
+        merged = adapt_map
 
     if morph_close_ksize > 0 and morph_close_iterations > 0:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_close_ksize, morph_close_ksize))

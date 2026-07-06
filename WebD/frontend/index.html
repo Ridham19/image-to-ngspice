@@ -23,19 +23,30 @@
         </div>
         
         <div class="toolbar-group tools">
-            <button id="tool-select" class="btn-tool active">Select</button>
-            <button id="tool-wire" class="btn-tool">Wire</button>
+            <button id="tool-select" class="btn-tool active">🖱️ Select</button>
+            <button id="tool-wire" class="btn-tool">🔌 Wire</button>
             <span class="tool-separator"></span>
-            <button id="tool-resistor" class="btn-tool">Resistor</button>
-            <button id="tool-capacitor" class="btn-tool">Capacitor</button>
-            <button id="tool-capacitor_polarized" class="btn-tool">Cap+</button>
-            <button id="tool-inductor" class="btn-tool">Inductor</button>
-            <button id="tool-diode" class="btn-tool">Diode</button>
-            <button id="tool-diode_zener" class="btn-tool">Zener</button>
-            <button id="tool-diode_led" class="btn-tool">LED</button>
-            <span class="tool-separator"></span>
-            <select id="tool-source-select" class="toolbar-select" style="width: auto; appearance: none; -moz-appearance: none; -webkit-appearance: none; padding-right: 15px; cursor: pointer;">
-                <option value="" disabled selected>Sources ▼</option>
+            
+            <select id="tool-passives-select" class="toolbar-select">
+                <option value="" disabled selected>📦 Passives ▼</option>
+                <option value="resistor">Resistor</option>
+                <option value="capacitor">Capacitor</option>
+                <option value="capacitor_polarized">Polarized Cap</option>
+                <option value="inductor">Inductor</option>
+            </select>
+            
+            <select id="tool-semis-select" class="toolbar-select">
+                <option value="" disabled selected>🧩 Semiconductors ▼</option>
+                <option value="diode">Diode</option>
+                <option value="diode_zener">Zener Diode</option>
+                <option value="diode_led">LED</option>
+                <option value="bjt_npn">NPN Transistor</option>
+                <option value="bjt_pnp">PNP Transistor</option>
+                <option value="mosfet">MOSFET</option>
+            </select>
+            
+            <select id="tool-source-select" class="toolbar-select">
+                <option value="" disabled selected>⚡ Sources ▼</option>
                 <option value="source">DC Source</option>
                 <option value="ac_source">AC Source</option>
                 <option value="vss">VSS Supply</option>
@@ -46,16 +57,19 @@
                 <option value="sffm_source">SFFM Source</option>
                 <option value="am_source">AM Source</option>
             </select>
-            <span class="tool-separator"></span>
-            <button id="tool-label" class="btn-tool" style="font-weight: 600;">LABEL</button>
-            <button id="tool-ground" class="btn-tool">GND</button>
-            <span class="tool-separator"></span>
-            <button id="tool-bjt_npn" class="btn-tool">NPN</button>
-            <button id="tool-bjt_pnp" class="btn-tool">PNP</button>
-            <button id="tool-mosfet" class="btn-tool">FET</button>
-            <button id="tool-opamp" class="btn-tool">Op-Amp</button>
-            <button id="tool-transformer" class="btn-tool">XFMR</button>
-            <button id="tool-ic" class="btn-tool">IC</button>
+            
+            <select id="tool-advanced-select" class="toolbar-select">
+                <option value="" disabled selected>⚙️ Advanced ▼</option>
+                <option value="opamp">Op-Amp</option>
+                <option value="transformer">Transformer</option>
+                <option value="ic">Integrated Circuit</option>
+            </select>
+            
+            <select id="tool-terminals-select" class="toolbar-select">
+                <option value="" disabled selected>🚩 Terminals ▼</option>
+                <option value="ground">Ground (GND)</option>
+                <option value="label">Node Label</option>
+            </select>
         </div>
 
         <div class="toolbar-group">

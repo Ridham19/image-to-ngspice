@@ -279,12 +279,19 @@ document.addEventListener("DOMContentLoaded", () => {
     let panStart = { x: 0, y: 0 };
 
     // Interaction State
-    let selectedComp = null;
+    let selectedComponents = []; // Array of all selected components
+    let selectedComp = null;      // Primary selected component
+    let selectedWirePts = [];     // Array of selected wire endpoint coordinates {x, y}
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
     let wireStart = null;
     let mousePos = { x: 0, y: 0 };
-    let attachedWireEndpoints = [];
+    let attachedWireEndpoints = []; // Attached rubber-banding endpoints
+    
+    // Selection box state
+    let selectionStart = null;
+    let selectionEnd = null;
+    let isSelectingBox = false;
 
     // ═══════════════════════════════════════════
     // CANVAS RESIZE
@@ -474,29 +481,98 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.button === 0) {
             if (mode === 'select') {
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
+                const rawWorld = screenToWorldRaw(e.offsetX, e.offsetY);
                 const hit = hitTest(worldPos);
+                
+                // Check if we hit a wire endpoint/junction (within radius)
+                let hitWirePt = null;
+                for (const wire of wires) {
+                    for (const pt of wire) {
+                        const dx = rawWorld.x - pt.x;
+                        const dy = rawWorld.y - pt.y;
+                        if (Math.sqrt(dx * dx + dy * dy) < PIN_SNAP_RADIUS) {
+                            hitWirePt = pt;
+                            break;
+                        }
+                    }
+                    if (hitWirePt) break;
+                }
+
                 if (hit) {
-                    selectedComp = hit;
+                    // Clicking on a component
+                    if (e.shiftKey || e.ctrlKey) {
+                        if (selectedComponents.includes(hit)) {
+                            selectedComponents = selectedComponents.filter(c => c !== hit);
+                            selectedComp = selectedComponents[selectedComponents.length - 1] || null;
+                        } else {
+                            selectedComponents.push(hit);
+                            selectedComp = hit;
+                        }
+                    } else {
+                        if (!selectedComponents.includes(hit)) {
+                            selectedComponents = [hit];
+                            selectedComp = hit;
+                            selectedWirePts = [];
+                        }
+                    }
+                    
                     isDragging = true;
                     dragStart = { x: worldPos.x, y: worldPos.y };
                     
-                    // Find attached wire endpoints for rubber-banding
-                    const pins = getCompPins(selectedComp);
+                    // Populate attached rubber-banding wire endpoints for all selected components
                     attachedWireEndpoints = [];
-                    wires.forEach(wire => {
-                        if (wire.length < 2) return;
-                        [wire[0], wire[wire.length - 1]].forEach(pt => {
-                            const pinIdx = pins.findIndex(pin => Math.abs(pin.x - pt.x) < 1 && Math.abs(pin.y - pt.y) < 1);
-                            if (pinIdx !== -1) {
-                                attachedWireEndpoints.push({ pt, pinIdx });
-                            }
+                    selectedComponents.forEach(comp => {
+                        const pins = getCompPins(comp);
+                        wires.forEach(wire => {
+                            if (wire.length < 2) return;
+                            [wire[0], wire[wire.length - 1]].forEach(pt => {
+                                // Skip if the wire point is already in selectedWirePts (moved directly)
+                                if (selectedWirePts.includes(pt)) return;
+                                
+                                const pinIdx = pins.findIndex(pin => Math.abs(pin.x - pt.x) < 1 && Math.abs(pin.y - pt.y) < 1);
+                                if (pinIdx !== -1) {
+                                    if (!attachedWireEndpoints.some(att => att.pt === pt)) {
+                                        attachedWireEndpoints.push({ pt, comp, pinIdx });
+                                    }
+                                }
+                            });
                         });
                     });
 
                     updatePropertiesPanel();
-                } else {
-                    selectedComp = null;
+                } else if (hitWirePt) {
+                    // Clicking on a wire endpoint/junction
+                    if (e.shiftKey || e.ctrlKey) {
+                        if (selectedWirePts.includes(hitWirePt)) {
+                            selectedWirePts = selectedWirePts.filter(pt => pt !== hitWirePt);
+                        } else {
+                            selectedWirePts.push(hitWirePt);
+                        }
+                    } else {
+                        if (!selectedWirePts.includes(hitWirePt)) {
+                            selectedWirePts = [hitWirePt];
+                            selectedComponents = [];
+                            selectedComp = null;
+                        }
+                    }
+                    
+                    isDragging = true;
+                    dragStart = { x: worldPos.x, y: worldPos.y };
+                    attachedWireEndpoints = [];
                     updatePropertiesPanel();
+                } else {
+                    // Click on empty space
+                    if (!e.shiftKey && !e.ctrlKey) {
+                        selectedComponents = [];
+                        selectedWirePts = [];
+                        selectedComp = null;
+                        updatePropertiesPanel();
+                    }
+                    
+                    // Start selection box dragging
+                    isSelectingBox = true;
+                    selectionStart = screenToWorldRaw(e.offsetX, e.offsetY);
+                    selectionEnd = { ...selectionStart };
                 }
             }
             else if (mode === 'wire') {
@@ -535,7 +611,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
                 const comp = createComponent(mode, worldPos.x, worldPos.y);
                 components.push(comp);
+                selectedComponents = [comp];
                 selectedComp = comp;
+                selectedWirePts = [];
                 mode = 'select';
                 updateToolUI();
                 updatePropertiesPanel();
@@ -553,20 +631,37 @@ document.addEventListener("DOMContentLoaded", () => {
             mousePos = screenToWorld(e.offsetX, e.offsetY);
             hoveredPin = null;
         }
-        else if (isDragging && selectedComp) {
+        else if (isSelectingBox) {
+            selectionEnd = screenToWorldRaw(e.offsetX, e.offsetY);
+            mousePos = screenToWorld(e.offsetX, e.offsetY);
+            hoveredPin = null;
+        }
+        else if (isDragging && (selectedComponents.length > 0 || selectedWirePts.length > 0)) {
             mousePos = screenToWorld(e.offsetX, e.offsetY);
             const dx = mousePos.x - dragStart.x;
             const dy = mousePos.y - dragStart.y;
-            selectedComp.x += dx;
-            selectedComp.y += dy;
             
-            // Move attached wires
-            attachedWireEndpoints.forEach(att => {
-                att.pt.x += dx;
-                att.pt.y += dy;
-            });
-            
-            dragStart = { x: mousePos.x, y: mousePos.y };
+            if (dx !== 0 || dy !== 0) {
+                // Move components
+                selectedComponents.forEach(c => {
+                    c.x += dx;
+                    c.y += dy;
+                });
+                
+                // Move wire endpoints/junctions
+                selectedWirePts.forEach(pt => {
+                    pt.x += dx;
+                    pt.y += dy;
+                });
+                
+                // Move attached rubber-banding wires
+                attachedWireEndpoints.forEach(att => {
+                    att.pt.x += dx;
+                    att.pt.y += dy;
+                });
+                
+                dragStart = { x: mousePos.x, y: mousePos.y };
+            }
             hoveredPin = null;
         }
         else if (mode === 'wire') {
@@ -592,14 +687,65 @@ document.addEventListener("DOMContentLoaded", () => {
             isPanning = false;
             canvas.style.cursor = 'crosshair';
         }
-        if (isDragging && selectedComp) {
-            // Snap component back to grid on drop
-            selectedComp.x = snap(selectedComp.x);
-            selectedComp.y = snap(selectedComp.y);
+        if (isSelectingBox && selectionStart && selectionEnd) {
+            isSelectingBox = false;
             
-            // Snap attached wire endpoints precisely to the grid-aligned pins
-            const snappedPins = getCompPins(selectedComp);
+            // Bounding box in world coordinates
+            const xMin = Math.min(selectionStart.x, selectionEnd.x);
+            const xMax = Math.max(selectionStart.x, selectionEnd.x);
+            const yMin = Math.min(selectionStart.y, selectionEnd.y);
+            const yMax = Math.max(selectionStart.y, selectionEnd.y);
+            
+            if (xMax - xMin > 5 || yMax - yMin > 5) {
+                if (!e.shiftKey && !e.ctrlKey) {
+                    selectedComponents = [];
+                    selectedWirePts = [];
+                }
+                
+                // Select components
+                components.forEach(c => {
+                    if (c.x >= xMin && c.x <= xMax && c.y >= yMin && c.y <= yMax) {
+                        if (!selectedComponents.includes(c)) {
+                            selectedComponents.push(c);
+                        }
+                    }
+                });
+                
+                // Select wire points (junctions/corners)
+                wires.forEach(wire => {
+                    wire.forEach(pt => {
+                        if (pt.x >= xMin && pt.x <= xMax && pt.y >= yMin && pt.y <= yMax) {
+                            if (!selectedWirePts.includes(pt)) {
+                                selectedWirePts.push(pt);
+                            }
+                        }
+                    });
+                });
+                
+                selectedComp = selectedComponents[0] || null;
+            }
+            
+            selectionStart = null;
+            selectionEnd = null;
+            updatePropertiesPanel();
+            render();
+        }
+        else if (isDragging && (selectedComponents.length > 0 || selectedWirePts.length > 0)) {
+            // Snap components to grid
+            selectedComponents.forEach(c => {
+                c.x = snap(c.x);
+                c.y = snap(c.y);
+            });
+            
+            // Snap selected wire points to grid
+            selectedWirePts.forEach(pt => {
+                pt.x = snap(pt.x);
+                pt.y = snap(pt.y);
+            });
+            
+            // Snap attached rubber-band wire endpoints precisely to the grid-aligned pins
             attachedWireEndpoints.forEach(att => {
+                const snappedPins = getCompPins(att.comp);
                 const pin = snappedPins[att.pinIdx];
                 att.pt.x = pin.x;
                 att.pt.y = pin.y;
@@ -626,6 +772,7 @@ document.addEventListener("DOMContentLoaded", () => {
             updatePropertiesPanel();
             render();
         }
+        isSelectingBox = false;
         isDragging = false;
     });
 
@@ -642,16 +789,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Keyboard shortcut: Delete selected component
     document.addEventListener("keydown", (e) => {
-        if (e.key === 'Delete' && selectedComp) {
-            const idx = components.indexOf(selectedComp);
-            if (idx !== -1) components.splice(idx, 1);
-            selectedComp = null;
-            updatePropertiesPanel();
-            render();
+        if (e.key === 'Delete') {
+            let changed = false;
+            if (selectedComponents.length > 0) {
+                selectedComponents.forEach(comp => {
+                    const idx = components.indexOf(comp);
+                    if (idx !== -1) components.splice(idx, 1);
+                });
+                selectedComponents = [];
+                selectedComp = null;
+                selectedWirePts = [];
+                changed = true;
+            }
+            if (changed) {
+                updatePropertiesPanel();
+                render();
+            }
         }
         if (e.key === 'Escape') {
             wireStart = null;
+            selectedComponents = [];
             selectedComp = null;
+            selectedWirePts = [];
             mode = 'select';
             updateToolUI();
             updatePropertiesPanel();
@@ -1787,10 +1946,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             // Selection highlight
-            if (comp === selectedComp) {
+            if (selectedComponents.includes(comp)) {
                 const db = COMPONENT_DB[comp.type];
                 const hb = db ? db.hitbox : { w: 40, h: 40 };
-                ctx.strokeStyle = "#0078D7";
+                ctx.save();
+                ctx.strokeStyle = "rgba(0, 229, 255, 0.85)";
                 ctx.lineWidth = 2;
                 ctx.setLineDash([4, 3]);
                 ctx.strokeRect(
@@ -1799,7 +1959,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     (hb.w + 12) * zoom,
                     (hb.h + 12) * zoom
                 );
-                ctx.setLineDash([]);
+                ctx.restore();
             }
 
             // Draw the schematic symbol
@@ -1897,6 +2057,35 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             ctx.globalAlpha = 1.0;
         }
+
+        // Draw selected wire endpoints (junctions/corners)
+        selectedWirePts.forEach(pt => {
+            const sp = worldToScreen(pt.x, pt.y);
+            ctx.save();
+            ctx.fillStyle = "rgba(0, 229, 255, 0.85)";
+            ctx.strokeStyle = "#F8FAFC";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 6 * zoom, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        });
+
+        // Draw active selection box (marquee selection)
+        if (isSelectingBox && selectionStart && selectionEnd) {
+            const p1 = worldToScreen(selectionStart.x, selectionStart.y);
+            const p2 = worldToScreen(selectionEnd.x, selectionEnd.y);
+            
+            ctx.save();
+            ctx.strokeStyle = "rgba(0, 229, 255, 0.6)";
+            ctx.fillStyle = "rgba(0, 229, 255, 0.08)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+            ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+            ctx.restore();
+        }
     }
 
     function getDisplayValue(comp) {
@@ -1970,11 +2159,20 @@ document.addEventListener("DOMContentLoaded", () => {
         // Delete button
         const delBtn = document.createElement('button');
         delBtn.className = 'prop-delete-btn';
-        delBtn.textContent = '🗑 Delete Component';
+        delBtn.textContent = '🗑 Delete Selected';
         delBtn.addEventListener('click', () => {
-            const idx = components.indexOf(comp);
-            if (idx !== -1) components.splice(idx, 1);
+            if (selectedComponents.includes(comp)) {
+                selectedComponents.forEach(c => {
+                    const idx = components.indexOf(c);
+                    if (idx !== -1) components.splice(idx, 1);
+                });
+                selectedComponents = [];
+            } else {
+                const idx = components.indexOf(comp);
+                if (idx !== -1) components.splice(idx, 1);
+            }
             selectedComp = null;
+            selectedWirePts = [];
             updatePropertiesPanel();
             render();
         });
@@ -2011,38 +2209,55 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener('click', (e) => {
             mode = e.target.id.replace('tool-', '');
             wireStart = null;
+            
+            // Reset select dropdowns if a standard button was clicked
+            document.querySelectorAll('.toolbar-select').forEach(sel => {
+                sel.value = '';
+            });
+            
             updateToolUI();
-            
-            // Reset select dropdown if a standard button was clicked
-            const selectEl = document.getElementById('tool-source-select');
-            if (selectEl) selectEl.value = '';
-            
             render();
         });
     });
 
-    const sourceSelect = document.getElementById('tool-source-select');
-    if (sourceSelect) {
-        sourceSelect.addEventListener('change', (e) => {
+    document.querySelectorAll('.toolbar-select').forEach(sel => {
+        sel.addEventListener('change', (e) => {
             mode = e.target.value;
             wireStart = null;
+            
+            // Reset other select dropdowns
+            document.querySelectorAll('.toolbar-select').forEach(other => {
+                if (other !== e.target) other.value = '';
+            });
+            
             updateToolUI();
             render();
         });
-    }
+    });
 
     function updateToolUI() {
         document.querySelectorAll('.btn-tool').forEach(btn => btn.classList.remove('active'));
         const activeBtn = document.getElementById(`tool-${mode}`);
         if (activeBtn) activeBtn.classList.add('active');
         
-        // Highlight select dropdown if a source is active
-        const sourceSelect = document.getElementById('tool-source-select');
-        if (sourceSelect && sourceSelect.value === mode && mode !== '') {
-            sourceSelect.style.color = 'var(--accent-cyan)';
-        } else if (sourceSelect) {
-            sourceSelect.style.color = '';
-        }
+        // Highlight dropdown categories if their value is active
+        document.querySelectorAll('.toolbar-select').forEach(sel => {
+            let found = false;
+            Array.from(sel.options).forEach(opt => {
+                if (opt.value === mode && mode !== '') {
+                    sel.value = mode;
+                    found = true;
+                }
+            });
+            if (found) {
+                sel.classList.add('active');
+            } else {
+                if (sel.value === mode) {
+                    sel.value = '';
+                }
+                sel.classList.remove('active');
+            }
+        });
     }
 
     // ═══════════════════════════════════════════
@@ -2750,7 +2965,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         offsetY = 100;
                         zoom = 1.0;
                     }
+                    selectedComponents = [];
                     selectedComp = null;
+                    selectedWirePts = [];
                     updatePropertiesPanel();
                     render();
                 });

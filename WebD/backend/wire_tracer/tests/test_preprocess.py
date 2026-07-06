@@ -27,13 +27,13 @@ def test_small_gap_bridged_by_close():
     cv2.rectangle(img, (23, 24), (33, 26), (0, 0, 0), -1)
     
     # Process without morph close: should have gap
-    result_no_close = preprocess_image(img, blur_ksize=0, adaptive_block_size=11, morph_close_ksize=0, min_blob_area=0)
+    result_no_close = preprocess_image(img, blur_ksize=0, adaptive_block_size=11, morph_close_ksize=0, min_blob_area=0, canny_low=0)
     num_labels_no_close, _ = cv2.connectedComponents(result_no_close)
     # 0=bg, 1=line1, 2=line2 -> 3 labels total
     assert num_labels_no_close >= 3, "Without closing, should have >= 2 connected components for the wire."
     
     # Process with morph close (ksize=5 to easily bridge 2px gap)
-    result_with_close = preprocess_image(img, blur_ksize=0, adaptive_block_size=11, morph_close_ksize=5, min_blob_area=0)
+    result_with_close = preprocess_image(img, blur_ksize=0, adaptive_block_size=11, morph_close_ksize=5, min_blob_area=0, canny_low=0)
     num_labels_with_close, _ = cv2.connectedComponents(result_with_close)
     # 0=bg, 1=line (bridged) -> 2 labels total
     assert num_labels_with_close == 2, "With closing, the gap should be bridged into 1 connected component."
