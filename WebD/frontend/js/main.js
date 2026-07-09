@@ -281,13 +281,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // Interaction State
     let selectedComponents = []; // Array of all selected components
     let selectedComp = null;      // Primary selected component
+    let selectedWires = [];      // Selected wire segments
     let selectedWirePts = [];     // Array of selected wire endpoint coordinates {x, y}
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
     let wireStart = null;
     let mousePos = { x: 0, y: 0 };
     let attachedWireEndpoints = []; // Attached rubber-banding endpoints
-    
+
     // Selection box state
     let selectionStart = null;
     let selectionEnd = null;
@@ -388,17 +389,17 @@ document.addEventListener("DOMContentLoaded", () => {
         for (const wire of wires) {
             for (let i = 0; i < wire.length - 1; i++) {
                 const p1 = wire[i];
-                const p2 = wire[i+1];
-                const l2 = (p1.x - p2.x)**2 + (p1.y - p2.y)**2;
+                const p2 = wire[i + 1];
+                const l2 = (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2;
                 if (l2 === 0) continue;
-                
+
                 // Point to line segment projection
                 let t = ((rawWorldX - p1.x) * (p2.x - p1.x) + (rawWorldY - p1.y) * (p2.y - p1.y)) / l2;
                 t = Math.max(0, Math.min(1, t));
                 const projX = p1.x + t * (p2.x - p1.x);
                 const projY = p1.y + t * (p2.y - p1.y);
-                
-                const dist = Math.sqrt((rawWorldX - projX)**2 + (rawWorldY - projY)**2);
+
+                const dist = Math.sqrt((rawWorldX - projX) ** 2 + (rawWorldY - projY) ** 2);
                 if (dist < bestDist) {
                     bestDist = dist;
                     // Snap the intersection point strictly to the grid to ensure netlist continuity
@@ -414,10 +415,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const raw = screenToWorldRaw(screenX, screenY);
         const pinHit = findNearestPin(raw.x, raw.y);
         if (pinHit) return pinHit;
-        
+
         const wireHit = findNearestWireSegment(raw.x, raw.y);
         if (wireHit) return wireHit;
-        
+
         return { x: snap(raw.x), y: snap(raw.y) };
     }
 
@@ -448,6 +449,42 @@ document.addEventListener("DOMContentLoaded", () => {
             value: params.value || params.dc || params.mag || '',
             params
         };
+    }
+
+    // Helper to check if a horizontal or vertical segment between two points intersects
+    // any component's bounding box (hitbox), excluding a list of components.
+    function doesSegmentIntersectComponent(pA, pB, allComponents, excludeComps = []) {
+        for (const c of allComponents) {
+            if (excludeComps.includes(c)) continue;
+            const db = COMPONENT_DB[c.type];
+            const hb = db ? db.hitbox : { w: 40, h: 40 };
+            
+            // Shrink the hitbox slightly (e.g. by 2 pixels) to avoid snapping false positives on the exact border
+            const margin = 2;
+            const xMin = c.x - hb.w / 2 + margin;
+            const xMax = c.x + hb.w / 2 - margin;
+            const yMin = c.y - hb.h / 2 + margin;
+            const yMax = c.y + hb.h / 2 - margin;
+            
+            if (Math.abs(pA.y - pB.y) < 1) {
+                // Horizontal segment
+                const y = pA.y;
+                const minX = Math.min(pA.x, pB.x);
+                const maxX = Math.max(pA.x, pB.x);
+                if (y > yMin && y < yMax && minX < xMax && maxX > xMin) {
+                    return true;
+                }
+            } else if (Math.abs(pA.x - pB.x) < 1) {
+                // Vertical segment
+                const x = pA.x;
+                const minY = Math.min(pA.y, pB.y);
+                const maxY = Math.max(pA.y, pB.y);
+                if (x > xMin && x < xMax && minY < yMax && maxY > yMin) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // ═══════════════════════════════════════════
@@ -483,7 +520,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
                 const rawWorld = screenToWorldRaw(e.offsetX, e.offsetY);
                 const hit = hitTest(worldPos);
-                
+
                 // Check if we hit a wire endpoint/junction (within radius)
                 let hitWirePt = null;
                 for (const wire of wires) {
@@ -498,8 +535,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (hitWirePt) break;
                 }
 
+                let hitWire = null;
+                if (!hit && !hitWirePt) {
+                    hitWire = hitTestWire(rawWorld);
+                }
+
                 if (hit) {
                     // Clicking on a component
+                    if (!e.shiftKey && !e.ctrlKey) {
+                        selectedWires = [];
+                    }
                     if (e.shiftKey || e.ctrlKey) {
                         if (selectedComponents.includes(hit)) {
                             selectedComponents = selectedComponents.filter(c => c !== hit);
@@ -515,10 +560,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             selectedWirePts = [];
                         }
                     }
-                    
+
                     isDragging = true;
                     dragStart = { x: worldPos.x, y: worldPos.y };
-                    
+
                     // Populate attached rubber-banding wire endpoints for all selected components
                     attachedWireEndpoints = [];
                     selectedComponents.forEach(comp => {
@@ -528,7 +573,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             [wire[0], wire[wire.length - 1]].forEach(pt => {
                                 // Skip if the wire point is already in selectedWirePts (moved directly)
                                 if (selectedWirePts.includes(pt)) return;
-                                
+
                                 const pinIdx = pins.findIndex(pin => Math.abs(pin.x - pt.x) < 1 && Math.abs(pin.y - pt.y) < 1);
                                 if (pinIdx !== -1) {
                                     if (!attachedWireEndpoints.some(att => att.pt === pt)) {
@@ -542,6 +587,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     updatePropertiesPanel();
                 } else if (hitWirePt) {
                     // Clicking on a wire endpoint/junction
+                    if (!e.shiftKey && !e.ctrlKey) {
+                        selectedWires = [];
+                    }
                     if (e.shiftKey || e.ctrlKey) {
                         if (selectedWirePts.includes(hitWirePt)) {
                             selectedWirePts = selectedWirePts.filter(pt => pt !== hitWirePt);
@@ -555,20 +603,37 @@ document.addEventListener("DOMContentLoaded", () => {
                             selectedComp = null;
                         }
                     }
-                    
+
                     isDragging = true;
                     dragStart = { x: worldPos.x, y: worldPos.y };
                     attachedWireEndpoints = [];
                     updatePropertiesPanel();
+                } else if (hitWire) {
+                    // Clicking on a wire segment
+                    if (e.shiftKey || e.ctrlKey) {
+                        if (selectedWires.includes(hitWire)) {
+                            selectedWires = selectedWires.filter(w => w !== hitWire);
+                        } else {
+                            selectedWires.push(hitWire);
+                        }
+                    } else {
+                        selectedWires = [hitWire];
+                        selectedComponents = [];
+                        selectedComp = null;
+                        selectedWirePts = [];
+                    }
+                    updatePropertiesPanel();
+                    render();
                 } else {
                     // Click on empty space
                     if (!e.shiftKey && !e.ctrlKey) {
+                        selectedWires = [];
                         selectedComponents = [];
                         selectedWirePts = [];
                         selectedComp = null;
                         updatePropertiesPanel();
                     }
-                    
+
                     // Start selection box dragging
                     isSelectingBox = true;
                     selectionStart = screenToWorldRaw(e.offsetX, e.offsetY);
@@ -640,26 +705,26 @@ document.addEventListener("DOMContentLoaded", () => {
             mousePos = screenToWorld(e.offsetX, e.offsetY);
             const dx = mousePos.x - dragStart.x;
             const dy = mousePos.y - dragStart.y;
-            
+
             if (dx !== 0 || dy !== 0) {
                 // Move components
                 selectedComponents.forEach(c => {
                     c.x += dx;
                     c.y += dy;
                 });
-                
+
                 // Move wire endpoints/junctions
                 selectedWirePts.forEach(pt => {
                     pt.x += dx;
                     pt.y += dy;
                 });
-                
+
                 // Move attached rubber-banding wires
                 attachedWireEndpoints.forEach(att => {
                     att.pt.x += dx;
                     att.pt.y += dy;
                 });
-                
+
                 dragStart = { x: mousePos.x, y: mousePos.y };
             }
             hoveredPin = null;
@@ -689,19 +754,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (isSelectingBox && selectionStart && selectionEnd) {
             isSelectingBox = false;
-            
+
             // Bounding box in world coordinates
             const xMin = Math.min(selectionStart.x, selectionEnd.x);
             const xMax = Math.max(selectionStart.x, selectionEnd.x);
             const yMin = Math.min(selectionStart.y, selectionEnd.y);
             const yMax = Math.max(selectionStart.y, selectionEnd.y);
-            
+
             if (xMax - xMin > 5 || yMax - yMin > 5) {
                 if (!e.shiftKey && !e.ctrlKey) {
                     selectedComponents = [];
                     selectedWirePts = [];
+                    selectedWires = [];
                 }
-                
+
                 // Select components
                 components.forEach(c => {
                     if (c.x >= xMin && c.x <= xMax && c.y >= yMin && c.y <= yMax) {
@@ -710,7 +776,21 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }
                 });
-                
+
+                // Select wires (both endpoints in marquee box)
+                wires.forEach(wire => {
+                    if (wire.length < 2) return;
+                    const p1 = wire[0];
+                    const p2 = wire[1];
+                    const p1In = p1.x >= xMin && p1.x <= xMax && p1.y >= yMin && p1.y <= yMax;
+                    const p2In = p2.x >= xMin && p2.x <= xMax && p2.y >= yMin && p2.y <= yMax;
+                    if (p1In && p2In) {
+                        if (!selectedWires.includes(wire)) {
+                            selectedWires.push(wire);
+                        }
+                    }
+                });
+
                 // Select wire points (junctions/corners)
                 wires.forEach(wire => {
                     wire.forEach(pt => {
@@ -721,10 +801,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     });
                 });
-                
+
                 selectedComp = selectedComponents[0] || null;
             }
-            
+
             selectionStart = null;
             selectionEnd = null;
             updatePropertiesPanel();
@@ -736,13 +816,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 c.x = snap(c.x);
                 c.y = snap(c.y);
             });
-            
+
             // Snap selected wire points to grid
             selectedWirePts.forEach(pt => {
                 pt.x = snap(pt.x);
                 pt.y = snap(pt.y);
             });
-            
+
             // Snap attached rubber-band wire endpoints precisely to the grid-aligned pins
             attachedWireEndpoints.forEach(att => {
                 const snappedPins = getCompPins(att.comp);
@@ -750,15 +830,40 @@ document.addEventListener("DOMContentLoaded", () => {
                 att.pt.x = pin.x;
                 att.pt.y = pin.y;
             });
-            
-            // Auto-orthogonalize any wires that became diagonal during drag
+
+            // Auto-orthogonalize any wires that became diagonal during drag (selecting the bend that avoids component collision)
             const newWires = [];
             wires.forEach(wire => {
                 if (wire.length === 2) {
-                    if (wire[0].x !== wire[1].x && wire[0].y !== wire[1].y) {
-                        // Split into two orthogonal segments
-                        newWires.push([ {x: wire[0].x, y: wire[0].y}, {x: wire[1].x, y: wire[0].y} ]);
-                        newWires.push([ {x: wire[1].x, y: wire[0].y}, {x: wire[1].x, y: wire[1].y} ]);
+                    const p1 = wire[0];
+                    const p2 = wire[1];
+                    if (p1.x !== p2.x && p1.y !== p2.y) {
+                        // Find components to exclude (the ones connected to either end of the segment)
+                        const exclude = [];
+                        components.forEach(c => {
+                            const pins = getCompPins(c);
+                            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
+                            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
+                            if (hasP1 || hasP2) exclude.push(c);
+                        });
+
+                        const mid1 = { x: p2.x, y: p1.y };
+                        const mid2 = { x: p1.x, y: p2.y };
+                        
+                        const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid1, p2, components, exclude);
+                        const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                        
+                        if (coll1 && !coll2) {
+                            // H-then-V collides, but V-then-H is clean. Choose V-then-H
+                            newWires.push([{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }]);
+                            newWires.push([{ x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }]);
+                        } else {
+                            // Default to H-then-V
+                            newWires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }]);
+                            newWires.push([{ x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                        }
                     } else {
                         newWires.push(wire);
                     }
@@ -767,8 +872,51 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
             wires = newWires;
+
+            // Merge contiguous collinear wire segments to keep connections clean (no messy recursive slices)
+            let merged = true;
+            while (merged) {
+                merged = false;
+                for (let i = 0; i < wires.length; i++) {
+                    for (let j = i + 1; j < wires.length; j++) {
+                        const w1 = wires[i];
+                        const w2 = wires[j];
+                        
+                        let shared = null;
+                        let other1 = null;
+                        let other2 = null;
+                        
+                        const ptsMatch = (a, b) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1;
+                        
+                        if (ptsMatch(w1[0], w2[0])) { shared = w1[0]; other1 = w1[1]; other2 = w2[1]; }
+                        else if (ptsMatch(w1[0], w2[1])) { shared = w1[0]; other1 = w1[1]; other2 = w2[0]; }
+                        else if (ptsMatch(w1[1], w2[0])) { shared = w1[1]; other1 = w1[0]; other2 = w2[1]; }
+                        else if (ptsMatch(w1[1], w2[1])) { shared = w1[1]; other1 = w1[0]; other2 = w2[0]; }
+                        
+                        if (shared) {
+                            const isH1 = Math.abs(w1[0].y - w1[1].y) < 1;
+                            const isV1 = Math.abs(w1[0].x - w1[1].x) < 1;
+                            const isH2 = Math.abs(w2[0].y - w2[1].y) < 1;
+                            const isV2 = Math.abs(w2[0].x - w2[1].x) < 1;
+                            
+                            if ((isH1 && isH2 && Math.abs(other1.y - other2.y) < 1) || 
+                                (isV1 && isV2 && Math.abs(other1.x - other2.x) < 1)) {
+                                wires[i] = [other1, other2];
+                                wires.splice(j, 1);
+                                merged = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (merged) break;
+                }
+            }
+
+            // Filter out any zero-length segments that might have resulted from movement/snapping
+            wires = wires.filter(w => !(Math.abs(w[0].x - w[1].x) < 1 && Math.abs(w[0].y - w[1].y) < 1));
+
             attachedWireEndpoints = [];
-            
+
             updatePropertiesPanel();
             render();
         }
@@ -781,6 +929,7 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         wireStart = null;
         selectedComp = null;
+        selectedWires = [];
         mode = 'select';
         updateToolUI();
         updatePropertiesPanel();
@@ -790,26 +939,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Keyboard shortcut: Delete selected component
     document.addEventListener("keydown", (e) => {
         if (e.key === 'Delete') {
-            let changed = false;
-            if (selectedComponents.length > 0) {
-                selectedComponents.forEach(comp => {
-                    const idx = components.indexOf(comp);
-                    if (idx !== -1) components.splice(idx, 1);
-                });
-                selectedComponents = [];
-                selectedComp = null;
-                selectedWirePts = [];
-                changed = true;
-            }
-            if (changed) {
-                updatePropertiesPanel();
-                render();
-            }
+            deleteSelectedItems();
         }
         if (e.key === 'Escape') {
             wireStart = null;
             selectedComponents = [];
             selectedComp = null;
+            selectedWires = [];
             selectedWirePts = [];
             mode = 'select';
             updateToolUI();
@@ -825,13 +961,83 @@ document.addEventListener("DOMContentLoaded", () => {
         // Iterate in reverse so topmost (last drawn) is hit first
         for (let i = components.length - 1; i >= 0; i--) {
             const c = components[i];
-            const db = COMPONENT_DB[c.type];
-            const hb = db ? db.hitbox : { w: 40, h: 40 };
-            const hw = hb.w / 2;
-            const hh = hb.h / 2;
-            if (worldPos.x >= c.x - hw && worldPos.x <= c.x + hw &&
-                worldPos.y >= c.y - hh && worldPos.y <= c.y + hh) {
-                return c;
+            if (c.type === 'label') {
+                const labelText = c.params && c.params.name ? c.params.name : c.name;
+                const textWidth = Math.max(40, labelText.length * 8);
+                const hw = textWidth / 2;
+                const hh = 10;
+                const centerY = c.y - 15;
+                const hitText = (worldPos.x >= c.x - hw && worldPos.x <= c.x + hw &&
+                                 worldPos.y >= centerY - hh && worldPos.y <= centerY + hh);
+                const hitCenter = (worldPos.x >= c.x - 20 && worldPos.x <= c.x + 20 &&
+                                   worldPos.y >= c.y - 10 && worldPos.y <= c.y + 10);
+                if (hitText || hitCenter) {
+                    return c;
+                }
+            } else {
+                const db = COMPONENT_DB[c.type];
+                const hb = db ? db.hitbox : { w: 40, h: 40 };
+                const hw = hb.w / 2;
+                const hh = hb.h / 2;
+                if (worldPos.x >= c.x - hw && worldPos.x <= c.x + hw &&
+                    worldPos.y >= c.y - hh && worldPos.y <= c.y + hh) {
+                    return c;
+                }
+            }
+        }
+        return null;
+    }
+
+    function getDistanceToSegment(p, p1, p2) {
+        const A = p.x - p1.x;
+        const B = p.y - p1.y;
+        const C = p2.x - p1.x;
+        const D = p2.y - p1.y;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        if (lenSq !== 0) {
+            param = dot / lenSq;
+        }
+
+        let xx, yy;
+        if (param < 0) {
+            xx = p1.x;
+            yy = p1.y;
+        } else if (param > 1) {
+            xx = p2.x;
+            yy = p2.y;
+        } else {
+            xx = p1.x + param * C;
+            yy = p1.y + param * D;
+        }
+
+        const dx = p.x - xx;
+        const dy = p.y - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function hitTestWire(worldPos) {
+        const threshold = 8;
+        for (let i = 0; i < wires.length; i++) {
+            const wire = wires[i];
+            if (wire.length < 2) continue;
+            const p1 = wire[0];
+            const p2 = wire[1];
+            
+            if (p1.x !== p2.x && p1.y !== p2.y) {
+                const mid = { x: p2.x, y: p1.y };
+                const d1 = getDistanceToSegment(worldPos, p1, mid);
+                const d2 = getDistanceToSegment(worldPos, mid, p2);
+                if (d1 < threshold || d2 < threshold) {
+                    return wire;
+                }
+            } else {
+                const d = getDistanceToSegment(worldPos, p1, p2);
+                if (d < threshold) {
+                    return wire;
+                }
             }
         }
         return null;
@@ -1908,13 +2114,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Draw Wires
-        ctx.strokeStyle = "#4FC1FF";
-        ctx.lineWidth = Math.max(1, 2 * zoom);
         wires.forEach(wire => {
             if (wire.length < 2) return;
             const p1 = worldToScreen(wire[0].x, wire[0].y);
             const p2 = worldToScreen(wire[1].x, wire[1].y);
-            
+
+            ctx.save();
+            if (selectedWires.includes(wire)) {
+                ctx.strokeStyle = "#00E5FF";
+                ctx.lineWidth = Math.max(2, 3.5 * zoom);
+            } else {
+                ctx.strokeStyle = "#4FC1FF";
+                ctx.lineWidth = Math.max(1, 2 * zoom);
+            }
+
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
             // Force orthogonal routing visually if diagonal
@@ -1925,9 +2138,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.stroke();
 
             // Wire endpoint dots
-            ctx.fillStyle = "#4FC1FF";
-            ctx.beginPath(); ctx.arc(p1.x, p1.y, 3 * zoom, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(p2.x, p2.y, 3 * zoom, 0, Math.PI * 2); ctx.fill();
+            if (selectedWires.includes(wire)) {
+                ctx.fillStyle = "#00E5FF";
+            } else {
+                ctx.fillStyle = "#4FC1FF";
+            }
+            ctx.beginPath(); ctx.arc(p1.x, p1.y, (selectedWires.includes(wire) ? 4 : 3) * zoom, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(p2.x, p2.y, (selectedWires.includes(wire) ? 4 : 3) * zoom, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
         });
 
         // Draw Components
@@ -1943,6 +2161,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 ctx.textAlign = "center";
                 ctx.textBaseline = "bottom";
                 ctx.fillText(labelText, pos.x, pos.y - 8 * zoom);
+
+                // Draw selection highlight for label text
+                if (selectedComponents.includes(comp)) {
+                    ctx.save();
+                    ctx.strokeStyle = "rgba(0, 229, 255, 0.85)";
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([3, 2]);
+                    const textWidth = ctx.measureText(labelText).width;
+                    const padding = 4 * zoom;
+                    ctx.strokeRect(
+                        pos.x - textWidth / 2 - padding,
+                        pos.y - 24 * zoom - padding,
+                        textWidth + padding * 2,
+                        18 * zoom + padding * 2
+                    );
+                    ctx.restore();
+                }
                 return;
             }
             // Selection highlight
@@ -2076,7 +2311,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isSelectingBox && selectionStart && selectionEnd) {
             const p1 = worldToScreen(selectionStart.x, selectionStart.y);
             const p2 = worldToScreen(selectionEnd.x, selectionEnd.y);
-            
+
             ctx.save();
             ctx.strokeStyle = "rgba(0, 229, 255, 0.6)";
             ctx.fillStyle = "rgba(0, 229, 255, 0.08)";
@@ -2100,12 +2335,118 @@ document.addEventListener("DOMContentLoaded", () => {
     // ═══════════════════════════════════════════
     // PROPERTIES INSPECTOR (Data-Binding)
     // ═══════════════════════════════════════════
+    function deleteSelectedItems() {
+        if (selectedComponents.length > 0) {
+            selectedComponents.forEach(comp => {
+                const idx = components.indexOf(comp);
+                if (idx !== -1) components.splice(idx, 1);
+            });
+            selectedComponents = [];
+            selectedComp = null;
+        }
+        if (selectedWires.length > 0) {
+            selectedWires.forEach(wire => {
+                const idx = wires.indexOf(wire);
+                if (idx !== -1) wires.splice(idx, 1);
+            });
+            selectedWires = [];
+        }
+        selectedWirePts = [];
+        updatePropertiesPanel();
+        render();
+    }
+
     function updatePropertiesPanel() {
         const panel = document.getElementById("propertiesPanel");
         panel.innerHTML = '';
 
-        if (!selectedComp) {
-            panel.innerHTML = '<p class="placeholder-text">Select a component</p>';
+        const hasComps = selectedComponents.length > 0;
+        const hasWires = selectedWires.length > 0;
+
+        if (!hasComps && !hasWires) {
+            panel.innerHTML = '<p class="placeholder-text">Select a component or wire</p>';
+            return;
+        }
+
+        if (hasComps && hasWires) {
+            const badge = document.createElement('div');
+            badge.className = 'prop-type-badge';
+            badge.textContent = 'Multiple Items';
+            panel.appendChild(badge);
+
+            const idTitle = document.createElement('p');
+            idTitle.className = 'prop-section-title';
+            idTitle.textContent = 'Selection Summary';
+            panel.appendChild(idTitle);
+
+            addPropField(panel, 'Components', String(selectedComponents.length), null, true);
+            addPropField(panel, 'Wires', String(selectedWires.length), null, true);
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'prop-delete-btn';
+            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.addEventListener('click', deleteSelectedItems);
+            panel.appendChild(delBtn);
+            return;
+        }
+
+        if (hasWires) {
+            if (selectedWires.length === 1) {
+                const wire = selectedWires[0];
+                const badge = document.createElement('div');
+                badge.className = 'prop-type-badge';
+                badge.textContent = 'Wire Connection';
+                panel.appendChild(badge);
+
+                const idTitle = document.createElement('p');
+                idTitle.className = 'prop-section-title';
+                idTitle.textContent = 'Coordinates';
+                panel.appendChild(idTitle);
+
+                addPropField(panel, 'Start X', String(wire[0].x), null, true);
+                addPropField(panel, 'Start Y', String(wire[0].y), null, true);
+                addPropField(panel, 'End X', String(wire[1].x), null, true);
+                addPropField(panel, 'End Y', String(wire[1].y), null, true);
+            } else {
+                const badge = document.createElement('div');
+                badge.className = 'prop-type-badge';
+                badge.textContent = 'Multiple Wires';
+                panel.appendChild(badge);
+
+                const idTitle = document.createElement('p');
+                idTitle.className = 'prop-section-title';
+                idTitle.textContent = 'Selection';
+                panel.appendChild(idTitle);
+
+                addPropField(panel, 'Wires Count', String(selectedWires.length), null, true);
+            }
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'prop-delete-btn';
+            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.addEventListener('click', deleteSelectedItems);
+            panel.appendChild(delBtn);
+            return;
+        }
+
+        if (selectedComponents.length > 1) {
+            const badge = document.createElement('div');
+            badge.className = 'prop-type-badge';
+            badge.textContent = 'Multiple Components';
+            panel.appendChild(badge);
+
+            const idTitle = document.createElement('p');
+            idTitle.className = 'prop-section-title';
+            idTitle.textContent = 'Selection';
+            panel.appendChild(idTitle);
+
+            addPropField(panel, 'Components Count', String(selectedComponents.length), null, true);
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'prop-delete-btn';
+            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.addEventListener('click', deleteSelectedItems);
+            panel.appendChild(delBtn);
             return;
         }
 
@@ -2160,22 +2501,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const delBtn = document.createElement('button');
         delBtn.className = 'prop-delete-btn';
         delBtn.textContent = '🗑 Delete Selected';
-        delBtn.addEventListener('click', () => {
-            if (selectedComponents.includes(comp)) {
-                selectedComponents.forEach(c => {
-                    const idx = components.indexOf(c);
-                    if (idx !== -1) components.splice(idx, 1);
-                });
-                selectedComponents = [];
-            } else {
-                const idx = components.indexOf(comp);
-                if (idx !== -1) components.splice(idx, 1);
-            }
-            selectedComp = null;
-            selectedWirePts = [];
-            updatePropertiesPanel();
-            render();
-        });
+        delBtn.addEventListener('click', deleteSelectedItems);
         panel.appendChild(delBtn);
     }
 
@@ -2209,12 +2535,12 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener('click', (e) => {
             mode = e.target.id.replace('tool-', '');
             wireStart = null;
-            
+
             // Reset select dropdowns if a standard button was clicked
             document.querySelectorAll('.toolbar-select').forEach(sel => {
                 sel.value = '';
             });
-            
+
             updateToolUI();
             render();
         });
@@ -2224,12 +2550,12 @@ document.addEventListener("DOMContentLoaded", () => {
         sel.addEventListener('change', (e) => {
             mode = e.target.value;
             wireStart = null;
-            
+
             // Reset other select dropdowns
             document.querySelectorAll('.toolbar-select').forEach(other => {
                 if (other !== e.target) other.value = '';
             });
-            
+
             updateToolUI();
             render();
         });
@@ -2239,7 +2565,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll('.btn-tool').forEach(btn => btn.classList.remove('active'));
         const activeBtn = document.getElementById(`tool-${mode}`);
         if (activeBtn) activeBtn.classList.add('active');
-        
+
         // Highlight dropdown categories if their value is active
         document.querySelectorAll('.toolbar-select').forEach(sel => {
             let found = false;
@@ -2528,10 +2854,128 @@ document.addEventListener("DOMContentLoaded", () => {
         return simConfig;
     }
 
+    function checkGroundConnectedLabels() {
+        const grid = 20;
+        const adj = {};
+        const addEdge = (u, v) => {
+            if (!adj[u]) adj[u] = new Set();
+            if (!adj[v]) adj[v] = new Set();
+            adj[u].add(v);
+            adj[v].add(u);
+        };
+
+        const snap = (x, y) => {
+            return `${Math.round(x / grid) * grid},${Math.round(y / grid) * grid}`;
+        };
+
+        // 1. Build wire adjacency
+        wires.forEach(wire => {
+            if (wire.length < 2) return;
+            const p1 = wire[0];
+            const p2 = wire[1];
+
+            const ax = Math.round(p1.x / grid) * grid;
+            const ay = Math.round(p1.y / grid) * grid;
+            const bx = Math.round(p2.x / grid) * grid;
+            const by = Math.round(p2.y / grid) * grid;
+
+            const dx = bx - ax;
+            const dy = by - ay;
+
+            const steps_x = dx !== 0 ? Math.floor(Math.abs(dx) / grid) : 0;
+            const steps_y = dy !== 0 ? Math.floor(Math.abs(dy) / grid) : 0;
+            const steps = Math.max(steps_x, steps_y);
+
+            const p1Key = `${ax},${ay}`;
+            if (!adj[p1Key]) adj[p1Key] = new Set();
+
+            if (steps === 0) return;
+
+            let prev = p1Key;
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const ix = Math.round((ax + dx * t) / grid) * grid;
+                const iy = Math.round((ay + dy * t) / grid) * grid;
+                const curr = `${ix},${iy}`;
+
+                addEdge(prev, curr);
+                prev = curr;
+            }
+        });
+
+        // 2. Identify ground coordinates and label pins
+        const groundCoords = new Set();
+        const labelPins = [];
+
+        components.forEach(comp => {
+            const pins = getCompPins(comp);
+            if (comp.type === 'ground') {
+                pins.forEach(pin => {
+                    groundCoords.add(snap(pin.x, pin.y));
+                });
+            } else if (comp.type === 'label') {
+                const labelName = comp.params?.name || comp.name || 'LBL';
+                pins.forEach(pin => {
+                    labelPins.push({ name: labelName, pin: snap(pin.x, pin.y) });
+                });
+            }
+        });
+
+        if (groundCoords.size === 0 || labelPins.length === 0) {
+            return [];
+        }
+
+        // 3. DFS reachable coordinates from ground
+        const visited = new Set();
+        const groundConnectedNodes = new Set();
+
+        const dfs = (start) => {
+            const stack = [start];
+            while (stack.length > 0) {
+                const curr = stack.pop();
+                if (visited.has(curr)) continue;
+                visited.add(curr);
+                groundConnectedNodes.add(curr);
+
+                const neighbors = adj[curr];
+                if (neighbors) {
+                    for (const neighbor of neighbors) {
+                        if (!visited.has(neighbor)) {
+                            stack.push(neighbor);
+                        }
+                    }
+                }
+            }
+        };
+
+        groundCoords.forEach(gCoord => {
+            dfs(gCoord);
+        });
+
+        // 4. Collect warnings
+        const warnings = [];
+        labelPins.forEach(item => {
+            if (groundConnectedNodes.has(item.pin)) {
+                warnings.push(`Warning: Node label '${item.name}' is directly connected to a ground node.`);
+            }
+        });
+
+        return warnings;
+    }
+
     // ═══════════════════════════════════════════
     // SIMULATION EXECUTION
     // ═══════════════════════════════════════════
     document.getElementById('btnModalRun').addEventListener('click', async () => {
+        // Run ground connection warning check on the frontend
+        const warnings = checkGroundConnectedLabels();
+        if (warnings.length > 0) {
+            const confirmMsg = warnings.join('\n') + '\n\nDo you want to proceed with the simulation?';
+            if (!confirm(confirmMsg)) {
+                return; // User canceled simulation run
+            }
+        }
+
         const config = collectSimConfig();
         closeSimModal();
         await runSimulation(config);
@@ -2631,7 +3075,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // LIGHTBOX (Full-screen plot image viewer)
     // ═══════════════════════════════════════════
     // Exposed globally for onclick in dynamic HTML
-    window.openLightbox = function(src) {
+    window.openLightbox = function (src) {
         const overlay = document.createElement('div');
         overlay.className = 'lightbox-overlay';
         overlay.innerHTML = `<img src="${src}" alt="Plot">`;
@@ -2644,11 +3088,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // ═══════════════════════════════════════════
     function routeAStar(start, goal, componentsList, gSize) {
         if (start.x === goal.x && start.y === goal.y) return [];
-        
+
         const getObstacleAt = (x, y) => {
             if (Math.abs(x - start.x) < 1 && Math.abs(y - start.y) < 1) return false;
             if (Math.abs(x - goal.x) < 1 && Math.abs(y - goal.y) < 1) return false;
-            
+
             for (const c of componentsList) {
                 const db = COMPONENT_DB[c.type];
                 const hb = db ? db.hitbox : { w: 40, h: 40 };
@@ -2665,7 +3109,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const openSet = [];
         const openMap = new Map();
         const closedSet = new Set();
-        
+
         const startNode = {
             x: start.x, y: start.y,
             g: 0, f: 0,
@@ -2673,10 +3117,10 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const key = (x, y) => `${x},${y}`;
         const h = (x, y) => Math.abs(x - goal.x) + Math.abs(y - goal.y);
-        
+
         openSet.push(startNode);
         openMap.set(key(start.x, start.y), startNode);
-        
+
         const dirs = [
             { dx: gSize, dy: 0, dir: 'R' },
             { dx: -gSize, dy: 0, dir: 'L' },
@@ -2686,7 +3130,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let bestGoal = null;
         let iter = 0;
-        
+
         while (openSet.length > 0 && iter < 10000) {
             iter++;
             let minFIdx = 0;
@@ -2699,26 +3143,26 @@ document.addEventListener("DOMContentLoaded", () => {
             const cKey = key(curr.x, curr.y);
             openMap.delete(cKey);
             closedSet.add(cKey);
-            
+
             if (curr.x === goal.x && curr.y === goal.y) {
                 bestGoal = curr;
                 break;
             }
-            
+
             for (const d of dirs) {
                 const nx = curr.x + d.dx;
                 const ny = curr.y + d.dy;
                 const nKey = key(nx, ny);
-                
+
                 if (closedSet.has(nKey)) continue;
                 if (getObstacleAt(nx, ny)) continue;
-                
+
                 // Heavy penalty for changing direction to encourage straight lines
                 let turnCost = 0;
                 if (curr.dir && curr.dir !== d.dir) turnCost = gSize * 3;
-                
+
                 const tentativeG = curr.g + gSize + turnCost;
-                
+
                 let neighbor = openMap.get(nKey);
                 if (!neighbor) {
                     neighbor = { x: nx, y: ny, g: tentativeG, f: tentativeG + h(nx, ny), dir: d.dir, parent: curr };
@@ -2732,9 +3176,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         }
-        
+
         if (!bestGoal) return null; // Pathfinding failed
-        
+
         const path = [];
         let p = bestGoal;
         while (p) {
@@ -2742,19 +3186,19 @@ document.addEventListener("DOMContentLoaded", () => {
             p = p.parent;
         }
         path.reverse();
-        
+
         const segments = [];
         let segStart = path[0];
         for (let i = 1; i < path.length - 1; i++) {
-            const prev = path[i-1];
+            const prev = path[i - 1];
             const curr = path[i];
-            const next = path[i+1];
-            
+            const next = path[i + 1];
+
             const dx1 = curr.x - prev.x;
             const dy1 = curr.y - prev.y;
             const dx2 = next.x - curr.x;
             const dy2 = next.y - curr.y;
-            
+
             if (Math.sign(dx1) !== Math.sign(dx2) || Math.sign(dy1) !== Math.sign(dy2)) {
                 segments.push([{ x: segStart.x, y: segStart.y }, { x: curr.x, y: curr.y }]);
                 segStart = curr;
@@ -2764,6 +3208,752 @@ document.addEventListener("DOMContentLoaded", () => {
             segments.push([{ x: segStart.x, y: segStart.y }, { x: path[path.length - 1].x, y: path[path.length - 1].y }]);
         }
         return segments;
+    }
+
+    // ═══════════════════════════════════════════
+    // AI DETECTION PREVIEW — INTERACTIVE EDITOR
+    // ═══════════════════════════════════════════
+
+    // --- Preview editor state ---
+    const aiPreview = {
+        components: [],      // raw from API (all types)
+        connections: [],      // editable copy: [{pin1:{comp_idx,pin_id}, pin2:{comp_idx,pin_id}}, ...]
+        pinAnchors: [],       // [{comp_idx, pin_id, x, y}, ...] — pixel coords from backend
+        imageElement: null,   // loaded Image for canvas background
+        imageW: 0,
+        imageH: 0,
+    };
+
+    const aiEditor = {
+        tool: 'select',        // 'select' | 'connect' | 'delete' | 'junction'
+        pendingPin: null,      // {comp_idx, pin_id} — first pin of a new connection
+        hoveredPin: null,      // {comp_idx, pin_id, x, y} or null
+        hoveredConnIdx: null,  // index into aiPreview.connections or null
+        hoveredJunction: null, // hovered virtual junction pin in delete mode
+        pan: { x: 0, y: 0 },
+        zoom: 1,
+        isMouseDown: false,
+        isDragging: false,
+        isDraggingJunction: false,
+        draggedJunction: null,
+        dragDistance: 0,
+        dragStart: { x: 0, y: 0 },
+        panStart: { x: 0, y: 0 },
+        mouseX: 0,            // raw canvas-local mouse coords
+        mouseY: 0,
+    };
+
+    // DOM refs for the editor
+    const aiCanvas = document.getElementById('aiDebugCanvas');
+    const aiCtx = aiCanvas.getContext('2d');
+    const aiCanvasWrap = document.getElementById('aiDebugCanvasWrap');
+    const aiInfoEl = document.getElementById('aiDebugInfo');
+    const aiStatsEl = document.getElementById('aiDebugStats');
+
+    // --- Color generation (HSV-based, matching backend) ---
+    function hsvToRgb(h, s, v) {
+        // h: 0-360, s: 0-1, v: 0-1
+        const c = v * s;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = v - c;
+        let r, g, b;
+        if (h < 60) { r = c; g = x; b = 0; }
+        else if (h < 120) { r = x; g = c; b = 0; }
+        else if (h < 180) { r = 0; g = c; b = x; }
+        else if (h < 240) { r = 0; g = x; b = c; }
+        else if (h < 300) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+        return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+    }
+
+    function getNetColors(numNets) {
+        const colors = {};
+        for (let i = 1; i <= numNets; i++) {
+            const hue = (i / numNets) * 360;
+            const [r, g, b] = hsvToRgb(hue, 1, 1);
+            colors[i] = `rgb(${r},${g},${b})`;
+        }
+        return colors;
+    }
+
+    // --- Simple Union-Find for net grouping ---
+    function computeNets(connections, pinAnchors) {
+        const pinKeys = pinAnchors.map(p => `${p.comp_idx}_${p.pin_id}`);
+        const parent = {};
+        const rank = {};
+        pinKeys.forEach(k => { parent[k] = k; rank[k] = 0; });
+
+        function find(x) {
+            if (!parent[x]) { parent[x] = x; rank[x] = 0; }
+            if (parent[x] !== x) parent[x] = find(parent[x]);
+            return parent[x];
+        }
+        function union(a, b) {
+            const ra = find(a), rb = find(b);
+            if (ra === rb) return;
+            if (rank[ra] < rank[rb]) parent[ra] = rb;
+            else if (rank[ra] > rank[rb]) parent[rb] = ra;
+            else { parent[rb] = ra; rank[ra]++; }
+        }
+
+        connections.forEach(conn => {
+            const k1 = `${conn.pin1.comp_idx}_${conn.pin1.pin_id}`;
+            const k2 = `${conn.pin2.comp_idx}_${conn.pin2.pin_id}`;
+            union(k1, k2);
+        });
+
+        // Assign net labels
+        const rootToNet = {};
+        let netCount = 0;
+        const pinNetMap = {};
+        pinKeys.forEach(k => {
+            const root = find(k);
+            if (!(root in rootToNet)) {
+                netCount++;
+                rootToNet[root] = netCount;
+            }
+            pinNetMap[k] = rootToNet[root];
+        });
+
+        // Only count nets that actually have connections (>= 2 pins)
+        const netPinCounts = {};
+        Object.values(pinNetMap).forEach(n => { netPinCounts[n] = (netPinCounts[n] || 0) + 1; });
+        const connectedNets = Object.values(netPinCounts).filter(c => c >= 2).length;
+
+        return { pinNetMap, netCount, connectedNets, netColors: getNetColors(netCount) };
+    }
+
+    // --- Pin lookup helper ---
+    function findPinAnchor(comp_idx, pin_id) {
+        return aiPreview.pinAnchors.find(p => p.comp_idx === comp_idx && p.pin_id === pin_id);
+    }
+
+    // --- Transform helpers for the preview canvas ---
+    function aiScreenToImage(sx, sy) {
+        return {
+            x: (sx - aiEditor.pan.x) / aiEditor.zoom,
+            y: (sy - aiEditor.pan.y) / aiEditor.zoom
+        };
+    }
+
+    // --- Hit testing ---
+    const AI_PIN_HIT_RADIUS = 50; // pixels in image space (generous for easy clicking)
+    const AI_CONN_HIT_DIST = 35;  // pixels in image space for wire deletion
+
+    function aiHitTestPin(imgX, imgY) {
+        let best = null, bestDist = AI_PIN_HIT_RADIUS;
+        for (const pin of aiPreview.pinAnchors) {
+            const dx = imgX - pin.x;
+            const dy = imgY - pin.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = pin;
+            }
+        }
+        return best;
+    }
+
+    function pointToSegmentDist(px, py, ax, ay, bx, by) {
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+        let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        const projX = ax + t * dx, projY = ay + t * dy;
+        return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+    }
+
+    function aiHitTestConnection(imgX, imgY) {
+        let bestIdx = null, bestDist = AI_CONN_HIT_DIST;
+        aiPreview.connections.forEach((conn, idx) => {
+            const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
+            const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
+            if (!p1 || !p2) return;
+            const dist = pointToSegmentDist(imgX, imgY, p1.x, p1.y, p2.x, p2.y);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = idx;
+            }
+        });
+        return bestIdx;
+    }
+
+    // --- Update stats badge ---
+    function updateAiStats() {
+        const nets = computeNets(aiPreview.connections, aiPreview.pinAnchors);
+        aiStatsEl.innerHTML = `
+            <span class="stat-item"><span class="stat-icon">📦</span> ${aiPreview.components.length} components</span>
+            <span class="stat-item"><span class="stat-icon">🔗</span> ${aiPreview.connections.length} connections</span>
+            <span class="stat-item"><span class="stat-icon">🌐</span> ${nets.connectedNets} nets</span>
+            <span class="stat-item"><span class="stat-icon">📌</span> ${aiPreview.pinAnchors.length} pins</span>
+        `;
+    }
+
+    // --- Main render for the preview canvas ---
+    function renderAiPreview() {
+        const cw = aiCanvas.width;
+        const ch = aiCanvas.height;
+        aiCtx.clearRect(0, 0, cw, ch);
+
+        // Dark background
+        aiCtx.fillStyle = '#080a10';
+        aiCtx.fillRect(0, 0, cw, ch);
+
+        aiCtx.save();
+        aiCtx.translate(aiEditor.pan.x, aiEditor.pan.y);
+        aiCtx.scale(aiEditor.zoom, aiEditor.zoom);
+
+        // 1) Draw the background image
+        if (aiPreview.imageElement) {
+            aiCtx.drawImage(aiPreview.imageElement, 0, 0);
+        }
+
+        // Compute nets for coloring
+        const nets = computeNets(aiPreview.connections, aiPreview.pinAnchors);
+
+        // 2) Draw component bboxes
+        aiCtx.lineWidth = 2 / aiEditor.zoom;
+        aiPreview.components.forEach(comp => {
+            const box = comp.box;
+            if (!box || box.length < 4) return;
+            aiCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+            aiCtx.strokeRect(box[0], box[1], box[2], box[3]);
+            // Component label
+            const fontSize = Math.max(11, 14 / aiEditor.zoom);
+            aiCtx.font = `bold ${fontSize}px Inter, sans-serif`;
+            aiCtx.fillStyle = 'rgba(255,255,255,0.85)';
+            aiCtx.fillText(comp.name || comp.type, box[0] + 3, box[1] - 5);
+        });
+
+        // 3) Draw connection lines
+        const connLineWidth = Math.max(2.5, 3 / aiEditor.zoom);
+        aiPreview.connections.forEach((conn, idx) => {
+            const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
+            const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
+            if (!p1 || !p2) return;
+
+            const pinKey1 = `${conn.pin1.comp_idx}_${conn.pin1.pin_id}`;
+            const netLabel = nets.pinNetMap[pinKey1];
+            let color = nets.netColors[netLabel] || 'rgba(100,100,100,0.7)';
+
+            const isHovered = aiEditor.hoveredConnIdx === idx;
+
+            aiCtx.beginPath();
+            aiCtx.moveTo(p1.x, p1.y);
+            aiCtx.lineTo(p2.x, p2.y);
+            aiCtx.lineWidth = isHovered ? connLineWidth * 2 : connLineWidth;
+            aiCtx.strokeStyle = isHovered ? '#EF4444' : color;
+            if (isHovered) {
+                aiCtx.setLineDash([6 / aiEditor.zoom, 4 / aiEditor.zoom]);
+            }
+            aiCtx.stroke();
+            aiCtx.setLineDash([]);
+
+            // Connection midpoint marker when hovered (delete mode)
+            if (isHovered && aiEditor.tool === 'delete') {
+                const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+                const r = 10 / aiEditor.zoom;
+                aiCtx.beginPath();
+                aiCtx.arc(mx, my, r, 0, Math.PI * 2);
+                aiCtx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+                aiCtx.fill();
+                aiCtx.strokeStyle = 'white';
+                aiCtx.lineWidth = 1.5 / aiEditor.zoom;
+                aiCtx.stroke();
+                // "X" mark
+                const cross = r * 0.5;
+                aiCtx.beginPath();
+                aiCtx.moveTo(mx - cross, my - cross); aiCtx.lineTo(mx + cross, my + cross);
+                aiCtx.moveTo(mx + cross, my - cross); aiCtx.lineTo(mx - cross, my + cross);
+                aiCtx.strokeStyle = 'white';
+                aiCtx.lineWidth = 2 / aiEditor.zoom;
+                aiCtx.stroke();
+            }
+        });
+
+        // 4) Draw pin dots (large, interactive)
+        const pinRadius = Math.max(8, 10 / aiEditor.zoom);
+        const pinFontSize = Math.max(9, 11 / aiEditor.zoom);
+        aiPreview.pinAnchors.forEach(pin => {
+            const pinKey = `${pin.comp_idx}_${pin.pin_id}`;
+            const netLabel = nets.pinNetMap[pinKey];
+            let fillColor = nets.netColors[netLabel] || 'rgba(128,128,128,0.8)';
+            const isJunction = pin.isJunction || pin.comp_idx === -1;
+
+            // Check if this pin is connected to anything
+            const isConnected = aiPreview.connections.some(c =>
+                (c.pin1.comp_idx === pin.comp_idx && c.pin1.pin_id === pin.pin_id) ||
+                (c.pin2.comp_idx === pin.comp_idx && c.pin2.pin_id === pin.pin_id)
+            );
+
+            const isHovered = aiEditor.hoveredPin &&
+                aiEditor.hoveredPin.comp_idx === pin.comp_idx &&
+                aiEditor.hoveredPin.pin_id === pin.pin_id;
+            const isPending = aiEditor.pendingPin &&
+                aiEditor.pendingPin.comp_idx === pin.comp_idx &&
+                aiEditor.pendingPin.pin_id === pin.pin_id;
+
+            const isHoveredJunc = aiEditor.hoveredJunction &&
+                aiEditor.hoveredJunction.comp_idx === pin.comp_idx &&
+                aiEditor.hoveredJunction.pin_id === pin.pin_id;
+
+            // Draw outer glow for hovered/pending/hoveredJunc
+            if (isHovered || isPending || isHoveredJunc) {
+                aiCtx.beginPath();
+                aiCtx.arc(pin.x, pin.y, pinRadius * 1.8, 0, Math.PI * 2);
+                aiCtx.fillStyle = isPending ? 'rgba(0, 229, 255, 0.25)' : (isHoveredJunc ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255,255,255,0.15)');
+                aiCtx.fill();
+            }
+
+            if (isJunction) {
+                // Junction: draw as a diamond ◇
+                const r = pinRadius * 1.2;
+                aiCtx.beginPath();
+                aiCtx.moveTo(pin.x, pin.y - r);
+                aiCtx.lineTo(pin.x + r, pin.y);
+                aiCtx.lineTo(pin.x, pin.y + r);
+                aiCtx.lineTo(pin.x - r, pin.y);
+                aiCtx.closePath();
+
+                if (isHoveredJunc) {
+                    aiCtx.fillStyle = 'rgba(239, 68, 68, 0.9)'; // Red delete highlight
+                    aiCtx.strokeStyle = '#EF4444';
+                } else {
+                    aiCtx.fillStyle = isPending ? '#00E5FF' : (isConnected ? fillColor : 'rgba(255, 200, 50, 0.7)');
+                    aiCtx.strokeStyle = isHovered ? '#FFF' : 'rgba(255,255,255,0.8)';
+                }
+                aiCtx.fill();
+                aiCtx.lineWidth = (isHovered || isHoveredJunc ? 2.5 : 1.5) / aiEditor.zoom;
+                aiCtx.stroke();
+
+                // "+" cross inside
+                const cr = r * 0.45;
+                aiCtx.beginPath();
+                aiCtx.moveTo(pin.x - cr, pin.y); aiCtx.lineTo(pin.x + cr, pin.y);
+                aiCtx.moveTo(pin.x, pin.y - cr); aiCtx.lineTo(pin.x, pin.y + cr);
+                aiCtx.strokeStyle = 'rgba(255,255,255,0.9)';
+                aiCtx.lineWidth = 2 / aiEditor.zoom;
+                aiCtx.stroke();
+
+                // Label: J#
+                aiCtx.font = `bold ${pinFontSize}px Inter, sans-serif`;
+                aiCtx.fillStyle = 'rgba(255,200,50,0.95)';
+                aiCtx.textBaseline = 'middle';
+                const labelX = pin.x + r + 4 / aiEditor.zoom;
+                aiCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                aiCtx.lineWidth = 3 / aiEditor.zoom;
+                aiCtx.strokeText(`J${pin.pin_id}`, labelX, pin.y);
+                aiCtx.fillText(`J${pin.pin_id}`, labelX, pin.y);
+            } else {
+                // Regular pin: circle
+                aiCtx.beginPath();
+                aiCtx.arc(pin.x, pin.y, pinRadius, 0, Math.PI * 2);
+                aiCtx.fillStyle = isPending ? '#00E5FF' : (isConnected ? fillColor : 'rgba(100,100,100,0.6)');
+                aiCtx.fill();
+                aiCtx.strokeStyle = isHovered ? '#FFF' : 'rgba(255,255,255,0.7)';
+                aiCtx.lineWidth = (isHovered ? 2.5 : 1.5) / aiEditor.zoom;
+                aiCtx.stroke();
+
+                // Pin label
+                aiCtx.font = `bold ${pinFontSize}px Inter, sans-serif`;
+                aiCtx.fillStyle = 'rgba(255,255,255,0.95)';
+                aiCtx.textBaseline = 'middle';
+                const labelX = pin.x + pinRadius + 4 / aiEditor.zoom;
+                // Shadow for readability
+                aiCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                aiCtx.lineWidth = 3 / aiEditor.zoom;
+                aiCtx.strokeText(`${pin.comp_idx}_${pin.pin_id}`, labelX, pin.y);
+                aiCtx.fillText(`${pin.comp_idx}_${pin.pin_id}`, labelX, pin.y);
+            }
+        });
+
+        // 5) Draw pending wire (from pendingPin to cursor)
+        if (aiEditor.pendingPin && aiEditor.tool === 'connect') {
+            const srcPin = findPinAnchor(aiEditor.pendingPin.comp_idx, aiEditor.pendingPin.pin_id);
+            if (srcPin) {
+                const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                aiCtx.beginPath();
+                aiCtx.moveTo(srcPin.x, srcPin.y);
+                aiCtx.lineTo(cursorImg.x, cursorImg.y);
+                aiCtx.strokeStyle = 'rgba(0, 229, 255, 0.7)';
+                aiCtx.lineWidth = 2.5 / aiEditor.zoom;
+                aiCtx.setLineDash([8 / aiEditor.zoom, 4 / aiEditor.zoom]);
+                aiCtx.stroke();
+                aiCtx.setLineDash([]);
+            }
+        }
+
+        aiCtx.restore();
+    }
+
+    // --- Resize the preview canvas ---
+    function resizeAiCanvas() {
+        const rect = aiCanvasWrap.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        aiCanvas.width = rect.width * dpr;
+        aiCanvas.height = rect.height * dpr;
+        aiCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Store display size for coordinate conversion
+        aiCanvas._displayWidth = rect.width;
+        aiCanvas._displayHeight = rect.height;
+    }
+
+    // --- Fit the image in the canvas ---
+    function fitAiPreview() {
+        if (!aiPreview.imageElement) return;
+        const cw = aiCanvas._displayWidth || aiCanvasWrap.clientWidth;
+        const ch = aiCanvas._displayHeight || aiCanvasWrap.clientHeight;
+        const iw = aiPreview.imageW;
+        const ih = aiPreview.imageH;
+        const margin = 40;
+        const scaleX = (cw - margin * 2) / iw;
+        const scaleY = (ch - margin * 2) / ih;
+        aiEditor.zoom = Math.min(scaleX, scaleY, 2.0);
+        aiEditor.pan.x = (cw - iw * aiEditor.zoom) / 2;
+        aiEditor.pan.y = (ch - ih * aiEditor.zoom) / 2;
+    }
+
+    // --- Set tool and update UI ---
+    function setAiTool(toolName) {
+        aiEditor.tool = toolName;
+        aiEditor.pendingPin = null;
+        aiEditor.hoveredPin = null;
+        aiEditor.hoveredConnIdx = null;
+
+        // Update button states
+        document.querySelectorAll('.ai-debug-tool').forEach(btn => btn.classList.remove('active'));
+        if (toolName === 'select') document.getElementById('aiToolSelect').classList.add('active');
+        if (toolName === 'connect') document.getElementById('aiToolWire').classList.add('active');
+        if (toolName === 'delete') document.getElementById('aiToolDelete').classList.add('active');
+        if (toolName === 'junction') document.getElementById('aiToolJunction').classList.add('active');
+
+        // Update cursor class
+        aiCanvasWrap.className = 'ai-debug-canvas-wrap tool-' + toolName;
+
+        // Update info text
+        const messages = {
+            select: 'Scroll to zoom · Drag to pan (works in all modes via middle-click)',
+            connect: 'Click a pin to start, click another to connect · Middle-click to pan',
+            delete: 'Click on a connection line to remove it · Middle-click to pan',
+            junction: 'Click to place a junction pin · Then use Connect to wire it'
+        };
+        aiInfoEl.textContent = messages[toolName] || '';
+        aiInfoEl.style.color = '';
+
+        renderAiPreview();
+    }
+
+    // --- Next junction ID counter ---
+    let aiJunctionCounter = 0;
+
+    // --- Tool button listeners ---
+    document.getElementById('aiToolSelect').addEventListener('click', () => setAiTool('select'));
+    document.getElementById('aiToolWire').addEventListener('click', () => setAiTool('connect'));
+    document.getElementById('aiToolDelete').addEventListener('click', () => setAiTool('delete'));
+    document.getElementById('aiToolJunction').addEventListener('click', () => setAiTool('junction'));
+
+    // --- Canvas mouse events ---
+    aiCanvas.addEventListener('mousedown', (e) => {
+        const rect = aiCanvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const img = aiScreenToImage(sx, sy);
+
+        aiEditor.isMouseDown = true;
+        aiEditor.dragDistance = 0;
+        aiEditor.dragStart = { x: e.clientX, y: e.clientY };
+        aiEditor.panStart = { ...aiEditor.pan };
+
+        // Middle-click (1) or right-click (2) starts panning immediately
+        if (e.button === 1 || e.button === 2) {
+            e.preventDefault();
+            aiEditor.isDragging = true;
+            aiCanvasWrap.classList.add('dragging');
+            return;
+        }
+
+        if (e.button === 0) { // Left-click
+            // Check if they clicked on a virtual junction pin
+            const clickedPin = aiHitTestPin(img.x, img.y);
+            const isJunc = clickedPin && clickedPin.comp_idx === -1;
+
+            if (isJunc && (aiEditor.tool === 'select' || aiEditor.tool === 'junction')) {
+                // Drag the junction to move it
+                aiEditor.isDraggingJunction = true;
+                aiEditor.draggedJunction = clickedPin;
+                return;
+            }
+
+            if (isJunc && aiEditor.tool === 'delete') {
+                // Delete the junction and all connections connected to it
+                const pinId = clickedPin.pin_id;
+                aiPreview.connections = aiPreview.connections.filter(c =>
+                    !(c.pin1.comp_idx === -1 && c.pin1.pin_id === pinId) &&
+                    !(c.pin2.comp_idx === -1 && c.pin2.pin_id === pinId)
+                );
+                aiPreview.pinAnchors = aiPreview.pinAnchors.filter(a =>
+                    !(a.comp_idx === -1 && a.pin_id === pinId)
+                );
+                aiInfoEl.textContent = `🗑️ Removed junction J${pinId} and its connections.`;
+                aiInfoEl.style.color = '#EF4444';
+                aiEditor.hoveredJunction = null;
+                updateAiStats();
+                renderAiPreview();
+                return;
+            }
+
+            if (aiEditor.tool === 'select') {
+                // Left-click in select mode starts panning immediately
+                aiEditor.isDragging = true;
+                aiCanvasWrap.classList.add('dragging');
+            } else if (aiEditor.tool === 'connect') {
+                const pin = clickedPin;
+                if (pin) {
+                    if (!aiEditor.pendingPin) {
+                        // First pin
+                        aiEditor.pendingPin = { comp_idx: pin.comp_idx, pin_id: pin.pin_id };
+                        aiInfoEl.textContent = `Pin ${pin.comp_idx}_${pin.pin_id} selected — click another pin to connect`;
+                        aiInfoEl.style.color = '#00E5FF';
+                    } else {
+                        // Second pin — create connection
+                        const p1 = aiEditor.pendingPin;
+                        const p2 = { comp_idx: pin.comp_idx, pin_id: pin.pin_id };
+
+                        // Don't connect a pin to itself
+                        if (p1.comp_idx === p2.comp_idx && p1.pin_id === p2.pin_id) {
+                            aiEditor.pendingPin = null;
+                            aiInfoEl.textContent = 'Same pin — cancelled. Click a pin to start.';
+                            aiInfoEl.style.color = '';
+                        } else {
+                            // Check if connection already exists
+                            const exists = aiPreview.connections.some(c =>
+                                (c.pin1.comp_idx === p1.comp_idx && c.pin1.pin_id === p1.pin_id &&
+                                    c.pin2.comp_idx === p2.comp_idx && c.pin2.pin_id === p2.pin_id) ||
+                                (c.pin1.comp_idx === p2.comp_idx && c.pin1.pin_id === p2.pin_id &&
+                                    c.pin2.comp_idx === p1.comp_idx && c.pin2.pin_id === p1.pin_id)
+                            );
+                            if (exists) {
+                                aiInfoEl.textContent = 'Connection already exists! Click a pin to start.';
+                                aiInfoEl.style.color = '#EF4444';
+                            } else {
+                                aiPreview.connections.push({ pin1: p1, pin2: p2 });
+                                aiInfoEl.textContent = `✅ Connected ${p1.comp_idx}_${p1.pin_id} → ${p2.comp_idx}_${p2.pin_id}`;
+                                aiInfoEl.style.color = '#10B981';
+                                updateAiStats();
+                            }
+                            aiEditor.pendingPin = null;
+                        }
+                    }
+                    renderAiPreview();
+                }
+            } else if (aiEditor.tool === 'delete') {
+                if (aiEditor.hoveredConnIdx !== null) {
+                    const removed = aiPreview.connections.splice(aiEditor.hoveredConnIdx, 1)[0];
+                    aiInfoEl.textContent = `🗑️ Removed connection ${removed.pin1.comp_idx}_${removed.pin1.pin_id} — ${removed.pin2.comp_idx}_${removed.pin2.pin_id}`;
+                    aiInfoEl.style.color = '#EF4444';
+                    aiEditor.hoveredConnIdx = null;
+                    updateAiStats();
+                    renderAiPreview();
+                }
+            }
+        }
+    });
+
+    // Prevent middle-click/right-click default behaviors
+    aiCanvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+
+    aiCanvas.addEventListener('mousemove', (e) => {
+        const rect = aiCanvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        aiEditor.mouseX = sx;
+        aiEditor.mouseY = sy;
+        const img = aiScreenToImage(sx, sy);
+
+        if (aiEditor.isMouseDown) {
+            const dx = e.clientX - aiEditor.dragStart.x;
+            const dy = e.clientY - aiEditor.dragStart.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            aiEditor.dragDistance = dist;
+
+            // Handle dragging a junction
+            if (aiEditor.isDraggingJunction && aiEditor.draggedJunction) {
+                const juncPin = aiPreview.pinAnchors.find(a => a.comp_idx === -1 && a.pin_id === aiEditor.draggedJunction.pin_id);
+                if (juncPin) {
+                    juncPin.x = Math.round(img.x);
+                    juncPin.y = Math.round(img.y);
+                }
+                renderAiPreview();
+                return;
+            }
+
+            // Start dragging (pan) if they moved more than 4 pixels
+            if (!aiEditor.isDragging && dist > 4) {
+                aiEditor.isDragging = true;
+                aiCanvasWrap.classList.add('dragging');
+            }
+
+            if (aiEditor.isDragging) {
+                aiEditor.pan.x = aiEditor.panStart.x + dx;
+                aiEditor.pan.y = aiEditor.panStart.y + dy;
+                renderAiPreview();
+                return;
+            }
+        }
+
+        // Highlight junctions when hovering over them in select/junction modes (to indicate draggable)
+        if (aiEditor.tool === 'select' || aiEditor.tool === 'junction') {
+            const pin = aiHitTestPin(img.x, img.y);
+            if (pin && pin.comp_idx === -1) {
+                aiEditor.hoveredPin = pin;
+            } else {
+                aiEditor.hoveredPin = null;
+            }
+            renderAiPreview();
+        } else if (aiEditor.tool === 'connect') {
+            const pin = aiHitTestPin(img.x, img.y);
+            aiEditor.hoveredPin = pin;
+            if (pin) {
+                aiCanvasWrap.classList.add('pin-hover');
+            } else {
+                aiCanvasWrap.classList.remove('pin-hover');
+            }
+            renderAiPreview();
+        } else if (aiEditor.tool === 'delete') {
+            const pin = aiHitTestPin(img.x, img.y);
+            if (pin && pin.comp_idx === -1) {
+                aiEditor.hoveredJunction = pin;
+                aiEditor.hoveredConnIdx = null;
+            } else {
+                aiEditor.hoveredJunction = null;
+                aiEditor.hoveredConnIdx = aiHitTestConnection(img.x, img.y);
+            }
+            renderAiPreview();
+        }
+    });
+
+    aiCanvas.addEventListener('mouseup', (e) => {
+        const rect = aiCanvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const img = aiScreenToImage(sx, sy);
+
+        const wasDragging = aiEditor.isDragging;
+        const wasDraggingJunc = aiEditor.isDraggingJunction;
+
+        aiEditor.isMouseDown = false;
+        aiEditor.isDragging = false;
+        aiEditor.isDraggingJunction = false;
+        aiEditor.draggedJunction = null;
+        aiCanvasWrap.classList.remove('dragging');
+
+        if (e.button === 0 && !wasDragging && !wasDraggingJunc && aiEditor.dragDistance < 5) {
+            if (aiEditor.tool === 'junction') {
+                const juncId = aiJunctionCounter++;
+                const juncCompIdx = -1; // virtual junction component
+                const juncPinId = juncId;
+                aiPreview.pinAnchors.push({
+                    comp_idx: juncCompIdx,
+                    pin_id: juncPinId,
+                    x: Math.round(img.x),
+                    y: Math.round(img.y),
+                    isJunction: true
+                });
+                aiInfoEl.textContent = `⊕ Placed junction J${juncId} — use Connect to wire it`;
+                aiInfoEl.style.color = '#10B981';
+                updateAiStats();
+                renderAiPreview();
+            } else if (aiEditor.tool === 'connect') {
+                const pin = aiHitTestPin(img.x, img.y);
+                if (!pin && aiEditor.pendingPin) {
+                    aiEditor.pendingPin = null;
+                    aiInfoEl.textContent = 'Cancelled. Click a pin to start a connection.';
+                    aiInfoEl.style.color = '';
+                    renderAiPreview();
+                }
+            }
+        }
+    });
+
+    aiCanvas.addEventListener('mouseleave', () => {
+        if (aiEditor.isDragging) {
+            aiEditor.isDragging = false;
+            aiCanvasWrap.classList.remove('dragging');
+        }
+        aiEditor.hoveredPin = null;
+        aiEditor.hoveredConnIdx = null;
+        renderAiPreview();
+    });
+
+    // Zoom with scroll wheel
+    aiCanvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = aiCanvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+
+        const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        const newZoom = Math.max(0.1, Math.min(10, aiEditor.zoom * zoomFactor));
+
+        // Zoom towards cursor
+        aiEditor.pan.x = sx - (sx - aiEditor.pan.x) * (newZoom / aiEditor.zoom);
+        aiEditor.pan.y = sy - (sy - aiEditor.pan.y) * (newZoom / aiEditor.zoom);
+        aiEditor.zoom = newZoom;
+
+        renderAiPreview();
+    }, { passive: false });
+
+    // Right-click to cancel pending connection
+    aiCanvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (aiEditor.pendingPin) {
+            aiEditor.pendingPin = null;
+            aiInfoEl.textContent = 'Cancelled. Click a pin to start.';
+            aiInfoEl.style.color = '';
+            renderAiPreview();
+        }
+    });
+
+    // --- Initialize the preview editor with API data ---
+    function initAiPreviewEditor(data) {
+        // Reset junction counter
+        aiJunctionCounter = 0;
+
+        // Store data
+        aiPreview.components = data.components || [];
+        aiPreview.connections = JSON.parse(JSON.stringify(data.connections || [])); // deep copy for editing
+        aiPreview.pinAnchors = (data.pin_anchors || []).map(p => ({
+            comp_idx: p.comp_idx,
+            pin_id: p.pin_id,
+            x: p.x,
+            y: p.y
+        }));
+
+        // Reset editor state
+        aiEditor.tool = 'select';
+        aiEditor.pendingPin = null;
+        aiEditor.hoveredPin = null;
+        aiEditor.hoveredConnIdx = null;
+        aiEditor.isDragging = false;
+
+        // Load original image from debug_image or uploaded file
+        const img = new Image();
+        img.onload = () => {
+            aiPreview.imageElement = img;
+            aiPreview.imageW = img.naturalWidth;
+            aiPreview.imageH = img.naturalHeight;
+
+            resizeAiCanvas();
+            fitAiPreview();
+            setAiTool('select');
+            updateAiStats();
+            renderAiPreview();
+        };
+
+        if (data.debug_image) {
+            img.src = data.debug_image;
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -2785,18 +3975,17 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (data.status === "success") {
-                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components. Waiting for approval.`;
-                
-                // Show modal
+                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components. Review & edit connections.`;
+
+                // Show modal and initialize the interactive preview editor
                 const modal = document.getElementById("aiDebugModal");
-                const img = document.getElementById("debugPreviewImage");
-                if (data.debug_image) {
-                    img.src = data.debug_image;
-                    img.style.display = "inline-block";
-                } else {
-                    img.style.display = "none";
-                }
                 modal.style.display = "flex";
+
+                // Initialize the interactive editor with the API data
+                // Use requestAnimationFrame to ensure the modal is visible before sizing canvas
+                requestAnimationFrame(() => {
+                    initAiPreviewEditor(data);
+                });
 
                 // Setup import logic for when user clicks "Import to Canvas"
                 const btnImport = document.getElementById("btnAiDebugImport");
@@ -2806,7 +3995,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 newBtnImport.addEventListener("click", () => {
                     modal.style.display = "none";
-                    document.getElementById("statusText").innerText = `✅ Imported ${data.components.length} components.`;
+
+                    // Use the EDITED connections from the preview editor
+                    const editedConnections = aiPreview.connections;
+
+                    document.getElementById("statusText").innerText = `✅ Imported ${data.components.length} components with ${editedConnections.length} connections.`;
 
                     // Dynamically calculate SCALE_FACTOR based on average component width
                     // This prevents components from being placed too far apart on high-res images
@@ -2881,37 +4074,62 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     });
 
-                    // Load Wires (Logical Pin-to-Pin connection)
+                    // Load Wires using the EDITED connections
                     wires = [];
-                    if (data.connections) {
-                        data.connections.forEach(conn => {
-                            const idx1 = compIdxMap[conn.pin1.comp_idx];
-                            const idx2 = compIdxMap[conn.pin2.comp_idx];
-                            
-                            if (idx1 !== undefined && idx1 !== -1 && idx2 !== undefined && idx2 !== -1) {
-                                const comp1 = components[idx1];
-                                const comp2 = components[idx2];
-                                
-                                const pins1 = getCompPins(comp1);
-                                const pins2 = getCompPins(comp2);
-                                
-                                const p1 = pins1[conn.pin1.pin_id];
-                                const p2 = pins2[conn.pin2.pin_id];
-                                
-                                if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
-                                    // Try A* routing first
-                                    const astarSegments = routeAStar(p1, p2, components, gridSize);
-                                    if (astarSegments && astarSegments.length > 0) {
-                                        wires.push(...astarSegments);
+                    if (editedConnections && editedConnections.length > 0) {
+                        editedConnections.forEach(conn => {
+                            // Helper to resolve pin to main editor coordinate space
+                            const getPinCoords = (pinRef) => {
+                                if (pinRef.comp_idx === -1) {
+                                    // It's a junction. Find the corresponding anchor in aiPreview.pinAnchors
+                                    const anchor = aiPreview.pinAnchors.find(a => a.comp_idx === -1 && a.pin_id === pinRef.pin_id);
+                                    if (anchor) {
+                                        return {
+                                            x: snap(anchor.x * SCALE_FACTOR),
+                                            y: snap(anchor.y * SCALE_FACTOR)
+                                        };
+                                    }
+                                    return null;
+                                } else {
+                                    // It's a regular component pin
+                                    const idx = compIdxMap[pinRef.comp_idx];
+                                    if (idx !== undefined && idx !== -1) {
+                                        const comp = components[idx];
+                                        const pins = getCompPins(comp);
+                                        return pins[pinRef.pin_id];
+                                    }
+                                    return null;
+                                }
+                            };
+
+                            const p1 = getPinCoords(conn.pin1);
+                            const p2 = getPinCoords(conn.pin2);
+
+                            if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
+                                if (p1.x === p2.x || p1.y === p2.y) {
+                                    wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                                } else {
+                                    // Collision-aware L-shaped routing
+                                    const comp1 = components[compIdxMap[conn.pin1.comp_idx]];
+                                    const comp2 = components[compIdxMap[conn.pin2.comp_idx]];
+                                    const exclude = [comp1, comp2].filter(Boolean);
+                                    
+                                    const mid1 = { x: p2.x, y: p1.y };
+                                    const mid2 = { x: p1.x, y: p2.y };
+                                    
+                                    const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
+                                                  doesSegmentIntersectComponent(mid1, p2, components, exclude);
+                                    const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
+                                                  doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                                    
+                                    if (coll1 && !coll2) {
+                                        // Option 1 (H-then-V) collides, but Option 2 (V-then-H) is clean. Choose V-then-H
+                                        wires.push([{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }]);
+                                        wires.push([{ x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }]);
                                     } else {
-                                        // Fallback to naive Manhattan routing if A* blocked
-                                        if (p1.x === p2.x || p1.y === p2.y) {
-                                            wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
-                                        } else {
-                                            const mid = { x: p2.x, y: p1.y };
-                                            wires.push([{ x: p1.x, y: p1.y }, { x: mid.x, y: mid.y }]);
-                                            wires.push([{ x: mid.x, y: mid.y }, { x: p2.x, y: p2.y }]);
-                                        }
+                                        // Default to Option 1
+                                        wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }]);
+                                        wires.push([{ x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }]);
                                     }
                                 }
                             }
@@ -2967,6 +4185,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                     selectedComponents = [];
                     selectedComp = null;
+                    selectedWires = [];
                     selectedWirePts = [];
                     updatePropertiesPanel();
                     render();
@@ -2985,6 +4204,14 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     document.getElementById("aiDebugModalClose").addEventListener("click", closeAiDebugModal);
     document.getElementById("btnAiDebugCancel").addEventListener("click", closeAiDebugModal);
+
+    // Handle window resize for the AI preview canvas
+    window.addEventListener('resize', () => {
+        if (document.getElementById("aiDebugModal").style.display !== "none") {
+            resizeAiCanvas();
+            renderAiPreview();
+        }
+    });
 
     // ═══════════════════════════════════════════
     // INITIAL DRAW

@@ -4,15 +4,15 @@
 
 D1 Vin Vout Dx
 R1 Vout 0 1k
-V2 Vin 0 SINE(0 5 1k 0 0 0)
+V1 Vin 0 SINE(0 5 1k 0 0 0)
 
-.tran 0.1m 8m 0
+.tran 0.01m 4m 0
 .control
 run
 set color0 = white
 set color1 = black
 set color2 = red
-set color3 = magenta
+set color3 = red
 set xbrushwidth = 2
 print all > sim_out.txt
 set hcopydevtype = svg

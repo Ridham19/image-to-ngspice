@@ -204,18 +204,31 @@
     <!-- AI DETECTION PREVIEW MODAL                   -->
     <!-- ═══════════════════════════════════════════ -->
     <div id="aiDebugModal" class="modal-overlay" style="display:none;">
-        <div class="modal-container" style="max-width: 90%; max-height: 90%;">
+        <div class="modal-container ai-debug-modal-container">
             <div class="modal-header">
                 <h2>AI Detection Preview</h2>
                 <button id="aiDebugModalClose" class="modal-close-btn">&times;</button>
             </div>
             
-            <div class="modal-tab-content active" style="text-align: center; overflow: auto; max-height: 65vh; padding: 10px;">
-                <img id="debugPreviewImage" src="" alt="AI Detection Debug Output" style="max-width: 100%; border: 1px solid #333; border-radius: 4px;">
+            <!-- Mini toolbar for the preview editor -->
+            <div class="ai-debug-toolbar">
+                <button id="aiToolSelect" class="ai-debug-tool active" title="Pan & Zoom">🖱️ View</button>
+                <button id="aiToolWire" class="ai-debug-tool" title="Connect two pins">🔗 Connect</button>
+                <button id="aiToolDelete" class="ai-debug-tool" title="Delete a connection">🗑️ Delete</button>
+                <button id="aiToolJunction" class="ai-debug-tool" title="Place a junction pin">⊕ Junction</button>
+                <span class="ai-debug-separator"></span>
+                <span class="ai-debug-info" id="aiDebugInfo">Scroll to zoom · Drag to pan</span>
             </div>
+
+            <div class="ai-debug-canvas-wrap" id="aiDebugCanvasWrap">
+                <canvas id="aiDebugCanvas"></canvas>
+            </div>
+            <!-- Hidden img used only to load the original image data -->
+            <img id="debugPreviewImage" src="" alt="" style="display:none;">
 
             <div class="modal-footer">
                 <button id="btnAiDebugCancel" class="modal-btn-cancel">Cancel</button>
+                <span class="ai-debug-stats" id="aiDebugStats"></span>
                 <button id="btnAiDebugImport" class="modal-btn-run">Import to Canvas</button>
             </div>
         </div>

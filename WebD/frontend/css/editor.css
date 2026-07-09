@@ -628,3 +628,118 @@ canvas {
     border-radius: 8px;
     box-shadow: 0 10px 60px rgba(0, 0, 0, 0.5);
 }
+
+/* ============================================
+   AI DETECTION PREVIEW — INTERACTIVE EDITOR
+   ============================================ */
+
+/* Modal sizing override */
+.ai-debug-modal-container {
+    width: 92vw !important;
+    max-width: 1400px !important;
+    max-height: 92vh !important;
+    height: 92vh;
+}
+
+/* Mini toolbar */
+.ai-debug-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 28px;
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+.ai-debug-tool {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+}
+.ai-debug-tool:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+.ai-debug-tool.active {
+    background: rgba(0, 229, 255, 0.1);
+    color: var(--accent-cyan);
+    border-color: rgba(0, 229, 255, 0.4);
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.12), inset 0 0 6px rgba(0, 229, 255, 0.08);
+}
+
+.ai-debug-separator {
+    width: 1px;
+    height: 22px;
+    background: var(--glass-border);
+    margin: 0 6px;
+}
+
+.ai-debug-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-left: 4px;
+    transition: color 0.2s;
+}
+
+/* Canvas container */
+.ai-debug-canvas-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: #080a10;
+    border-top: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--glass-border);
+    min-height: 0; /* allow flex shrink */
+}
+.ai-debug-canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Cursor modes */
+.ai-debug-canvas-wrap.tool-select { cursor: grab; }
+.ai-debug-canvas-wrap.tool-select.dragging { cursor: grabbing; }
+.ai-debug-canvas-wrap.tool-connect { cursor: crosshair; }
+.ai-debug-canvas-wrap.tool-delete { cursor: pointer; }
+.ai-debug-canvas-wrap.tool-junction { cursor: cell; }
+.ai-debug-canvas-wrap.tool-connect.pin-hover { cursor: pointer; }
+/* Universal dragging (middle-click pan in any mode) */
+.ai-debug-canvas-wrap.dragging { cursor: grabbing !important; }
+
+/* Stats badge in footer */
+.ai-debug-stats {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: auto;
+    margin-left: 8px;
+}
+.ai-debug-stats .stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.ai-debug-stats .stat-icon {
+    font-size: 12px;
+}

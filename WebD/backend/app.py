@@ -241,6 +241,7 @@ async def detect_circuit(file: UploadFile = File(...)):
         # Steps 4-6 -- Wire Tracing Pipeline
         connections = []
         debug_image_b64 = ""
+        pin_anchors = []  # Will be populated by wire tracing; sent to frontend for interactive editing
         try:
             from core.processing import compute_pin_anchors, TRANSPARENT_TYPES
             from wire_tracer.tracer import trace_wires
@@ -333,11 +334,13 @@ async def detect_circuit(file: UploadFile = File(...)):
         # Step 7 -- Serialize and return
         safe_components = jsonable_encoder(detected_comps)
         safe_connections = jsonable_encoder(connections)
+        safe_pin_anchors = jsonable_encoder(pin_anchors)
 
         return JSONResponse(content={
             "status": "success",
             "components": safe_components,
             "connections": safe_connections,
+            "pin_anchors": safe_pin_anchors,
             "debug_image": debug_image_b64,
         })
 
