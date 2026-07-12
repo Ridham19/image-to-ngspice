@@ -257,6 +257,79 @@ document.addEventListener("DOMContentLoaded", () => {
     let mode = 'select';
     const gridSize = 20;
     let nameCounts = {};  // Per-prefix auto-naming counters
+    let placementRotation = 0;
+
+    let undoStack = [];
+    let redoStack = [];
+    let hasSavedStateForThisDrag = false;
+
+    function saveState() {
+        const state = {
+            components: JSON.parse(JSON.stringify(components)),
+            wires: JSON.parse(JSON.stringify(wires))
+        };
+        undoStack.push(state);
+        if (undoStack.length > 50) {
+            undoStack.shift();
+        }
+        redoStack = [];
+        updateUndoRedoButtons();
+    }
+
+    function undo() {
+        if (undoStack.length === 0) return;
+        const currentState = {
+            components: JSON.parse(JSON.stringify(components)),
+            wires: JSON.parse(JSON.stringify(wires))
+        };
+        redoStack.push(currentState);
+        
+        const previousState = undoStack.pop();
+        components = previousState.components;
+        wires = previousState.wires;
+        
+        selectedComponents = [];
+        selectedComp = null;
+        selectedWires = [];
+        selectedWirePts = [];
+        
+        updateUndoRedoButtons();
+        updatePropertiesPanel();
+        render();
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        const currentState = {
+            components: JSON.parse(JSON.stringify(components)),
+            wires: JSON.parse(JSON.stringify(wires))
+        };
+        undoStack.push(currentState);
+        
+        const nextState = redoStack.pop();
+        components = nextState.components;
+        wires = nextState.wires;
+        
+        selectedComponents = [];
+        selectedComp = null;
+        selectedWires = [];
+        selectedWirePts = [];
+        
+        updateUndoRedoButtons();
+        updatePropertiesPanel();
+        render();
+    }
+
+    function updateUndoRedoButtons() {
+        const undoBtn = document.getElementById('btn-undo');
+        const redoBtn = document.getElementById('btn-redo');
+        if (undoBtn) {
+            undoBtn.disabled = (undoStack.length === 0);
+        }
+        if (redoBtn) {
+            redoBtn.disabled = (redoStack.length === 0);
+        }
+    }
 
     // Simulation config state (mirrors PySpice Studio's sim_data)
     let simConfig = {
@@ -335,10 +408,17 @@ document.addEventListener("DOMContentLoaded", () => {
     function getCompPins(comp) {
         const db = COMPONENT_DB[comp.type];
         if (!db) return [{ x: comp.x, y: comp.y }];
-        return db.pins.map(([dx, dy]) => ({
-            x: comp.x + dx,
-            y: comp.y + dy
-        }));
+        const rotRad = ((comp.rotation || 0) % 360) * Math.PI / 180;
+        const cosR = Math.round(Math.cos(rotRad));
+        const sinR = Math.round(Math.sin(rotRad));
+        return db.pins.map(([dx, dy]) => {
+            const rx = dx * cosR - dy * sinR;
+            const ry = dx * sinR + dy * cosR;
+            return {
+                x: comp.x + rx,
+                y: comp.y + ry
+            };
+        });
     }
 
     /**
@@ -438,7 +518,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return {
                 type, x: worldX, y: worldY,
                 name: type.charAt(0).toUpperCase() + '?',
-                value: '1k', params: { value: '1k' }
+                value: '1k', params: { value: '1k' },
+                rotation: 0
             };
         }
         const name = nextName(db.prefix);
@@ -447,7 +528,8 @@ document.addEventListener("DOMContentLoaded", () => {
             type, x: worldX, y: worldY,
             name,
             value: params.value || params.dc || params.mag || '',
-            params
+            params,
+            rotation: 0
         };
     }
 
@@ -458,13 +540,16 @@ document.addEventListener("DOMContentLoaded", () => {
             if (excludeComps.includes(c)) continue;
             const db = COMPONENT_DB[c.type];
             const hb = db ? db.hitbox : { w: 40, h: 40 };
+            const rot = c.rotation || 0;
+            const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
+            const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
             
             // Shrink the hitbox slightly (e.g. by 2 pixels) to avoid snapping false positives on the exact border
             const margin = 2;
-            const xMin = c.x - hb.w / 2 + margin;
-            const xMax = c.x + hb.w / 2 - margin;
-            const yMin = c.y - hb.h / 2 + margin;
-            const yMax = c.y + hb.h / 2 - margin;
+            const xMin = c.x - w / 2 + margin;
+            const xMax = c.x + w / 2 - margin;
+            const yMin = c.y - h / 2 + margin;
+            const yMax = c.y + h / 2 - margin;
             
             if (Math.abs(pA.y - pB.y) < 1) {
                 // Horizontal segment
@@ -486,6 +571,281 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         return false;
     }
+
+    // Route a straight horizontal or vertical segment around any component it intersects
+    function routeAroundComponent(pA, pB, allComponents, excludeComps = []) {
+        const offset = (typeof gridSize !== 'undefined') ? gridSize : 20;
+        for (const c of allComponents) {
+            if (excludeComps.includes(c)) continue;
+            const db = COMPONENT_DB[c.type];
+            const hb = db ? db.hitbox : { w: 40, h: 40 };
+            const rot = c.rotation || 0;
+            const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
+            const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
+            
+            const margin = 2;
+            const xMin = snap(c.x - w / 2 - offset);
+            const xMax = snap(c.x + w / 2 + offset);
+            const yMin = snap(c.y - h / 2 - offset);
+            const yMax = snap(c.y + h / 2 + offset);
+            
+            if (Math.abs(pA.y - pB.y) < 1) {
+                // Horizontal segment
+                const y = pA.y;
+                const minX = Math.min(pA.x, pB.x);
+                const maxX = Math.max(pA.x, pB.x);
+                
+                const cXMin = c.x - w / 2 + margin;
+                const cXMax = c.x + w / 2 - margin;
+                const cYMin = c.y - h / 2 + margin;
+                const cYMax = c.y + h / 2 - margin;
+                
+                if (y > cYMin && y < cYMax && minX < cXMax && maxX > cXMin) {
+                    const detourY = (y - cYMin < cYMax - y) ? yMin : yMax;
+                    
+                    const pt1 = { x: pA.x, y: pA.y };
+                    const pt2 = { x: snap(pA.x < pB.x ? xMin : xMax), y: pA.y };
+                    const pt3 = { x: pt2.x, y: snap(detourY) };
+                    const pt4 = { x: snap(pA.x < pB.x ? xMax : xMin), y: pt3.y };
+                    const pt5 = { x: pt4.x, y: pB.y };
+                    const pt6 = { x: pB.x, y: pB.y };
+                    
+                    return [
+                        [pt1, pt2],
+                        [pt2, pt3],
+                        [pt3, pt4],
+                        [pt4, pt5],
+                        [pt5, pt6]
+                    ];
+                }
+            } else if (Math.abs(pA.x - pB.x) < 1) {
+                // Vertical segment
+                const x = pA.x;
+                const minY = Math.min(pA.y, pB.y);
+                const maxY = Math.max(pA.y, pB.y);
+                
+                const cXMin = c.x - w / 2 + margin;
+                const cXMax = c.x + w / 2 - margin;
+                const cYMin = c.y - h / 2 + margin;
+                const cYMax = c.y + h / 2 - margin;
+                
+                if (x > cXMin && x < cXMax && minY < cYMax && maxY > cYMin) {
+                    const detourX = (x - cXMin < cXMax - x) ? xMin : xMax;
+                    
+                    const pt1 = { x: pA.x, y: pA.y };
+                    const pt2 = { x: pA.x, y: snap(pA.y < pB.y ? yMin : yMax) };
+                    const pt3 = { x: snap(detourX), y: pt2.y };
+                    const pt4 = { x: pt3.x, y: snap(pA.y < pB.y ? yMax : yMin) };
+                    const pt5 = { x: pB.x, y: pt4.y };
+                    const pt6 = { x: pB.x, y: pB.y };
+                    
+                    return [
+                        [pt1, pt2],
+                        [pt2, pt3],
+                        [pt3, pt4],
+                        [pt4, pt5],
+                        [pt5, pt6]
+                    ];
+                }
+            }
+        }
+        return [[pA, pB]];
+    }
+
+    // Reroute all wires in the canvas outward from the components' center of mass
+    function rerouteAllWires() {
+        if (components.length === 0) return;
+
+        // 1. DSU to find connected points/nodes
+        const parent = {};
+        function find(i) {
+            if (parent[i] === undefined) {
+                parent[i] = i;
+                return i;
+            }
+            if (parent[i] === i) return i;
+            return parent[i] = find(parent[i]);
+        }
+        function union(i, j) {
+            const rootI = find(i);
+            const rootJ = find(j);
+            if (rootI !== rootJ) {
+                parent[rootI] = rootJ;
+            }
+        }
+
+        // Union endpoints of all current wires
+        wires.forEach(w => {
+            if (w.length >= 2) {
+                const k1 = Math.round(w[0].x) + "," + Math.round(w[0].y);
+                const k2 = Math.round(w[1].x) + "," + Math.round(w[1].y);
+                union(k1, k2);
+            }
+        });
+
+        // Group component pins by DSU root
+        const netGroups = {};
+        components.forEach((c, compIdx) => {
+            const pins = getCompPins(c);
+            pins.forEach((p, pinIdx) => {
+                const key = Math.round(p.x) + "," + Math.round(p.y);
+                const root = find(key);
+                if (!netGroups[root]) {
+                    netGroups[root] = [];
+                }
+                netGroups[root].push({ compIdx, pinIdx, x: p.x, y: p.y });
+            });
+        });
+
+        // 2. Select minimal optimal pin-to-pin connections via Kruskal's MST
+        const connectionsToRoute = [];
+        Object.keys(netGroups).forEach(root => {
+            const groupPins = netGroups[root];
+            if (groupPins.length < 2) return;
+
+            const edges = [];
+            for (let i = 0; i < groupPins.length; i++) {
+                for (let j = i + 1; j < groupPins.length; j++) {
+                    const pA = groupPins[i];
+                    const pB = groupPins[j];
+                    const dist = Math.abs(pA.x - pB.x) + Math.abs(pA.y - pB.y);
+                    edges.push({ i, j, dist, pA, pB });
+                }
+            }
+            edges.sort((a, b) => a.dist - b.dist);
+
+            const groupParent = {};
+            function gFind(i) {
+                if (groupParent[i] === undefined) {
+                    groupParent[i] = i;
+                    return i;
+                }
+                if (groupParent[i] === i) return i;
+                return groupParent[i] = gFind(groupParent[i]);
+            }
+            function gUnion(i, j) {
+                const rI = gFind(i);
+                const rJ = gFind(j);
+                if (rI !== rJ) {
+                    groupParent[rI] = rJ;
+                    return true;
+                }
+                return false;
+            }
+
+            edges.forEach(edge => {
+                if (gUnion(edge.i, edge.j)) {
+                    connectionsToRoute.push({ p1: edge.pA, p2: edge.pB });
+                }
+            });
+        });
+
+        // Calculate center of mass of all components
+        let sumX = 0, sumY = 0;
+        components.forEach(c => {
+            sumX += c.x;
+            sumY += c.y;
+        });
+        const Cx = sumX / components.length;
+        const Cy = sumY / components.length;
+
+        // 3. Destroy all existing wires
+        wires = [];
+
+        // 4. Connect again outward from center with collision-aware routing
+        connectionsToRoute.forEach(conn => {
+            const p1 = conn.p1;
+            const p2 = conn.p2;
+
+            const exclude = [];
+            components.forEach((c, cIdx) => {
+                if (cIdx === p1.compIdx || cIdx === p2.compIdx) {
+                    exclude.push(c);
+                }
+            });
+
+            if (p1.x !== p2.x && p1.y !== p2.y) {
+                const mid1 = { x: p2.x, y: p1.y }; // H-then-V
+                const mid2 = { x: p1.x, y: p2.y }; // V-then-H
+
+                const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
+                              doesSegmentIntersectComponent(mid1, p2, components, exclude);
+                const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
+                              doesSegmentIntersectComponent(mid2, p2, components, exclude);
+
+                const dist1 = Math.pow(mid1.x - Cx, 2) + Math.pow(mid1.y - Cy, 2);
+                const dist2 = Math.pow(mid2.x - Cx, 2) + Math.pow(mid2.y - Cy, 2);
+
+                let chosenSegments = [];
+                if (coll1 && !coll2) {
+                    chosenSegments = [[p1, mid2], [mid2, p2]];
+                } else if (coll2 && !coll1) {
+                    chosenSegments = [[p1, mid1], [mid1, p2]];
+                } else {
+                    if (dist1 > dist2) {
+                        chosenSegments = [[p1, mid1], [mid1, p2]];
+                    } else {
+                        chosenSegments = [[p1, mid2], [mid2, p2]];
+                    }
+                }
+
+                chosenSegments.forEach(seg => {
+                    if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
+                        const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                        routed.forEach(rSeg => wires.push(rSeg));
+                    }
+                });
+            } else {
+                const routed = routeAroundComponent(p1, p2, components, exclude);
+                routed.forEach(rSeg => wires.push(rSeg));
+            }
+        });
+
+        // 5. Merge contiguous collinear segments to clean up
+        let merged = true;
+        while (merged) {
+            merged = false;
+            for (let i = 0; i < wires.length; i++) {
+                for (let j = i + 1; j < wires.length; j++) {
+                    const w1 = wires[i];
+                    const w2 = wires[j];
+
+                    let shared = null;
+                    let other1 = null;
+                    let other2 = null;
+
+                    const ptsMatch = (a, b) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1;
+
+                    if (ptsMatch(w1[0], w2[0])) { shared = w1[0]; other1 = w1[1]; other2 = w2[1]; }
+                    else if (ptsMatch(w1[0], w2[1])) { shared = w1[0]; other1 = w1[1]; other2 = w2[0]; }
+                    else if (ptsMatch(w1[1], w2[0])) { shared = w1[1]; other1 = w1[0]; other2 = w2[1]; }
+                    else if (ptsMatch(w1[1], w2[1])) { shared = w1[1]; other1 = w1[0]; other2 = w2[0]; }
+
+                    if (shared) {
+                        const isH1 = Math.abs(w1[0].y - w1[1].y) < 1;
+                        const isV1 = Math.abs(w1[0].x - w1[1].x) < 1;
+                        const isH2 = Math.abs(w2[0].y - w2[1].y) < 1;
+                        const isV2 = Math.abs(w2[0].x - w2[1].x) < 1;
+
+                        if ((isH1 && isH2 && Math.abs(other1.y - other2.y) < 1) || 
+                            (isV1 && isV2 && Math.abs(other1.x - other2.x) < 1)) {
+                            wires[i] = [other1, other2];
+                            wires.splice(j, 1);
+                            merged = true;
+                            break;
+                        }
+                    }
+                }
+                if (merged) break;
+            }
+        }
+
+        // Filter out zero-length segments
+        wires = wires.filter(w => !(Math.abs(w[0].x - w[1].x) < 1 && Math.abs(w[0].y - w[1].y) < 1));
+
+        render();
+    }
+
 
     // ═══════════════════════════════════════════
     // EVENT LISTENERS
@@ -651,16 +1011,49 @@ document.addEventListener("DOMContentLoaded", () => {
                 } else {
                     // Manhattan wire routing
                     if (wireStart.x !== snapped.x || wireStart.y !== snapped.y) {
-                        wires.push([
-                            { x: wireStart.x, y: wireStart.y },
-                            { x: snapped.x, y: wireStart.y }
-                        ]);
-                        if (wireStart.y !== snapped.y) {
-                            wires.push([
-                                { x: snapped.x, y: wireStart.y },
-                                { x: snapped.x, y: snapped.y }
-                            ]);
+                        saveState();
+                        const p1 = { x: wireStart.x, y: wireStart.y };
+                        const p2 = { x: snapped.x, y: snapped.y };
+                        
+                        // Find components to exclude (those connected to either end of the segment)
+                        const exclude = [];
+                        components.forEach(c => {
+                            const pins = getCompPins(c);
+                            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
+                            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
+                            if (hasP1 || hasP2) exclude.push(c);
+                        });
+
+                        const mid1 = { x: p2.x, y: p1.y };
+                        const mid2 = { x: p1.x, y: p2.y };
+                        
+                        const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid1, p2, components, exclude);
+                        const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                        
+                        let chosenSegments = [];
+                        if (coll1 && !coll2) {
+                            // Choose V-then-H
+                            chosenSegments = [
+                                [p1, { x: p1.x, y: p2.y }],
+                                [{ x: p1.x, y: p2.y }, p2]
+                            ];
+                        } else {
+                            // Choose H-then-V
+                            chosenSegments = [
+                                [p1, { x: p2.x, y: p1.y }],
+                                [{ x: p2.x, y: p1.y }, p2]
+                            ];
                         }
+                        
+                        // Route each chosen segment around any obstacle
+                        chosenSegments.forEach(seg => {
+                            if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
+                                const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                                routed.forEach(rSeg => wires.push(rSeg));
+                            }
+                        });
                     }
                     // If we landed on a pin, auto-terminate the wire
                     if (landedOnPin) {
@@ -673,13 +1066,16 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             else {
                 // Place a new component (always grid-snap)
+                saveState();
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
                 const comp = createComponent(mode, worldPos.x, worldPos.y);
+                comp.rotation = placementRotation || 0;
                 components.push(comp);
                 selectedComponents = [comp];
                 selectedComp = comp;
                 selectedWirePts = [];
                 mode = 'select';
+                placementRotation = 0;
                 updateToolUI();
                 updatePropertiesPanel();
             }
@@ -702,6 +1098,10 @@ document.addEventListener("DOMContentLoaded", () => {
             hoveredPin = null;
         }
         else if (isDragging && (selectedComponents.length > 0 || selectedWirePts.length > 0)) {
+            if (!hasSavedStateForThisDrag) {
+                saveState();
+                hasSavedStateForThisDrag = true;
+            }
             mousePos = screenToWorld(e.offsetX, e.offsetY);
             const dx = mousePos.x - dragStart.x;
             const dy = mousePos.y - dragStart.y;
@@ -855,17 +1255,38 @@ document.addEventListener("DOMContentLoaded", () => {
                         const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
                                       doesSegmentIntersectComponent(mid2, p2, components, exclude);
                         
+                        let chosenSegments = [];
                         if (coll1 && !coll2) {
                             // H-then-V collides, but V-then-H is clean. Choose V-then-H
-                            newWires.push([{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }]);
-                            newWires.push([{ x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }]);
+                            chosenSegments = [
+                                [p1, { x: p1.x, y: p2.y }],
+                                [{ x: p1.x, y: p2.y }, p2]
+                            ];
                         } else {
                             // Default to H-then-V
-                            newWires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }]);
-                            newWires.push([{ x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                            chosenSegments = [
+                                [p1, { x: p2.x, y: p1.y }],
+                                [{ x: p2.x, y: p1.y }, p2]
+                            ];
                         }
+                        
+                        chosenSegments.forEach(seg => {
+                            if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
+                                const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                                routed.forEach(rSeg => newWires.push(rSeg));
+                            }
+                        });
                     } else {
-                        newWires.push(wire);
+                        // Straight wire segment - check if it intersects and detour
+                        const exclude = [];
+                        components.forEach(c => {
+                            const pins = getCompPins(c);
+                            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
+                            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
+                            if (hasP1 || hasP2) exclude.push(c);
+                        });
+                        const routed = routeAroundComponent(p1, p2, components, exclude);
+                        routed.forEach(rSeg => newWires.push(rSeg));
                     }
                 } else {
                     newWires.push(wire);
@@ -922,6 +1343,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         isSelectingBox = false;
         isDragging = false;
+        hasSavedStateForThisDrag = false;
     });
 
     // 5. Right Click (Cancel)
@@ -936,9 +1358,26 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
-    // Keyboard shortcut: Delete selected component
+    // Keyboard shortcut listener
     document.addEventListener("keydown", (e) => {
+        const active = document.activeElement;
+        const isEditingInput = active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            if (isEditingInput) return;
+            e.preventDefault();
+            undo();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+            if (isEditingInput) return;
+            e.preventDefault();
+            redo();
+            return;
+        }
+
         if (e.key === 'Delete') {
+            if (isEditingInput) return;
             deleteSelectedItems();
         }
         if (e.key === 'Escape') {
@@ -951,6 +1390,23 @@ document.addEventListener("DOMContentLoaded", () => {
             updateToolUI();
             updatePropertiesPanel();
             render();
+        }
+        if (e.key.toLowerCase() === 'r') {
+            if (isEditingInput) {
+                return;
+            }
+            if (selectedComponents.length > 0) {
+                saveState();
+                selectedComponents.forEach(c => {
+                    c.rotation = ((c.rotation || 0) + 90) % 360;
+                });
+                updatePropertiesPanel();
+                render();
+            } else if (mode !== 'select' && mode !== 'wire') {
+                // Rotate ghost component before placement
+                placementRotation = ((placementRotation || 0) + 90) % 360;
+                render();
+            }
         }
     });
 
@@ -977,8 +1433,9 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 const db = COMPONENT_DB[c.type];
                 const hb = db ? db.hitbox : { w: 40, h: 40 };
-                const hw = hb.w / 2;
-                const hh = hb.h / 2;
+                const rot = c.rotation || 0;
+                const hw = (rot === 90 || rot === 270) ? hb.h / 2 : hb.w / 2;
+                const hh = (rot === 90 || rot === 270) ? hb.w / 2 : hb.h / 2;
                 if (worldPos.x >= c.x - hw && worldPos.x <= c.x + hw &&
                     worldPos.y >= c.y - hh && worldPos.y <= c.y + hh) {
                     return c;
@@ -2184,15 +2641,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (selectedComponents.includes(comp)) {
                 const db = COMPONENT_DB[comp.type];
                 const hb = db ? db.hitbox : { w: 40, h: 40 };
+                const rot = comp.rotation || 0;
+                const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
+                const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
                 ctx.save();
                 ctx.strokeStyle = "rgba(0, 229, 255, 0.85)";
                 ctx.lineWidth = 2;
                 ctx.setLineDash([4, 3]);
                 ctx.strokeRect(
-                    pos.x - (hb.w / 2 + 6) * zoom,
-                    pos.y - (hb.h / 2 + 6) * zoom,
-                    (hb.w + 12) * zoom,
-                    (hb.h + 12) * zoom
+                    pos.x - (w / 2 + 6) * zoom,
+                    pos.y - (h / 2 + 6) * zoom,
+                    (w + 12) * zoom,
+                    (h + 12) * zoom
                 );
                 ctx.restore();
             }
@@ -2201,11 +2661,15 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.strokeStyle = "#E0E0E0";
             ctx.lineWidth = Math.max(1, 2 * zoom);
             const renderer = SYMBOL_RENDERERS[comp.type];
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+            ctx.rotate((comp.rotation || 0) * Math.PI / 180);
             if (renderer) {
-                renderer(ctx, pos.x, pos.y, zoom);
+                renderer(ctx, 0, 0, zoom);
             } else {
-                drawFallback(ctx, pos.x, pos.y, zoom, comp.type);
+                drawFallback(ctx, 0, 0, zoom, comp.type);
             }
+            ctx.restore();
 
             // Draw component name label (above)
             ctx.fillStyle = "#E0E0E0";
@@ -2213,7 +2677,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.textAlign = "center";
             ctx.textBaseline = "bottom";
             const db = COMPONENT_DB[comp.type];
-            const labelOffY = db ? db.hitbox.h / 2 + 14 : 30;
+            const rot = comp.rotation || 0;
+            const h_rotated = (rot === 90 || rot === 270) ? (db ? db.hitbox.w : 40) : (db ? db.hitbox.h : 40);
+            const labelOffY = h_rotated / 2 + 14;
             ctx.fillText(comp.name, pos.x, pos.y - labelOffY * zoom);
 
             // Draw value label (below)
@@ -2287,9 +2753,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.strokeStyle = "#E0E0E0";
             ctx.lineWidth = Math.max(1, 2 * zoom);
             const renderer = SYMBOL_RENDERERS[mode];
+            ctx.save();
+            ctx.translate(gPos.x, gPos.y);
+            ctx.rotate((placementRotation || 0) * Math.PI / 180);
             if (renderer) {
-                renderer(ctx, gPos.x, gPos.y, zoom);
+                renderer(ctx, 0, 0, zoom);
             }
+            ctx.restore();
             ctx.globalAlpha = 1.0;
         }
 
@@ -2336,6 +2806,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // PROPERTIES INSPECTOR (Data-Binding)
     // ═══════════════════════════════════════════
     function deleteSelectedItems() {
+        if (selectedComponents.length > 0 || selectedWires.length > 0) {
+            saveState();
+        }
         if (selectedComponents.length > 0) {
             selectedComponents.forEach(comp => {
                 const idx = components.indexOf(comp);
@@ -2467,6 +2940,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Name field
         addPropField(panel, 'Name', comp.name, (val) => {
+            saveState();
             comp.name = val;
             render();
         });
@@ -2487,6 +2961,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             for (const [key, val] of Object.entries(comp.params)) {
                 addPropField(panel, key, String(val), (newVal) => {
+                    saveState();
                     comp.params[key] = newVal;
                     // Sync the top-level value field
                     if (key === 'value' || key === 'dc' || key === 'mag') {
@@ -2496,6 +2971,39 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             }
         }
+
+        // Section: Orientation
+        const orientTitle = document.createElement('p');
+        orientTitle.className = 'prop-section-title';
+        orientTitle.textContent = 'Orientation';
+        panel.appendChild(orientTitle);
+
+        const rotRow = document.createElement('div');
+        rotRow.className = 'prop-row';
+
+        const rotLbl = document.createElement('span');
+        rotLbl.className = 'prop-label';
+        rotLbl.textContent = 'Rotation';
+        rotRow.appendChild(rotLbl);
+
+        const rotSel = document.createElement('select');
+        rotSel.className = 'prop-input';
+        [0, 90, 180, 270].forEach(deg => {
+            const opt = document.createElement('option');
+            opt.value = deg;
+            opt.textContent = `${deg}°`;
+            if ((comp.rotation || 0) === deg) {
+                opt.selected = true;
+            }
+            rotSel.appendChild(opt);
+        });
+        rotSel.addEventListener('change', (e) => {
+            saveState();
+            comp.rotation = parseInt(e.target.value);
+            render();
+        });
+        rotRow.appendChild(rotSel);
+        panel.appendChild(rotRow);
 
         // Delete button
         const delBtn = document.createElement('button');
@@ -2521,7 +3029,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (readOnly) {
             input.readOnly = true;
         } else if (onChange) {
-            input.addEventListener('input', (e) => onChange(e.target.value));
+            input.addEventListener('change', (e) => onChange(e.target.value));
         }
         row.appendChild(input);
 
@@ -2535,6 +3043,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener('click', (e) => {
             mode = e.target.id.replace('tool-', '');
             wireStart = null;
+            placementRotation = 0;
 
             // Reset select dropdowns if a standard button was clicked
             document.querySelectorAll('.toolbar-select').forEach(sel => {
@@ -2546,10 +3055,33 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    const btnReroute = document.getElementById('btn-reroute');
+    if (btnReroute) {
+        btnReroute.addEventListener('click', () => {
+            saveState();
+            rerouteAllWires();
+        });
+    }
+
+    const btnUndo = document.getElementById('btn-undo');
+    if (btnUndo) {
+        btnUndo.addEventListener('click', () => {
+            undo();
+        });
+    }
+
+    const btnRedo = document.getElementById('btn-redo');
+    if (btnRedo) {
+        btnRedo.addEventListener('click', () => {
+            redo();
+        });
+    }
+
     document.querySelectorAll('.toolbar-select').forEach(sel => {
         sel.addEventListener('change', (e) => {
             mode = e.target.value;
             wireStart = null;
+            placementRotation = 0;
 
             // Reset other select dropdowns
             document.querySelectorAll('.toolbar-select').forEach(other => {
@@ -2727,7 +3259,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 components: components.map(c => ({
                     type: c.type, name: c.name,
                     x: c.x, y: c.y,
-                    params: c.params || {}, rotation: 0
+                    params: c.params || {}, rotation: c.rotation || 0
                 })),
                 wires: wires.map(w => [
                     { x: w[0].x, y: w[0].y },
@@ -2993,7 +3525,7 @@ document.addEventListener("DOMContentLoaded", () => {
             components: components.map(c => ({
                 type: c.type, name: c.name,
                 x: c.x, y: c.y,
-                params: c.params || {}, rotation: 0
+                params: c.params || {}, rotation: c.rotation || 0
             })),
             wires: wires.map(w => [
                 { x: w[0].x, y: w[0].y },
@@ -3096,9 +3628,12 @@ document.addEventListener("DOMContentLoaded", () => {
             for (const c of componentsList) {
                 const db = COMPONENT_DB[c.type];
                 const hb = db ? db.hitbox : { w: 40, h: 40 };
+                const rot = c.rotation || 0;
+                const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
+                const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
                 // Inflate slightly to prevent wires grazing the bounding box
-                const hw = (hb.w / 2) + gSize * 0.5;
-                const hh = (hb.h / 2) + gSize * 0.5;
+                const hw = (w / 2) + gSize * 0.5;
+                const hh = (h / 2) + gSize * 0.5;
                 if (x > c.x - hw && x < c.x + hw && y > c.y - hh && y < c.y + hh) {
                     return true;
                 }
@@ -3417,13 +3952,27 @@ document.addEventListener("DOMContentLoaded", () => {
         aiPreview.components.forEach(comp => {
             const box = comp.box;
             if (!box || box.length < 4) return;
-            aiCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+            
+            const isHovered = aiEditor.hoveredComp && aiEditor.hoveredComp.name === comp.name;
+            
+            if (isHovered) {
+                aiCtx.strokeStyle = '#10B981'; // vibrant green highlight
+                aiCtx.fillStyle = 'rgba(16, 185, 129, 0.15)'; // light green fill
+                aiCtx.fillRect(box[0], box[1], box[2], box[3]);
+            } else {
+                aiCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+            }
+            
             aiCtx.strokeRect(box[0], box[1], box[2], box[3]);
-            // Component label
+            
+            // Component label & value
             const fontSize = Math.max(11, 14 / aiEditor.zoom);
             aiCtx.font = `bold ${fontSize}px Inter, sans-serif`;
-            aiCtx.fillStyle = 'rgba(255,255,255,0.85)';
-            aiCtx.fillText(comp.name || comp.type, box[0] + 3, box[1] - 5);
+            aiCtx.fillStyle = isHovered ? '#10B981' : 'rgba(255,255,255,0.85)';
+            
+            const labelText = comp.name || comp.type;
+            const valueText = comp.value ? ` (${comp.value})` : '';
+            aiCtx.fillText(labelText + valueText, box[0] + 3, box[1] - 5);
         });
 
         // 3) Draw connection lines
@@ -3620,6 +4169,8 @@ document.addEventListener("DOMContentLoaded", () => {
         aiEditor.pendingPin = null;
         aiEditor.hoveredPin = null;
         aiEditor.hoveredConnIdx = null;
+        aiEditor.hoveredComp = null;
+        if (aiCanvas) aiCanvas.style.cursor = '';
 
         // Update button states
         document.querySelectorAll('.ai-debug-tool').forEach(btn => btn.classList.remove('active'));
@@ -3771,6 +4322,27 @@ document.addEventListener("DOMContentLoaded", () => {
         aiEditor.mouseY = sy;
         const img = aiScreenToImage(sx, sy);
 
+        if (!aiEditor.isMouseDown) {
+            if (aiEditor.tool === 'select') {
+                const hoveredComp = aiPreview.components.find(comp => {
+                    const box = comp.box;
+                    if (!box || box.length < 4) return false;
+                    return img.x >= box[0] && img.x <= box[0] + box[2] &&
+                           img.y >= box[1] && img.y <= box[1] + box[3];
+                });
+                if (hoveredComp) {
+                    aiCanvas.style.cursor = 'pointer';
+                    aiEditor.hoveredComp = hoveredComp;
+                } else {
+                    aiCanvas.style.cursor = '';
+                    aiEditor.hoveredComp = null;
+                }
+            } else {
+                aiCanvas.style.cursor = '';
+                aiEditor.hoveredComp = null;
+            }
+        }
+
         if (aiEditor.isMouseDown) {
             const dx = e.clientX - aiEditor.dragStart.x;
             const dy = e.clientY - aiEditor.dragStart.y;
@@ -3849,7 +4421,25 @@ document.addEventListener("DOMContentLoaded", () => {
         aiCanvasWrap.classList.remove('dragging');
 
         if (e.button === 0 && !wasDragging && !wasDraggingJunc && aiEditor.dragDistance < 5) {
-            if (aiEditor.tool === 'junction') {
+            if (aiEditor.tool === 'select') {
+                const clickedComp = aiPreview.components.find(comp => {
+                    const box = comp.box;
+                    if (!box || box.length < 4) return false;
+                    return img.x >= box[0] && img.x <= box[0] + box[2] &&
+                           img.y >= box[1] && img.y <= box[1] + box[3];
+                });
+                if (clickedComp) {
+                    const oldValue = clickedComp.value === "TEXT_FOUND" ? "" : (clickedComp.value || "");
+                    const newValue = prompt(`Edit value for component ${clickedComp.name} (${clickedComp.type}):`, oldValue);
+                    if (newValue !== null) {
+                        clickedComp.value = newValue;
+                        aiInfoEl.textContent = `✍️ Updated ${clickedComp.name} value to ${newValue}`;
+                        aiInfoEl.style.color = '#10B981';
+                        renderAiPreview();
+                    }
+                    return;
+                }
+            } else if (aiEditor.tool === 'junction') {
                 const juncId = aiJunctionCounter++;
                 const juncCompIdx = -1; // virtual junction component
                 const juncPinId = juncId;
@@ -3883,6 +4473,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         aiEditor.hoveredPin = null;
         aiEditor.hoveredConnIdx = null;
+        aiEditor.hoveredComp = null;
+        aiCanvas.style.cursor = '';
         renderAiPreview();
     });
 
@@ -3935,6 +4527,8 @@ document.addEventListener("DOMContentLoaded", () => {
         aiEditor.pendingPin = null;
         aiEditor.hoveredPin = null;
         aiEditor.hoveredConnIdx = null;
+        aiEditor.hoveredComp = null;
+        aiCanvas.style.cursor = '';
         aiEditor.isDragging = false;
 
         // Load original image from debug_image or uploaded file
@@ -3994,6 +4588,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnImport.parentNode.replaceChild(newBtnImport, btnImport);
 
                 newBtnImport.addEventListener("click", () => {
+                    saveState();
                     modal.style.display = "none";
 
                     // Use the EDITED connections from the preview editor
@@ -4045,7 +4640,8 @@ document.addEventListener("DOMContentLoaded", () => {
                                 x: snap(c.center[0] * SCALE_FACTOR),
                                 y: snap(c.center[1] * SCALE_FACTOR),
                                 params,
-                                nodes: c.nodes || []
+                                nodes: c.nodes || [],
+                                rotation: c.rotation || 0
                             };
                         });
 
@@ -4106,14 +4702,15 @@ document.addEventListener("DOMContentLoaded", () => {
                             const p2 = getPinCoords(conn.pin2);
 
                             if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
+                                const comp1 = components[compIdxMap[conn.pin1.comp_idx]];
+                                const comp2 = components[compIdxMap[conn.pin2.comp_idx]];
+                                const exclude = [comp1, comp2].filter(Boolean);
+
                                 if (p1.x === p2.x || p1.y === p2.y) {
-                                    wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                                    const routed = routeAroundComponent(p1, p2, components, exclude);
+                                    routed.forEach(rSeg => wires.push(rSeg));
                                 } else {
                                     // Collision-aware L-shaped routing
-                                    const comp1 = components[compIdxMap[conn.pin1.comp_idx]];
-                                    const comp2 = components[compIdxMap[conn.pin2.comp_idx]];
-                                    const exclude = [comp1, comp2].filter(Boolean);
-                                    
                                     const mid1 = { x: p2.x, y: p1.y };
                                     const mid2 = { x: p1.x, y: p2.y };
                                     
@@ -4122,15 +4719,27 @@ document.addEventListener("DOMContentLoaded", () => {
                                     const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
                                                   doesSegmentIntersectComponent(mid2, p2, components, exclude);
                                     
+                                    let chosenSegments = [];
                                     if (coll1 && !coll2) {
                                         // Option 1 (H-then-V) collides, but Option 2 (V-then-H) is clean. Choose V-then-H
-                                        wires.push([{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }]);
-                                        wires.push([{ x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }]);
+                                        chosenSegments = [
+                                            [p1, { x: p1.x, y: p2.y }],
+                                            [{ x: p1.x, y: p2.y }, p2]
+                                        ];
                                     } else {
                                         // Default to Option 1
-                                        wires.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }]);
-                                        wires.push([{ x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+                                        chosenSegments = [
+                                            [p1, { x: p2.x, y: p1.y }],
+                                            [{ x: p2.x, y: p1.y }, p2]
+                                        ];
                                     }
+
+                                    chosenSegments.forEach(seg => {
+                                        if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
+                                            const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                                            routed.forEach(rSeg => wires.push(rSeg));
+                                        }
+                                    });
                                 }
                             }
                         });
