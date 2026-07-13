@@ -43,9 +43,6 @@ async function checkBackendConnection() {
 document.addEventListener('DOMContentLoaded', () => {
     checkBackendConnection();
     
-    // Periodically check connection every 10 seconds
-    setInterval(checkBackendConnection, 10000);
-    
     // Let user click to force check
     const badge = document.getElementById('backendConnection');
     if (badge) {
