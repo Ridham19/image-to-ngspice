@@ -4,15 +4,61 @@
 
 /* --- RESET & BASE --- */
 :root {
-    --bg-base: #0a0b10;
-    --glass-bg: rgba(20, 25, 35, 0.7);
+    --bg-base: #0f172a; /* slate-900 */
+    --bg-surface: #1e293b; /* slate-800 */
+    --glass-bg: rgba(15, 23, 42, 0.85);
     --glass-border: rgba(255, 255, 255, 0.08);
-    --accent-cyan: #00E5FF;
-    --accent-purple: #8A2BE2;
-    --text-primary: #F8FAFC;
-    --text-secondary: #94A3B8;
-    --danger: #EF4444;
-    --success: #10B981;
+    --accent-cyan: #38bdf8; /* sky-400 */
+    --accent-purple: #8b5cf6; /* violet-500 */
+    --accent-purple-hover: #7c3aed; /* violet-600 */
+    --text-primary: #f8fafc; /* slate-50 */
+    --text-secondary: #94a3b8; /* slate-400 */
+    --text-code: #38bdf8;
+    --bg-code: rgba(15, 23, 42, 0.6);
+    --select-option-bg: #0f172a;
+    --danger: #f87171;
+    --success: #10b981; /* emerald-500 */
+    --success-hover: #059669; /* emerald-600 */
+    --modal-bg: linear-gradient(145deg, rgba(22, 27, 40, 0.95), rgba(14, 17, 26, 0.98));
+    --modal-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 40px rgba(0, 229, 255, 0.05);
+
+    /* Canvas specific colors */
+    --canvas-bg: #0b0f19;
+    --grid-color: rgba(255, 255, 255, 0.08);
+    --wire-color: #4fc1ff;
+    --wire-selected: #38bdf8;
+    --component-color: #cbd5e1;
+    --label-color: #94a3b8;
+    --value-color: #f97316;
+}
+
+[data-theme="light"] {
+    --bg-base: #f8fafc; /* slate-50 */
+    --bg-surface: #ffffff;
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(15, 23, 42, 0.08);
+    --accent-cyan: #0284c7; /* sky-600 */
+    --accent-purple: #7c3aed; /* violet-600 */
+    --accent-purple-hover: #6d28d9; /* violet-700 */
+    --text-primary: #0f172a; /* slate-900 */
+    --text-secondary: #475569; /* slate-600 */
+    --text-code: #0284c7;
+    --bg-code: rgba(241, 245, 249, 0.8); /* slate-100 */
+    --select-option-bg: #ffffff;
+    --danger: #dc2626;
+    --success: #16a34a; /* emerald-600 */
+    --success-hover: #15803d; /* emerald-700 */
+    --modal-bg: #ffffff;
+    --modal-shadow: 0 24px 80px rgba(0, 0, 0, 0.08), 0 0 40px rgba(0, 0, 0, 0.02);
+
+    /* Canvas specific colors */
+    --canvas-bg: #f8fafc;
+    --grid-color: rgba(15, 23, 42, 0.08);
+    --wire-color: #334155;
+    --wire-selected: #0284c7;
+    --component-color: #1e293b;
+    --label-color: #475569;
+    --value-color: #ea580c;
 }
 
 body, html {
@@ -34,7 +80,10 @@ body, html {
     padding: 0 24px;
     z-index: 20;
     position: relative;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25);
+}
+[data-theme="light"] .toolbar {
+    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.03);
 }
 .toolbar-group { display: flex; align-items: center; gap: 8px; }
 .status-text { color: var(--text-secondary); font-size: 13px; margin-left: 12px; font-weight: 500; }
@@ -51,24 +100,24 @@ button {
     letter-spacing: 0.3px;
 }
 .btn-primary { 
-    background: linear-gradient(135deg, var(--accent-purple), #4B0082); 
+    background: var(--accent-purple); 
     color: white; 
-    box-shadow: 0 4px 15px rgba(138, 43, 226, 0.3);
+    box-shadow: 0 2px 8px rgba(124, 58, 237, 0.2);
 }
 .btn-primary:hover { 
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(138, 43, 226, 0.5);
+    background: var(--accent-purple-hover);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
 }
 .btn-primary:active { transform: translateY(0); }
 
 .btn-success { 
-    background: linear-gradient(135deg, var(--success), #059669); 
+    background: var(--success); 
     color: white; 
-    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
 }
 .btn-success:hover { 
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
+    background: var(--success-hover);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
 }
 .btn-success:active { transform: translateY(0); }
 
@@ -223,7 +272,7 @@ canvas {
     background-image: url("data:image/svg+xml;utf8,<svg fill='%2300E5FF' height='10' viewBox='0 0 24 24' width='10' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
 }
 .toolbar-select option {
-    background-color: #0f111a;
+    background-color: var(--select-option-bg);
     color: var(--text-primary);
 }
 
@@ -325,8 +374,8 @@ canvas {
 
 .netlist-code {
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 12px; color: #9CDCFE;
-    background-color: rgba(0, 0, 0, 0.4);
+    font-size: 12px; color: var(--text-code);
+    background-color: var(--bg-code);
     padding: 16px; border-radius: 8px;
     margin: 0; white-space: pre-wrap; word-break: break-all;
     border: 1px solid var(--glass-border);
@@ -344,8 +393,8 @@ canvas {
 
 .sim-output pre {
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 12px; color: #DCDCAA;
-    background-color: rgba(0, 0, 0, 0.4);
+    font-size: 12px; color: var(--text-secondary);
+    background-color: var(--bg-code);
     padding: 16px; border-radius: 8px;
     margin: 0; white-space: pre-wrap;
     border: 1px solid var(--glass-border);
@@ -396,10 +445,10 @@ canvas {
 /* Container */
 .modal-container {
     width: 680px; max-height: 85vh;
-    background: linear-gradient(145deg, rgba(22, 27, 40, 0.95), rgba(14, 17, 26, 0.98));
+    background: var(--modal-bg);
     border: 1px solid var(--glass-border);
     border-radius: 16px;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 40px rgba(0, 229, 255, 0.05);
+    box-shadow: var(--modal-shadow);
     display: flex; flex-direction: column;
     overflow: hidden;
     animation: modalSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -493,7 +542,7 @@ canvas {
 .modal-select-sm { max-width: 110px; flex: 0 0 auto; }
 
 .modal-select option {
-    background: #1a1e2e; color: var(--text-primary);
+    background: var(--bg-surface); color: var(--text-primary);
 }
 
 /* Section Title */
@@ -510,7 +559,7 @@ canvas {
 .modal-params-area {
     margin-top: 8px;
     padding: 16px;
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--bg-code);
     border: 1px solid var(--glass-border);
     border-radius: 10px;
     min-height: 50px;
@@ -723,7 +772,7 @@ canvas {
     flex: 1;
     overflow: hidden;
     position: relative;
-    background: #080a10;
+    background: var(--bg-base);
     border-top: 1px solid var(--glass-border);
     border-bottom: 1px solid var(--glass-border);
     min-height: 0; /* allow flex shrink */
@@ -769,4 +818,92 @@ canvas {
 }
 .ai-debug-stats .stat-icon {
     font-size: 12px;
+}
+
+/* --- BACKEND CONNECTION INDICATOR --- */
+.connection-badge {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    padding: 6px 12px;
+    border-radius: 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+}
+
+.connection-badge:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    color: var(--text-primary);
+}
+
+.connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.3s;
+}
+
+.connection-dot::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    opacity: 0.4;
+    transition: all 0.3s;
+}
+
+/* Status States */
+.connection-badge.status-checking .connection-dot {
+    background-color: var(--accent-cyan);
+    box-shadow: 0 0 8px var(--accent-cyan);
+}
+.connection-badge.status-checking .connection-dot::after {
+    border: 2px solid var(--accent-cyan);
+    animation: status-pulse 1.5s infinite ease-in-out;
+}
+
+.connection-badge.status-online .connection-dot {
+    background-color: var(--success);
+    box-shadow: 0 0 8px var(--success);
+}
+.connection-badge.status-online .connection-dot::after {
+    border: 2px solid var(--success);
+    animation: status-pulse 2s infinite ease-in-out;
+}
+
+.connection-badge.status-offline .connection-dot {
+    background-color: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+}
+.connection-badge.status-offline .connection-dot::after {
+    border: 2px solid var(--danger);
+    animation: status-pulse 1s infinite ease-in-out;
+}
+
+@keyframes status-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(2.2);
+        opacity: 0;
+    }
 }

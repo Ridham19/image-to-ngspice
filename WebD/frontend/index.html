@@ -18,20 +18,20 @@
 
     <div class="toolbar">
         <div class="toolbar-group">
-            <button id="btnLoadImage" class="btn-primary">Import AI</button>
+            <button id="btnLoadImage" class="btn-primary">Import Image</button>
             <span id="statusText" class="status-text">Ready.</span>
         </div>
         
         <div class="toolbar-group tools">
-            <button id="tool-select" class="btn-tool active">🖱️ Select</button>
-            <button id="tool-wire" class="btn-tool">🔌 Wire</button>
-            <button id="btn-reroute" class="btn-action" title="Reroute all wires on canvas">🔁 Reroute</button>
-            <button id="btn-undo" class="btn-action" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
-            <button id="btn-redo" class="btn-action" title="Redo (Ctrl+Y)" disabled>↪️ Redo</button>
+            <button id="tool-select" class="btn-tool active">Select</button>
+            <button id="tool-wire" class="btn-tool">Wire</button>
+            <button id="btn-reroute" class="btn-action" title="Reroute all wires on canvas">Reroute</button>
+            <button id="btn-undo" class="btn-action" title="Undo (Ctrl+Z)" disabled>Undo</button>
+            <button id="btn-redo" class="btn-action" title="Redo (Ctrl+Y)" disabled>Redo</button>
             <span class="tool-separator"></span>
             
             <select id="tool-passives-select" class="toolbar-select">
-                <option value="" disabled selected>📦 Passives ▼</option>
+                <option value="" disabled selected>Passives ▼</option>
                 <option value="resistor">Resistor</option>
                 <option value="capacitor">Capacitor</option>
                 <option value="capacitor_polarized">Polarized Cap</option>
@@ -39,7 +39,7 @@
             </select>
             
             <select id="tool-semis-select" class="toolbar-select">
-                <option value="" disabled selected>🧩 Semiconductors ▼</option>
+                <option value="" disabled selected>Semiconductors ▼</option>
                 <option value="diode">Diode</option>
                 <option value="diode_zener">Zener Diode</option>
                 <option value="diode_led">LED</option>
@@ -49,7 +49,7 @@
             </select>
             
             <select id="tool-source-select" class="toolbar-select">
-                <option value="" disabled selected>⚡ Sources ▼</option>
+                <option value="" disabled selected>Sources ▼</option>
                 <option value="source">DC Source</option>
                 <option value="ac_source">AC Source</option>
                 <option value="vss">VSS Supply</option>
@@ -62,22 +62,23 @@
             </select>
             
             <select id="tool-advanced-select" class="toolbar-select">
-                <option value="" disabled selected>⚙️ Advanced ▼</option>
+                <option value="" disabled selected>Advanced ▼</option>
                 <option value="opamp">Op-Amp</option>
                 <option value="transformer">Transformer</option>
                 <option value="ic">Integrated Circuit</option>
             </select>
             
             <select id="tool-terminals-select" class="toolbar-select">
-                <option value="" disabled selected>🚩 Terminals ▼</option>
+                <option value="" disabled selected>Terminals ▼</option>
                 <option value="ground">Ground (GND)</option>
                 <option value="label">Node Label</option>
             </select>
         </div>
 
         <div class="toolbar-group">
-            <button id="btnSimSetup" class="btn-sim-setup" title="Simulation Setup">⚙️ Setup</button>
-            <button id="btnSimulate" class="btn-success">▶ RUN</button>
+            <button id="btnThemeToggle" class="btn-action" title="Toggle Light/Dark Theme">Theme</button>
+            <button id="btnSimSetup" class="btn-sim-setup" title="Simulation Setup">Setup</button>
+            <button id="btnSimulate" class="btn-success">Run</button>
         </div>
     </div>
 
@@ -85,6 +86,12 @@
         <div class="canvas-container" id="canvasWrapper">
             <div class="grid-background"></div>
             <canvas id="circuitCanvas"></canvas>
+            
+            <!-- Connection Indicator Badge -->
+            <div id="backendConnection" class="connection-badge status-checking" title="Click to test connection">
+                <span class="connection-dot"></span>
+                <span class="connection-text">Backend: Checking</span>
+            </div>
         </div>
 
         <div class="sidebar">
@@ -237,6 +244,7 @@
         </div>
     </div>
 
+    <script src="js/connection.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>
