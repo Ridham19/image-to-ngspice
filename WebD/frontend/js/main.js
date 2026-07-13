@@ -199,23 +199,23 @@ document.addEventListener("DOMContentLoaded", () => {
             hitbox: { w: 60, h: 80 }
         },
         opamp: {
-            prefix: 'U', label: 'Op-Amp',
-            params: {},
-            spice: '',
+            prefix: 'X', label: 'Op-Amp',
+            params: { model: 'LM741', vs_pos: '15', vs_neg: '-15' },
+            spice: '',  // handled server-side via subcircuit instantiation
             pins: [[-30, -20], [-30, 20], [30, 0]],  // V+, V−, Out
             hitbox: { w: 70, h: 60 }
         },
         ic: {
-            prefix: 'U', label: 'IC',
-            params: {},
-            spice: '',
+            prefix: 'X', label: 'IC',
+            params: { subckt_name: 'MyIC', num_pins: '2', custom_subckt: '' },
+            spice: '',  // handled server-side via X-prefix subcircuit instantiation
             pins: [[-40, 0], [40, 0]],
             hitbox: { w: 80, h: 50 }
         },
         transformer: {
             prefix: 'T', label: 'Transformer',
-            params: {},
-            spice: '',
+            params: { value: '1m', coupling: '0.99' },
+            spice: '',  // handled server-side as coupled inductors + K line
             pins: [[-40, -20], [-40, 20], [40, -20], [40, 20]],
             hitbox: { w: 80, h: 60 }
         },
@@ -262,6 +262,31 @@ document.addEventListener("DOMContentLoaded", () => {
     let undoStack = [];
     let redoStack = [];
     let hasSavedStateForThisDrag = false;
+
+    let currentThemeColors = {
+        canvasBg: "#090d16",
+        gridColor: "rgba(255, 255, 255, 0.08)",
+        wireColor: "#4fc1ff",
+        wireSelected: "#38bdf8",
+        componentColor: "#cbd5e1",
+        labelColor: "#94a3b8",
+        valueColor: "#f97316"
+    };
+
+    // Initialize Theme
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    document.documentElement.setAttribute("data-theme", savedTheme);
+
+    const themeBtn = document.getElementById("btnThemeToggle");
+    if (themeBtn) {
+        themeBtn.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            const newTheme = currentTheme === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", newTheme);
+            localStorage.setItem("theme", newTheme);
+            render();
+        });
+    }
 
     function saveState() {
         const state = {
@@ -361,6 +386,10 @@ document.addEventListener("DOMContentLoaded", () => {
     let wireStart = null;
     let mousePos = { x: 0, y: 0 };
     let attachedWireEndpoints = []; // Attached rubber-banding endpoints
+    // Pre-existing collision pairs captured at drag-start so that overlapping
+    // components can be selected and moved OUT of a collision (not blocked by it).
+    let preExistingOverlapPairs = []; // Array of [compA, compB] already overlapping before drag
+    let preExistingWireOverlaps = []; // Array of [comp, wire] already overlapping before drag
 
     // Selection box state
     let selectionStart = null;
@@ -571,6 +600,128 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         return false;
     }
+
+    function componentsOverlap(c1, c2) {
+        const db1 = COMPONENT_DB[c1.type];
+        const hb1 = db1 ? db1.hitbox : { w: 40, h: 40 };
+        const rot1 = c1.rotation || 0;
+        const w1 = (rot1 === 90 || rot1 === 270) ? hb1.h : hb1.w;
+        const h1 = (rot1 === 90 || rot1 === 270) ? hb1.w : hb1.h;
+
+        const db2 = COMPONENT_DB[c2.type];
+        const hb2 = db2 ? db2.hitbox : { w: 40, h: 40 };
+        const rot2 = c2.rotation || 0;
+        const w2 = (rot2 === 90 || rot2 === 270) ? hb2.h : hb2.w;
+        const h2 = (rot2 === 90 || rot2 === 270) ? hb2.w : hb2.h;
+
+        const rect1 = {
+            left: c1.x - w1 / 2,
+            right: c1.x + w1 / 2,
+            top: c1.y - h1 / 2,
+            bottom: c1.y + h1 / 2
+        };
+
+        const rect2 = {
+            left: c2.x - w2 / 2,
+            right: c2.x + w2 / 2,
+            top: c2.y - h2 / 2,
+            bottom: c2.y + h2 / 2
+        };
+
+        return !(rect1.right <= rect2.left ||
+                 rect1.left >= rect2.right ||
+                 rect1.bottom <= rect2.top ||
+                 rect1.top >= rect2.bottom);
+    }
+
+    function isOverlappingAny(comp, allComponents, excludeList = []) {
+        for (const c of allComponents) {
+            if (c === comp || excludeList.includes(c)) continue;
+            if (componentsOverlap(comp, c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isWireSegmentGoingInwards(c, pinPos, Q) {
+        const db = COMPONENT_DB[c.type];
+        if (!db || !db.pins) return false;
+        
+        const rot = c.rotation || 0;
+        let matchedPinIdx = -1;
+        
+        const pins = getCompPins(c);
+        for (let i = 0; i < pins.length; i++) {
+            if (Math.abs(pins[i].x - pinPos.x) < 1 && Math.abs(pins[i].y - pinPos.y) < 1) {
+                matchedPinIdx = i;
+                break;
+            }
+        }
+        if (matchedPinIdx === -1) return false;
+        
+        const localPin = db.pins[matchedPinIdx];
+        const rx = localPin[0];
+        const ry = localPin[1];
+        
+        let rotRx = rx;
+        let rotRy = ry;
+        if (rot === 90) {
+            rotRx = -ry;
+            rotRy = rx;
+        } else if (rot === 180) {
+            rotRx = -rx;
+            rotRy = -ry;
+        } else if (rot === 270) {
+            rotRx = ry;
+            rotRy = -rx;
+        }
+        
+        const isHorizontal = Math.abs(pinPos.y - Q.y) < 1;
+        const isVertical = Math.abs(pinPos.x - Q.x) < 1;
+        
+        if (isHorizontal) {
+            if (rotRx > 0 && Q.x < pinPos.x) return true;
+            if (rotRx < 0 && Q.x > pinPos.x) return true;
+        }
+        if (isVertical) {
+            if (rotRy > 0 && Q.y < pinPos.y) return true;
+            if (rotRy < 0 && Q.y > pinPos.y) return true;
+        }
+        return false;
+    }
+
+    function doesCompOverlapAnyWire(comp, allWires) {
+        // Labels, junctions, and crossovers are intentionally placed ON wires —
+        // they must never be blocked by the wire-overlap guard.
+        const WIRE_TRANSPARENT = new Set(['label', 'junction', 'crossover', 'terminal']);
+        if (WIRE_TRANSPARENT.has(comp.type)) return false;
+
+        const pins = getCompPins(comp);
+        for (const wire of allWires) {
+            if (wire.length < 2) continue;
+            const p1 = wire[0];
+            const p2 = wire[1];
+            
+            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
+            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
+            
+            if (hasP1) {
+                if (isWireSegmentGoingInwards(comp, p1, p2)) return true;
+                continue;
+            }
+            if (hasP2) {
+                if (isWireSegmentGoingInwards(comp, p2, p1)) return true;
+                continue;
+            }
+            
+            if (doesSegmentIntersectComponent(p1, p2, [comp])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     // Route a straight horizontal or vertical segment around any component it intersects
     function routeAroundComponent(pA, pB, allComponents, excludeComps = []) {
@@ -924,6 +1075,26 @@ document.addEventListener("DOMContentLoaded", () => {
                     isDragging = true;
                     dragStart = { x: worldPos.x, y: worldPos.y };
 
+                    // Snapshot pre-existing overlaps so the user can drag
+                    // overlapping components OUT of a collision freely.
+                    preExistingOverlapPairs = [];
+                    preExistingWireOverlaps = [];
+                    selectedComponents.forEach(sel => {
+                        // Component-component pre-existing pairs
+                        components.forEach(other => {
+                            if (other === sel || selectedComponents.includes(other)) return;
+                            if (componentsOverlap(sel, other)) {
+                                preExistingOverlapPairs.push([sel, other]);
+                            }
+                        });
+                        // Component-wire pre-existing pairs
+                        wires.forEach(wire => {
+                            if (doesCompOverlapAnyWire(sel, [wire])) {
+                                preExistingWireOverlaps.push([sel, wire]);
+                            }
+                        });
+                    });
+
                     // Populate attached rubber-banding wire endpoints for all selected components
                     attachedWireEndpoints = [];
                     selectedComponents.forEach(comp => {
@@ -1048,12 +1219,41 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                         
                         // Route each chosen segment around any obstacle
+                        let tempSegments = [];
+                        let intersectsComponent = false;
                         chosenSegments.forEach(seg => {
                             if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
                                 const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
-                                routed.forEach(rSeg => wires.push(rSeg));
+                                routed.forEach(rSeg => {
+                                    if (doesSegmentIntersectComponent(rSeg[0], rSeg[1], components, exclude)) {
+                                        intersectsComponent = true;
+                                    }
+                                    components.forEach(c => {
+                                        const pins = getCompPins(c);
+                                        const connectsP1 = pins.some(p => Math.abs(p.x - rSeg[0].x) < 1 && Math.abs(p.y - rSeg[0].y) < 1);
+                                        const connectsP2 = pins.some(p => Math.abs(p.x - rSeg[1].x) < 1 && Math.abs(p.y - rSeg[1].y) < 1);
+                                        if (connectsP1 && isWireSegmentGoingInwards(c, rSeg[0], rSeg[1])) {
+                                            intersectsComponent = true;
+                                        }
+                                        if (connectsP2 && isWireSegmentGoingInwards(c, rSeg[1], rSeg[0])) {
+                                            intersectsComponent = true;
+                                        }
+                                    });
+                                    tempSegments.push(rSeg);
+                                });
                             }
                         });
+
+                        if (intersectsComponent) {
+                            if (undoStack.length > 0) {
+                                undoStack.pop();
+                                updateUndoRedoButtons();
+                            }
+                            document.getElementById("statusText").innerText = "⚠️ Cannot route wire: Blocked by a component.";
+                            return;
+                        }
+
+                        tempSegments.forEach(rSeg => wires.push(rSeg));
                     }
                     // If we landed on a pin, auto-terminate the wire
                     if (landedOnPin) {
@@ -1066,10 +1266,14 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             else {
                 // Place a new component (always grid-snap)
-                saveState();
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
                 const comp = createComponent(mode, worldPos.x, worldPos.y);
                 comp.rotation = placementRotation || 0;
+                if (isOverlappingAny(comp, components) || doesCompOverlapAnyWire(comp, wires)) {
+                    document.getElementById("statusText").innerText = "⚠️ Cannot place component: Overlaps another component or wire.";
+                    return;
+                }
+                saveState();
                 components.push(comp);
                 selectedComponents = [comp];
                 selectedComp = comp;
@@ -1336,6 +1540,65 @@ document.addEventListener("DOMContentLoaded", () => {
             // Filter out any zero-length segments that might have resulted from movement/snapping
             wires = wires.filter(w => !(Math.abs(w[0].x - w[1].x) < 1 && Math.abs(w[0].y - w[1].y) < 1));
 
+            // Verify no NEW overlaps were introduced by this drag.
+            // Pre-existing overlaps (captured at drag-start) are exempt — the user
+            // should always be able to drag overlapping components to resolve them.
+            let overlapDetected = false;
+            for (const sel of selectedComponents) {
+                // Check for NEW component-component collisions
+                for (const other of components) {
+                    if (other === sel || selectedComponents.includes(other)) continue;
+                    if (componentsOverlap(sel, other)) {
+                        // Is this pair pre-existing?
+                        const wasPreExisting = preExistingOverlapPairs.some(
+                            ([a, b]) => (a === sel && b === other) || (a === other && b === sel)
+                        );
+                        if (!wasPreExisting) {
+                            overlapDetected = true;
+                            break;
+                        }
+                    }
+                }
+                if (overlapDetected) break;
+
+                // Check for NEW component-wire collisions (only for moved/selected comps)
+                for (const wire of wires) {
+                    if (doesCompOverlapAnyWire(sel, [wire])) {
+                        const wasPreExisting = preExistingWireOverlaps.some(
+                            ([c, w]) => c === sel && w === wire
+                        );
+                        if (!wasPreExisting) {
+                            overlapDetected = true;
+                            break;
+                        }
+                    }
+                }
+                if (overlapDetected) break;
+            }
+
+            if (overlapDetected) {
+                // Only rollback if we actually saved a state at the start of this drag.
+                // Without this guard, a plain click on an already-overlapping component
+                // would blindly pop a previous valid state (e.g. the just-imported circuit)
+                // and make the canvas appear empty with no way to undo.
+                if (hasSavedStateForThisDrag && undoStack.length > 0) {
+                    const cleanState = undoStack.pop();
+                    components = cleanState.components;
+                    wires = cleanState.wires;
+                    updateUndoRedoButtons();
+                }
+                document.getElementById("statusText").innerText = "⚠️ Drag cancelled: Overlaps another component or wire.";
+                selectedComponents = [];
+                selectedComp = null;
+                selectedWires = [];
+                selectedWirePts = [];
+                isDragging = false;
+                hasSavedStateForThisDrag = false;
+                updatePropertiesPanel();
+                render();
+                return;
+            }
+
             attachedWireEndpoints = [];
 
             updatePropertiesPanel();
@@ -1344,6 +1607,8 @@ document.addEventListener("DOMContentLoaded", () => {
         isSelectingBox = false;
         isDragging = false;
         hasSavedStateForThisDrag = false;
+        preExistingOverlapPairs = [];
+        preExistingWireOverlaps = [];
     });
 
     // 5. Right Click (Cancel)
@@ -1396,6 +1661,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             if (selectedComponents.length > 0) {
+                let overlapDetected = false;
+                selectedComponents.forEach(c => {
+                    const tempComp = { ...c, rotation: ((c.rotation || 0) + 90) % 360 };
+                    if (isOverlappingAny(tempComp, components, selectedComponents) || doesCompOverlapAnyWire(tempComp, wires)) {
+                        overlapDetected = true;
+                    }
+                });
+                if (overlapDetected) {
+                    document.getElementById("statusText").innerText = "⚠️ Cannot rotate: Overlaps another component or wire.";
+                    return;
+                }
+
                 saveState();
                 selectedComponents.forEach(c => {
                     c.rotation = ((c.rotation || 0) + 90) % 360;
@@ -1906,7 +2183,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // SFFM Label inside
-        ctx.fillStyle = "#E0E0E0";
+        ctx.fillStyle = currentThemeColors.labelColor || "#E0E0E0";
         ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -1933,7 +2210,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // AM Label inside
-        ctx.fillStyle = "#E0E0E0";
+        ctx.fillStyle = currentThemeColors.labelColor || "#E0E0E0";
         ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -2076,7 +2353,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // V- label inside
-        ctx.fillStyle = "#E0E0E0";
+        ctx.fillStyle = currentThemeColors.labelColor || "#E0E0E0";
         ctx.font = `bold ${11 * z}px 'Segoe UI', Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -2120,7 +2397,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // Plus sign near positive plate
-        ctx.fillStyle = "#FF9800";
+        ctx.fillStyle = currentThemeColors.valueColor || "#FF9800";
         ctx.font = `bold ${10 * z}px 'Segoe UI', Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
@@ -2367,7 +2644,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
 
         // + sign at non-inverting input
-        ctx.fillStyle = "#4FC1FF";
+        ctx.fillStyle = currentThemeColors.wireSelected || "#4FC1FF";
         ctx.font = `bold ${12 * z}px 'Segoe UI', Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -2381,40 +2658,76 @@ document.addEventListener("DOMContentLoaded", () => {
         drawPinDot(ctx, sx + 30 * z, sy, z);
     }
 
-    function drawIC(ctx, sx, sy, z) {
-        const w = 60 * z;
-        const h = 36 * z;
+    function drawIC(ctx, sx, sy, z, comp) {
+        const params    = (comp && comp.params) ? comp.params : {};
+        const subcktName = params.subckt_name || 'IC';
+        const numPins   = Math.max(2, parseInt(params.num_pins, 10) || 2);
 
-        // Rectangle body
-        ctx.strokeRect(sx - w / 2, sy - h / 2, w, h);
+        // DIP layout: split pins between left and right sides
+        const leftCount  = Math.ceil(numPins / 2);
+        const rightCount = Math.floor(numPins / 2);
+        const vStep      = 20 * z;                             // one grid cell per pin
+        const bodyH      = (Math.max(leftCount, rightCount) - 1) * vStep + 20 * z;
+        const bodyW      = 60 * z;
+        const leadLen    = 12 * z;  // stub lead from body edge to pin dot
 
-        // IC label
-        ctx.fillStyle = "#E0E0E0";
-        ctx.font = `bold ${11 * z}px 'Segoe UI', Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("IC", sx, sy);
-
-        // Left lead (pin at [-40, 0])
-        ctx.beginPath();
-        ctx.moveTo(sx - 40 * z, sy);
-        ctx.lineTo(sx - w / 2, sy);
-        ctx.stroke();
-
-        // Right lead (pin at [40, 0])
-        ctx.beginPath();
-        ctx.moveTo(sx + w / 2, sy);
-        ctx.lineTo(sx + 40 * z, sy);
-        ctx.stroke();
+        // IC body rectangle
+        ctx.strokeRect(sx - bodyW / 2, sy - bodyH / 2, bodyW, bodyH);
 
         // Notch at top center
         ctx.beginPath();
-        ctx.arc(sx, sy - h / 2, 4 * z, 0, Math.PI);
+        ctx.arc(sx, sy - bodyH / 2, 4 * z, 0, Math.PI);
         ctx.stroke();
 
-        drawPinDot(ctx, sx - 40 * z, sy, z);
-        drawPinDot(ctx, sx + 40 * z, sy, z);
+        // Subcircuit name inside body
+        ctx.fillStyle = currentThemeColors.labelColor || '#94a3b8';
+        ctx.font = `bold ${Math.min(11, 9 + z) * z}px 'Inter', 'Segoe UI', Arial`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(subcktName, sx, sy);
+
+        // Left-side pins (top to bottom)
+        const topY = sy - (leftCount - 1) * vStep / 2;
+        for (let i = 0; i < leftCount; i++) {
+            const py = topY + i * vStep;
+            const px = sx - bodyW / 2;
+
+            ctx.beginPath();
+            ctx.moveTo(px - leadLen, py);
+            ctx.lineTo(px, py);
+            ctx.stroke();
+            drawPinDot(ctx, px - leadLen, py, z);
+
+            // Pin number label
+            ctx.fillStyle = currentThemeColors.valueColor || '#f97316';
+            ctx.font = `${9 * z}px 'Inter', Arial`;
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(i + 1), px + 3 * z, py);
+        }
+
+        // Right-side pins (bottom to top, DIP convention)
+        const rightTopY = sy - (rightCount - 1) * vStep / 2;
+        for (let i = 0; i < rightCount; i++) {
+            const pinNum = numPins - i;  // pin numbers continue from bottom-right
+            const py = rightTopY + (rightCount - 1 - i) * vStep;
+            const px = sx + bodyW / 2;
+
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + leadLen, py);
+            ctx.stroke();
+            drawPinDot(ctx, px + leadLen, py, z);
+
+            // Pin number label
+            ctx.fillStyle = currentThemeColors.valueColor || '#f97316';
+            ctx.font = `${9 * z}px 'Inter', Arial`;
+            ctx.textAlign    = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(pinNum), px - 3 * z, py);
+        }
     }
+
 
     function drawTransformer(ctx, sx, sy, z) {
         // Primary coil (left side) — 3 humps
@@ -2483,7 +2796,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function drawJunction(ctx, sx, sy, z) {
         // Simple filled dot — wire junction marker
-        ctx.fillStyle = "#4FC1FF";
+        ctx.fillStyle = currentThemeColors.wireSelected || "#4FC1FF";
         ctx.beginPath();
         ctx.arc(sx, sy, 4 * z, 0, Math.PI * 2);
         ctx.fill();
@@ -2532,7 +2845,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function drawPinDot(ctx, x, y, z) {
-        ctx.fillStyle = "#4FC1FF";
+        ctx.fillStyle = currentThemeColors.wireColor || "#4FC1FF";
         ctx.beginPath();
         ctx.arc(x, y, 2.5 * z, 0, Math.PI * 2);
         ctx.fill();
@@ -2542,7 +2855,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function drawFallback(ctx, sx, sy, z, type) {
         const size = 30 * z;
         ctx.strokeRect(sx - size / 2, sy - size / 2, size, size);
-        ctx.fillStyle = "#E0E0E0";
+        ctx.fillStyle = currentThemeColors.labelColor || "#E0E0E0";
         ctx.font = `${10 * z}px Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -2553,19 +2866,28 @@ document.addEventListener("DOMContentLoaded", () => {
     // MAIN RENDERING ENGINE
     // ═══════════════════════════════════════════
     function render() {
+        const style = getComputedStyle(document.body);
+        currentThemeColors.canvasBg = style.getPropertyValue('--canvas-bg').trim() || "#090d16";
+        currentThemeColors.gridColor = style.getPropertyValue('--grid-color').trim() || "rgba(255, 255, 255, 0.08)";
+        currentThemeColors.wireColor = style.getPropertyValue('--wire-color').trim() || "#4fc1ff";
+        currentThemeColors.wireSelected = style.getPropertyValue('--wire-selected').trim() || "#38bdf8";
+        currentThemeColors.componentColor = style.getPropertyValue('--component-color').trim() || "#cbd5e1";
+        currentThemeColors.labelColor = style.getPropertyValue('--label-color').trim() || "#94a3b8";
+        currentThemeColors.valueColor = style.getPropertyValue('--value-color').trim() || "#f97316";
+
         // Clear Canvas
-        ctx.fillStyle = "#1E1E1E";
+        ctx.fillStyle = currentThemeColors.canvasBg;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Draw Grid dots
-        ctx.fillStyle = "#444444";
+        ctx.fillStyle = currentThemeColors.gridColor;
         const step = gridSize * zoom;
         if (step > 5) {
             const startX = offsetX % step;
             const startY = offsetY % step;
             for (let x = startX; x < canvas.width; x += step) {
                 for (let y = startY; y < canvas.height; y += step) {
-                    ctx.fillRect(x, y, 1, 1);
+                    ctx.fillRect(x, y, 1.5, 1.5);
                 }
             }
         }
@@ -2578,10 +2900,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             ctx.save();
             if (selectedWires.includes(wire)) {
-                ctx.strokeStyle = "#00E5FF";
+                ctx.strokeStyle = currentThemeColors.wireSelected;
                 ctx.lineWidth = Math.max(2, 3.5 * zoom);
             } else {
-                ctx.strokeStyle = "#4FC1FF";
+                ctx.strokeStyle = currentThemeColors.wireColor;
                 ctx.lineWidth = Math.max(1, 2 * zoom);
             }
 
@@ -2596,9 +2918,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Wire endpoint dots
             if (selectedWires.includes(wire)) {
-                ctx.fillStyle = "#00E5FF";
+                ctx.fillStyle = currentThemeColors.wireSelected;
             } else {
-                ctx.fillStyle = "#4FC1FF";
+                ctx.fillStyle = currentThemeColors.wireColor;
             }
             ctx.beginPath(); ctx.arc(p1.x, p1.y, (selectedWires.includes(wire) ? 4 : 3) * zoom, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(p2.x, p2.y, (selectedWires.includes(wire) ? 4 : 3) * zoom, 0, Math.PI * 2); ctx.fill();
@@ -2613,7 +2935,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (comp.type === 'label') {
                 const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
-                ctx.fillStyle = "#FFC107";
+                ctx.fillStyle = currentThemeColors.valueColor || "#FFC107";
                 ctx.font = `bold ${14 * zoom}px 'Segoe UI', Arial`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "bottom";
@@ -2622,7 +2944,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Draw selection highlight for label text
                 if (selectedComponents.includes(comp)) {
                     ctx.save();
-                    ctx.strokeStyle = "rgba(0, 229, 255, 0.85)";
+                    ctx.strokeStyle = currentThemeColors.wireSelected || "rgba(0, 229, 255, 0.85)";
                     ctx.lineWidth = 1.5;
                     ctx.setLineDash([3, 2]);
                     const textWidth = ctx.measureText(labelText).width;
@@ -2645,7 +2967,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
                 const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
                 ctx.save();
-                ctx.strokeStyle = "rgba(0, 229, 255, 0.85)";
+                ctx.strokeStyle = currentThemeColors.wireSelected || "rgba(0, 229, 255, 0.85)";
                 ctx.lineWidth = 2;
                 ctx.setLineDash([4, 3]);
                 ctx.strokeRect(
@@ -2658,21 +2980,21 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             // Draw the schematic symbol
-            ctx.strokeStyle = "#E0E0E0";
+            ctx.strokeStyle = currentThemeColors.componentColor || "#E0E0E0";
             ctx.lineWidth = Math.max(1, 2 * zoom);
             const renderer = SYMBOL_RENDERERS[comp.type];
             ctx.save();
             ctx.translate(pos.x, pos.y);
             ctx.rotate((comp.rotation || 0) * Math.PI / 180);
             if (renderer) {
-                renderer(ctx, 0, 0, zoom);
+                renderer(ctx, 0, 0, zoom, comp);
             } else {
                 drawFallback(ctx, 0, 0, zoom, comp.type);
             }
             ctx.restore();
 
             // Draw component name label (above)
-            ctx.fillStyle = "#E0E0E0";
+            ctx.fillStyle = currentThemeColors.labelColor || "#E0E0E0";
             ctx.font = `bold ${12 * zoom}px 'Segoe UI', Arial`;
             ctx.textAlign = "center";
             ctx.textBaseline = "bottom";
@@ -2685,7 +3007,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Draw value label (below)
             const mainValue = comp.value || getDisplayValue(comp);
             if (mainValue && comp.type !== 'ground') {
-                ctx.fillStyle = "#FF9800";
+                ctx.fillStyle = currentThemeColors.valueColor || "#FF9800";
                 ctx.font = `${11 * zoom}px 'Segoe UI', Arial`;
                 ctx.textBaseline = "top";
                 ctx.fillText(mainValue, pos.x, pos.y + labelOffY * zoom);
@@ -2701,8 +3023,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     const sp = worldToScreen(pin.x, pin.y);
                     // Highlight the hovered pin with a larger bright ring
                     if (hoveredPin && hoveredPin.x === pin.x && hoveredPin.y === pin.y) {
-                        ctx.fillStyle = "rgba(0, 255, 136, 0.8)";
-                        ctx.strokeStyle = "rgba(0, 255, 136, 0.9)";
+                        ctx.fillStyle = currentThemeColors.wireSelected;
+                        ctx.strokeStyle = currentThemeColors.wireSelected;
                         ctx.lineWidth = 2;
                         ctx.beginPath();
                         ctx.arc(sp.x, sp.y, 7 * zoom, 0, Math.PI * 2);
@@ -2712,7 +3034,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ctx.fill();
                     } else {
                         // Subtle pin markers for unconnected pins
-                        ctx.fillStyle = "rgba(79, 193, 255, 0.3)";
+                        ctx.fillStyle = currentThemeColors.wireColor + "4D"; // 30% opacity
                         ctx.beginPath();
                         ctx.arc(sp.x, sp.y, 4 * zoom, 0, Math.PI * 2);
                         ctx.fill();
@@ -2757,7 +3079,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.translate(gPos.x, gPos.y);
             ctx.rotate((placementRotation || 0) * Math.PI / 180);
             if (renderer) {
-                renderer(ctx, 0, 0, zoom);
+                // Pass a ghost comp so param-aware renderers (e.g. drawIC) can render defaults
+                const ghostComp = { type: mode, params: (COMPONENT_DB[mode] ? { ...COMPONENT_DB[mode].params } : {}) };
+                renderer(ctx, 0, 0, zoom, ghostComp);
             }
             ctx.restore();
             ctx.globalAlpha = 1.0;
@@ -2954,23 +3278,80 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Section: Parameters
         if (comp.params && Object.keys(comp.params).length > 0) {
-            const paramTitle = document.createElement('p');
-            paramTitle.className = 'prop-section-title';
-            paramTitle.textContent = 'SPICE Parameters';
-            panel.appendChild(paramTitle);
 
-            for (const [key, val] of Object.entries(comp.params)) {
-                addPropField(panel, key, String(val), (newVal) => {
+            // ─── Special IC Configuration panel ──────────────────────────────
+            if (comp.type === 'ic') {
+                const icTitle = document.createElement('p');
+                icTitle.className = 'prop-section-title';
+                icTitle.textContent = '🔌 IC Configuration';
+                panel.appendChild(icTitle);
+
+                // Subcircuit name
+                addPropField(panel, 'Subckt Name', String(comp.params.subckt_name || 'MyIC'), (newVal) => {
                     saveState();
-                    comp.params[key] = newVal;
-                    // Sync the top-level value field
-                    if (key === 'value' || key === 'dc' || key === 'mag') {
-                        comp.value = newVal;
-                    }
+                    comp.params.subckt_name = newVal.trim() || 'MyIC';
                     render();
                 });
+
+                // Pin count — triggers immediate re-render to show new pin layout
+                addPropField(panel, 'Pin Count', String(comp.params.num_pins || '2'), (newVal) => {
+                    const n = Math.max(2, parseInt(newVal, 10) || 2);
+                    saveState();
+                    comp.params.num_pins = String(n);
+                    render();
+                    updatePropertiesPanel();  // refresh so label shows new value
+                });
+
+                // Custom .subckt body (multiline textarea)
+                const subcktRow = document.createElement('div');
+                subcktRow.className = 'prop-row';
+                subcktRow.style.flexDirection = 'column';
+                subcktRow.style.alignItems = 'stretch';
+                subcktRow.style.gap = '4px';
+
+                const subcktLbl = document.createElement('span');
+                subcktLbl.className = 'prop-label';
+                subcktLbl.textContent = 'Custom .subckt';
+                subcktRow.appendChild(subcktLbl);
+
+                const subcktHint = document.createElement('span');
+                subcktHint.style.cssText = 'font-size:10px;color:var(--text-dim,#64748b);line-height:1.3;';
+                subcktHint.textContent = 'Paste a full ngspice .subckt block here. Leave empty to rely on an external file.';
+                subcktRow.appendChild(subcktHint);
+
+                const subcktTA = document.createElement('textarea');
+                subcktTA.className = 'prop-input';
+                subcktTA.rows = 5;
+                subcktTA.style.cssText = 'font-family:monospace;font-size:11px;resize:vertical;width:100%;box-sizing:border-box;';
+                subcktTA.value = comp.params.custom_subckt || '';
+                subcktTA.addEventListener('change', (e) => {
+                    saveState();
+                    comp.params.custom_subckt = e.target.value;
+                });
+                subcktRow.appendChild(subcktTA);
+                panel.appendChild(subcktRow);
+
+            } else {
+                // ─── Generic SPICE Parameters block (all other types) ─────────
+                const paramTitle = document.createElement('p');
+                paramTitle.className = 'prop-section-title';
+                paramTitle.textContent = 'SPICE Parameters';
+                panel.appendChild(paramTitle);
+
+                for (const [key, val] of Object.entries(comp.params)) {
+                    addPropField(panel, key, String(val), (newVal) => {
+                        saveState();
+                        comp.params[key] = newVal;
+                        // Sync the top-level value field
+                        if (key === 'value' || key === 'dc' || key === 'mag') {
+                            comp.value = newVal;
+                        }
+                        render();
+                    });
+                }
             }
         }
+
 
         // Section: Orientation
         const orientTitle = document.createElement('p');
@@ -2998,8 +3379,15 @@ document.addEventListener("DOMContentLoaded", () => {
             rotSel.appendChild(opt);
         });
         rotSel.addEventListener('change', (e) => {
+            const newRot = parseInt(e.target.value);
+            const tempComp = { ...comp, rotation: newRot };
+            if (isOverlappingAny(tempComp, components, [comp]) || doesCompOverlapAnyWire(tempComp, wires)) {
+                document.getElementById("statusText").innerText = "⚠️ Cannot rotate: Overlaps another component or wire.";
+                rotSel.value = comp.rotation || 0;
+                return;
+            }
             saveState();
-            comp.rotation = parseInt(e.target.value);
+            comp.rotation = newRot;
             render();
         });
         rotRow.appendChild(rotSel);
@@ -4796,6 +5184,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     selectedComp = null;
                     selectedWires = [];
                     selectedWirePts = [];
+
+                    // Auto-fix any wires that run through component bodies after import.
+                    // Overlapping component placements from AI detection can cause wires to
+                    // intersect component hitboxes — rerouting resolves this silently.
+                    rerouteAllWires();
+
                     updatePropertiesPanel();
                     render();
                 });

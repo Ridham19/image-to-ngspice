@@ -1,12 +1,18 @@
 * WebSpice Studio — Generated Netlist
 
-.Model Dx diode (Is=14n Rs=0 N=1)
+* --- Ideal Op-Amp Subcircuit: LM741 ---
+.subckt LM741 vplus vminus out vspos vsneg
+Eout out 0 vplus vminus 200000
+Rin vplus vminus 2MEG
+Rout_int out 0 75
+.ends LM741
 
-D1 Vin Vout Dx
-R1 Vout 0 1k
 V1 Vin 0 SINE(0 5 1k 0 0 0)
+VsNeg_X1 vsn_X1 0 DC -15
+VsPos_X1 vsp_X1 0 DC 15
+XX1 Vin 0 Vout vsp_X1 vsn_X1 LM741
 
-.tran 0.01m 4m 0
+.tran 0.01m 8m 0
 .control
 run
 set color0 = white

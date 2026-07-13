@@ -58,8 +58,10 @@ PIN_MAP: Dict[str, List[Tuple[int, int]]] = {
     'mosfet':               [(-20, 0), (20, -40), (20, 40)],
     'phototransistor':      [(-20, 0), (20, -40), (20, 40)],
     # ── ICs / Op-Amps ──
+    # opamp has 3 fixed pins: V+(in+), V−(in−), Out
+    # ic uses dynamic pin count — computed at runtime from params['num_pins']
     'opamp':                [(-30, -20), (-30, 20), (30, 0)],
-    'ic':                   [(-40, 0), (40, 0)],
+    'ic':                   [(-40, 0), (40, 0)],  # default 2-pin; overridden by num_pins
 }
 
 # Types that don't generate SPICE device lines
@@ -308,12 +310,51 @@ def solve_canvas(
             ctype = comp.type
             cx, cy = comp.x, comp.y
             crot = getattr(comp, 'rotation', 0)
+            cparams = getattr(comp, 'params', {})
         else:
             ctype = comp['type']
             cx, cy = comp['x'], comp['y']
             crot = comp.get('rotation', 0)
+            cparams = comp.get('params', {})
 
-        pins = compute_component_pins(ctype, cx, cy, crot, grid_size)
+        # ── Dynamic pin generation for generic IC ──
+        # When num_pins > 2 the component grows like a DIP package:
+        # left-side pins run top→bottom, right-side pins run bottom→top.
+        if ctype == 'ic':
+            try:
+                num_pins = int(cparams.get('num_pins', 2))
+            except (ValueError, TypeError):
+                num_pins = 2
+            num_pins = max(2, num_pins)  # minimum 2
+
+            # Half of the pins on each side
+            left_count  = (num_pins + 1) // 2
+            right_count = num_pins // 2
+
+            # Vertical spacing between pins on each side
+            # Keep within a reasonable body height based on pin count
+            v_step  = 20  # one grid unit apart
+            body_h  = (max(left_count, right_count) - 1) * v_step
+
+            pin_offsets: List[Tuple[int, int]] = []
+            # Left side: top to bottom
+            for i in range(left_count):
+                y_off = -body_h // 2 + i * v_step
+                pin_offsets.append((-40, y_off))
+            # Right side: bottom to top (DIP convention)
+            for i in range(right_count - 1, -1, -1):
+                y_off = -body_h // 2 + i * v_step
+                pin_offsets.append((40, y_off))
+
+            # Temporarily override the PIN_MAP entry for this computation
+            import copy
+            original_ic_pins = PIN_MAP.get('ic', [(-40, 0), (40, 0)])
+            PIN_MAP['ic'] = pin_offsets
+            pins = compute_component_pins(ctype, cx, cy, crot, grid_size)
+            PIN_MAP['ic'] = original_ic_pins  # restore global
+        else:
+            pins = compute_component_pins(ctype, cx, cy, crot, grid_size)
+
         comp_pins.append((comp, pins))
 
     # ── Step 2: Build wire adjacency with multi-cell interpolation ──

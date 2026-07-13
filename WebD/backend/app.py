@@ -126,14 +126,40 @@ SPICE_TEMPLATES = {
     'bjt':            '{name} {n2} {n1} {n3} {model}',
     'mosfet':         '{name} {n2} {n1} {n3} {n3} {model}',
     'phototransistor': '{name} {n2} {n1} {n3} {model}',
-    # Placeholder templates — require subcircuit definitions
-    # 'opamp':       '.subckt needed',
-    # 'ic':          '.subckt needed',
-    # 'transformer': '.subckt needed',
+    # ── Subcircuit / IC types — handled specially in simulate endpoint ──
+    # 'opamp'       → emits: X{name} {n_vplus} {n_vminus} {n_out} {vs_pos_node} {vs_neg_node} {model}
+    # 'ic'          → emits: X{name} <node list from num_pins> {subckt_name}
+    # 'transformer' → emits: L{name}a {n1} {n2} {value}  +  L{name}b {n3} {n4} {value}  +  K{name} ...
+}
+
+# ═══════════════════════════════════════════
+# SUBCIRCUIT DEFINITIONS
+# Built-in .subckt blocks prepended to the netlist when the matching
+# component type appears on the canvas.  Keys match component types.
+# ═══════════════════════════════════════════
+SUBCKT_DEFINITIONS: Dict[str, str] = {
+    # Ideal op-amp model (5 external pins: V+, V−, OUT, VS+, VS−)
+    # Based on a simple voltage-controlled voltage source (VCVS) approximation.
+    'opamp': """\
+* --- Ideal Op-Amp Subcircuit: LM741 ---
+.subckt LM741 vplus vminus out vspos vsneg
+Eout out 0 vplus vminus 200000
+Rin vplus vminus 2MEG
+Rout_int out 0 75
+.ends LM741""",
+
+    # Internally no fixed definition — user supplies .subckt_name param
+    # and the definition is expected to be provided externally or via the
+    # custom_subckt param field.  We emit a placeholder comment.
+    'ic': None,
+
+    # Transformer: no .subckt needed — uses coupled inductors directly
+    'transformer': None,
 }
 
 # SPICE prefix order for sorted netlist output
-SPICE_PREFIX_ORDER = {'C': 0, 'D': 1, 'I': 2, 'L': 3, 'Q': 4, 'R': 5, 'V': 6}
+# X = subcircuit instances (op-amps, ICs, etc.); K = mutual inductance (transformers)
+SPICE_PREFIX_ORDER = {'C': 0, 'D': 1, 'I': 2, 'K': 3, 'L': 4, 'Q': 5, 'R': 6, 'V': 7, 'X': 8}
 
 # ═══════════════════════════════════════════
 # PYDANTIC MODELS
@@ -368,8 +394,10 @@ async def simulate_circuit(request: SimulateRequest):
         # ─── STEP 2: Generate SPICE netlist ───
         lines = ["* WebSpice Studio — Generated Netlist", ""]
 
-        # Collect required .model statements
+        # Collect required .model statements and .subckt definitions
         models_needed = set()
+        subckts_needed: Dict[str, str] = {}  # type_key -> subckt text block
+
         for comp, _ in comp_pins:
             if comp.type == 'diode':
                 models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
@@ -383,6 +411,26 @@ async def simulate_circuit(request: SimulateRequest):
                 models_needed.add(".Model Tx_pnp PNP (BF=300)")
             elif comp.type == 'mosfet':
                 models_needed.add(".Model Mx NMOS (VTO=1 KP=2m)")
+            elif comp.type == 'opamp':
+                # Only embed the built-in LM741 definition if no custom subckt provided
+                model_name = comp.params.get('model', 'LM741')
+                if model_name == 'LM741' and 'opamp' not in subckts_needed:
+                    defn = SUBCKT_DEFINITIONS.get('opamp')
+                    if defn:
+                        subckts_needed['opamp'] = defn
+            elif comp.type == 'ic':
+                # User-defined subcircuit: embed custom_subckt body if supplied
+                custom_body = comp.params.get('custom_subckt', '').strip()
+                subckt_name = comp.params.get('subckt_name', 'MyIC')
+                key = f'ic_{subckt_name}'
+                if custom_body and key not in subckts_needed:
+                    subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+
+        # Prepend .subckt definitions (before .model statements)
+        for defn_text in subckts_needed.values():
+            lines.append(defn_text)
+        if subckts_needed:
+            lines.append("")
 
         for m in sorted(models_needed):
             lines.append(m)
@@ -395,14 +443,61 @@ async def simulate_circuit(request: SimulateRequest):
             if comp.type in NON_DEVICE_TYPES:
                 continue
 
+            # Look up node IDs for this component's pins
+            nodes = [node_map.get(pin, "NC") for pin in pins]
+
+            # ── Op-Amp: X-prefix subcircuit instantiation ──────────────────
+            if comp.type == 'opamp':
+                n_vplus  = nodes[0] if len(nodes) > 0 else 'NC'
+                n_vminus = nodes[1] if len(nodes) > 1 else 'NC'
+                n_out    = nodes[2] if len(nodes) > 2 else 'NC'
+                vs_pos   = comp.params.get('vs_pos', '15')
+                vs_neg   = comp.params.get('vs_neg', '-15')
+                model    = comp.params.get('model', 'LM741')
+                # Supply rails: create implicit DC supply nodes named after instance
+                vs_pos_node = f"vsp_{comp.name}"
+                vs_neg_node = f"vsn_{comp.name}"
+                # Supply voltage sources for the op-amp rails
+                device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsPos_{comp.name}",
+                    f"VsPos_{comp.name} {vs_pos_node} 0 DC {vs_pos}"))
+                device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsNeg_{comp.name}",
+                    f"VsNeg_{comp.name} {vs_neg_node} 0 DC {vs_neg}"))
+                # Subcircuit instantiation
+                line = f"X{comp.name} {n_vplus} {n_vminus} {n_out} {vs_pos_node} {vs_neg_node} {model}"
+                device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
+                continue
+
+            # ── Generic IC: X-prefix subcircuit with dynamic node list ─────
+            if comp.type == 'ic':
+                subckt_name = comp.params.get('subckt_name', 'MyIC')
+                node_list = " ".join(nodes) if nodes else "NC"
+                line = f"X{comp.name} {node_list} {subckt_name}"
+                device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
+                continue
+
+            # ── Transformer: coupled inductor pair + K statement ───────────
+            if comp.type == 'transformer':
+                n1 = nodes[0] if len(nodes) > 0 else 'NC'
+                n2 = nodes[1] if len(nodes) > 1 else 'NC'
+                n3 = nodes[2] if len(nodes) > 2 else 'NC'
+                n4 = nodes[3] if len(nodes) > 3 else 'NC'
+                inductance = comp.params.get('value', '1m')
+                coupling   = comp.params.get('coupling', '0.99')
+                la_name = f"L{comp.name}a"
+                lb_name = f"L{comp.name}b"
+                k_name  = f"K{comp.name}"
+                device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), la_name,
+                    f"{la_name} {n1} {n2} {inductance}"))
+                device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), lb_name,
+                    f"{lb_name} {n3} {n4} {inductance}"))
+                device_lines.append((SPICE_PREFIX_ORDER.get('K', 3), k_name,
+                    f"{k_name} {la_name} {lb_name} {coupling}"))
+                continue
+
+            # ── Standard template-based device ────────────────────────────
             template = SPICE_TEMPLATES.get(comp.type)
             if not template:
                 continue
-
-            # Look up node IDs for this component's pins
-            nodes = []
-            for pin in pins:
-                nodes.append(node_map.get(pin, "NC"))
 
             # Build context dict for template formatting
             ctx = {
@@ -429,6 +524,7 @@ async def simulate_circuit(request: SimulateRequest):
         device_lines.sort(key=lambda t: (t[0], t[1]))
         for _, _, line in device_lines:
             lines.append(line)
+
 
         # ─── STEP 3: Append simulation command ───
         lines.append("")
