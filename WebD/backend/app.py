@@ -143,9 +143,14 @@ SUBCKT_DEFINITIONS: Dict[str, str] = {
     'opamp': """\
 * --- Ideal Op-Amp Subcircuit: LM741 ---
 .subckt LM741 vplus vminus out vspos vsneg
-Eout out 0 vplus vminus 200000
+* Input resistance between inputs
 Rin vplus vminus 2MEG
-Rout_int out 0 75
+
+* Controlled voltage source referenced to ground at an internal node
+Eout int 0 vplus vminus 200000
+
+* Output resistance connected between the internal node and the output pin
+Rout_int int out 75
 .ends LM741""",
 
     # Internally no fixed definition — user supplies .subckt_name param
@@ -198,6 +203,7 @@ class SimulateRequest(BaseModel):
     components: List[ComponentPayload]
     wires: List[List[WirePoint]]
     simConfig: SimConfig = SimConfig()
+    custom_netlist: Optional[str] = None
 
 # ═══════════════════════════════════════════
 # LOAD ML MODEL
@@ -386,225 +392,238 @@ async def simulate_circuit(request: SimulateRequest):
     write to file, run ngspice, return results + plot images.
     """
     try:
+        # Define simulation config defaults to prevent UnboundLocalError in step 8
+        sim_mode = request.simConfig.mode.lower() if request.simConfig.mode else "op"
+        plots = request.simConfig.plots or {}
+        colors = request.simConfig.colors or {}
+
         # ─── STEP 1: Solve node topology via DFS ───
-        node_map, comp_pins = solve_canvas(
-            request.components, request.wires, GRID_SIZE
-        )
+        node_map = {}
+        comp_pins = []
+        try:
+            node_map, comp_pins = solve_canvas(
+                request.components, request.wires, GRID_SIZE
+            )
+        except Exception as e:
+            if not request.custom_netlist:
+                raise e
 
-        # ─── STEP 2: Generate SPICE netlist ───
-        lines = ["* WebSpice Studio — Generated Netlist", ""]
-
-        # Collect required .model statements and .subckt definitions
-        models_needed = set()
-        subckts_needed: Dict[str, str] = {}  # type_key -> subckt text block
-
-        for comp, _ in comp_pins:
-            if comp.type == 'diode':
-                models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
-            elif comp.type == 'diode_led':
-                models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
-            elif comp.type == 'diode_zener':
-                models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1 BV=5.1)")
-            elif comp.type in ('bjt_npn', 'bjt', 'phototransistor'):
-                models_needed.add(".Model Tx NPN (BF=300)")
-            elif comp.type == 'bjt_pnp':
-                models_needed.add(".Model Tx_pnp PNP (BF=300)")
-            elif comp.type == 'mosfet':
-                models_needed.add(".Model Mx NMOS (VTO=1 KP=2m)")
-            elif comp.type == 'opamp':
-                # Only embed the built-in LM741 definition if no custom subckt provided
-                model_name = comp.params.get('model', 'LM741')
-                if model_name == 'LM741' and 'opamp' not in subckts_needed:
-                    defn = SUBCKT_DEFINITIONS.get('opamp')
-                    if defn:
-                        subckts_needed['opamp'] = defn
-            elif comp.type == 'ic':
-                # User-defined subcircuit: embed custom_subckt body if supplied
-                custom_body = comp.params.get('custom_subckt', '').strip()
-                subckt_name = comp.params.get('subckt_name', 'MyIC')
-                key = f'ic_{subckt_name}'
-                if custom_body and key not in subckts_needed:
-                    subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
-
-        # Prepend .subckt definitions (before .model statements)
-        for defn_text in subckts_needed.values():
-            lines.append(defn_text)
-        if subckts_needed:
-            lines.append("")
-
-        for m in sorted(models_needed):
-            lines.append(m)
-        if models_needed:
-            lines.append("")
-
-        # Generate device lines — sorted by SPICE prefix character
-        device_lines = []
-        for comp, pins in comp_pins:
-            if comp.type in NON_DEVICE_TYPES:
-                continue
-
-            # Look up node IDs for this component's pins
-            nodes = [node_map.get(pin, "NC") for pin in pins]
-
-            # ── Op-Amp: X-prefix subcircuit instantiation ──────────────────
-            if comp.type == 'opamp':
-                n_vplus  = nodes[0] if len(nodes) > 0 else 'NC'
-                n_vminus = nodes[1] if len(nodes) > 1 else 'NC'
-                n_out    = nodes[2] if len(nodes) > 2 else 'NC'
-                vs_pos   = comp.params.get('vs_pos', '15')
-                vs_neg   = comp.params.get('vs_neg', '-15')
-                model    = comp.params.get('model', 'LM741')
-                # Supply rails: create implicit DC supply nodes named after instance
-                vs_pos_node = f"vsp_{comp.name}"
-                vs_neg_node = f"vsn_{comp.name}"
-                # Supply voltage sources for the op-amp rails
-                device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsPos_{comp.name}",
-                    f"VsPos_{comp.name} {vs_pos_node} 0 DC {vs_pos}"))
-                device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsNeg_{comp.name}",
-                    f"VsNeg_{comp.name} {vs_neg_node} 0 DC {vs_neg}"))
-                # Subcircuit instantiation
-                line = f"X{comp.name} {n_vplus} {n_vminus} {n_out} {vs_pos_node} {vs_neg_node} {model}"
-                device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
-                continue
-
-            # ── Generic IC: X-prefix subcircuit with dynamic node list ─────
-            if comp.type == 'ic':
-                subckt_name = comp.params.get('subckt_name', 'MyIC')
-                node_list = " ".join(nodes) if nodes else "NC"
-                line = f"X{comp.name} {node_list} {subckt_name}"
-                device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
-                continue
-
-            # ── Transformer: coupled inductor pair + K statement ───────────
-            if comp.type == 'transformer':
-                n1 = nodes[0] if len(nodes) > 0 else 'NC'
-                n2 = nodes[1] if len(nodes) > 1 else 'NC'
-                n3 = nodes[2] if len(nodes) > 2 else 'NC'
-                n4 = nodes[3] if len(nodes) > 3 else 'NC'
-                inductance = comp.params.get('value', '1m')
-                coupling   = comp.params.get('coupling', '0.99')
-                la_name = f"L{comp.name}a"
-                lb_name = f"L{comp.name}b"
-                k_name  = f"K{comp.name}"
-                device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), la_name,
-                    f"{la_name} {n1} {n2} {inductance}"))
-                device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), lb_name,
-                    f"{lb_name} {n3} {n4} {inductance}"))
-                device_lines.append((SPICE_PREFIX_ORDER.get('K', 3), k_name,
-                    f"{k_name} {la_name} {lb_name} {coupling}"))
-                continue
-
-            # ── Standard template-based device ────────────────────────────
-            template = SPICE_TEMPLATES.get(comp.type)
-            if not template:
-                continue
-
-            # Build context dict for template formatting
-            ctx = {
-                'name': comp.name,
-                'n1': nodes[0] if len(nodes) > 0 else '0',
-                'n2': nodes[1] if len(nodes) > 1 else '0',
-                'n3': nodes[2] if len(nodes) > 2 else '0',
-                'n4': nodes[3] if len(nodes) > 3 else '0',
-            }
-            # Merge component params
-            for k, v in comp.params.items():
-                ctx[k] = v
-
-            try:
-                line = template.format(**ctx)
-                # Sort key: first char of the component name (SPICE prefix)
-                prefix = comp.name[0].upper() if comp.name else 'Z'
-                sort_key = SPICE_PREFIX_ORDER.get(prefix, 99)
-                device_lines.append((sort_key, comp.name, line))
-            except KeyError as e:
-                device_lines.append((99, comp.name, f"* ERROR: Missing param {e} for {comp.name}"))
-
-        # Sort by SPICE prefix order, then by name
-        device_lines.sort(key=lambda t: (t[0], t[1]))
-        for _, _, line in device_lines:
-            lines.append(line)
-
-
-        # ─── STEP 3: Append simulation command ───
-        lines.append("")
-        sim_mode = request.simConfig.mode.lower()
-        sim_params = request.simConfig.params
-
-        if sim_mode == "tran":
-            step = sim_params.get("step", "0.1m")
-            stop = sim_params.get("stop", "80m")
-            start = sim_params.get("start", "0")
-            lines.append(f".tran {step} {stop} {start}")
-        elif sim_mode == "dc":
-            src1 = sim_params.get("source1", sim_params.get("source", "V1"))
-            start1 = sim_params.get("start", "0")
-            stop1 = sim_params.get("stop", "5")
-            incr1 = sim_params.get("incr", "0.1")
-            dc_cmd = f".dc {src1} {start1} {stop1} {incr1}"
-            # Secondary sweep (optional, matches Python app)
-            src2 = sim_params.get("source2", "")
-            if src2 and src2.lower() != "none":
-                start2 = sim_params.get("start2", "0")
-                stop2 = sim_params.get("stop2", "5")
-                incr2 = sim_params.get("incr2", "1")
-                dc_cmd += f" {src2} {start2} {stop2} {incr2}"
-            lines.append(dc_cmd)
-        elif sim_mode == "ac":
-            atype = sim_params.get("type", "DEC")
-            pts = sim_params.get("points", "10")
-            fstart = sim_params.get("fstart", "1")
-            fstop = sim_params.get("fstop", "10meg")
-            lines.append(f".ac {atype} {pts} {fstart} {fstop}")
+        if request.custom_netlist:
+            netlist_text = request.custom_netlist
         else:
-            lines.append(".op")
-
-        # ─── STEP 4: Control block (matches PySpice_studio/netlist.py) ───
-        lines.append(".control")
-        lines.append("run")
-
-        # Color settings
-        colors = request.simConfig.colors
-        if not colors:
-            lines.append("set color0 = white")
-            lines.append("set color1 = black")
-        else:
-            for idx in sorted(colors.keys(), key=lambda k: int(k) if k.isdigit() else 999):
-                lines.append(f"set color{idx} = {colors[idx]}")
-
-        lines.append("set xbrushwidth = 2")
-
-        # Print all for data extraction
-        lines.append("print all > sim_out.txt")
-
-        # Plot commands — generate hardcopy SVG images for each plot window
-        # Clean up old plot files first
-        for old_file in glob.glob(os.path.join(SIM_DIR, "plot_win*.svg")):
-            try:
-                os.remove(old_file)
-            except OSError:
-                pass
-        
-        sim_out_path = os.path.join(SIM_DIR, "sim_out.txt")
-        if os.path.exists(sim_out_path):
-            try:
-                os.remove(sim_out_path)
-            except OSError:
-                pass
-
-        plots = request.simConfig.plots
-        if plots and sim_mode != "op":
-            lines.append("set hcopydevtype = svg")
-            sorted_wins = sorted(plots.keys())
-            for win_id in sorted_wins:
-                sigs = " ".join(plots[win_id])
-                svg_file = f"plot_win{win_id}.svg"
-                lines.append(f"hardcopy {svg_file} {sigs} title 'Graph Window {win_id}'")
-
-        lines.append(".endc")
-        lines.append(".end")
-
-        netlist_text = "\n".join(lines)
+            lines = ["* WebSpice Studio — Generated Netlist", ""]
+    
+            # Collect required .model statements and .subckt definitions
+            models_needed = set()
+            subckts_needed: Dict[str, str] = {}  # type_key -> subckt text block
+    
+            for comp, _ in comp_pins:
+                if comp.type == 'diode':
+                    models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
+                elif comp.type == 'diode_led':
+                    models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1)")
+                elif comp.type == 'diode_zener':
+                    models_needed.add(".Model Dx diode (Is=14n Rs=0 N=1 BV=5.1)")
+                elif comp.type in ('bjt_npn', 'bjt', 'phototransistor'):
+                    models_needed.add(".Model Tx NPN (BF=300)")
+                elif comp.type == 'bjt_pnp':
+                    models_needed.add(".Model Tx_pnp PNP (BF=300)")
+                elif comp.type == 'mosfet':
+                    models_needed.add(".Model Mx NMOS (VTO=1 KP=2m)")
+                elif comp.type == 'opamp':
+                    # Only embed the built-in LM741 definition if no custom subckt provided
+                    model_name = comp.params.get('model', 'LM741')
+                    if model_name == 'LM741' and 'opamp' not in subckts_needed:
+                        defn = SUBCKT_DEFINITIONS.get('opamp')
+                        if defn:
+                            subckts_needed['opamp'] = defn
+                elif comp.type == 'ic':
+                    # User-defined subcircuit: embed custom_subckt body if supplied
+                    custom_body = comp.params.get('custom_subckt', '').strip()
+                    subckt_name = comp.params.get('subckt_name', 'MyIC')
+                    key = f'ic_{subckt_name}'
+                    if custom_body and key not in subckts_needed:
+                        subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+    
+            # Prepend .subckt definitions (before .model statements)
+            for defn_text in subckts_needed.values():
+                lines.append(defn_text)
+            if subckts_needed:
+                lines.append("")
+    
+            for m in sorted(models_needed):
+                lines.append(m)
+            if models_needed:
+                lines.append("")
+    
+            # Generate device lines — sorted by SPICE prefix character
+            device_lines = []
+            for comp, pins in comp_pins:
+                if comp.type in NON_DEVICE_TYPES:
+                    continue
+    
+                # Look up node IDs for this component's pins
+                nodes = [node_map.get(pin, "NC") for pin in pins]
+    
+                # ── Op-Amp: X-prefix subcircuit instantiation ──────────────────
+                if comp.type == 'opamp':
+                    n_vplus  = nodes[0] if len(nodes) > 0 else 'NC'
+                    n_vminus = nodes[1] if len(nodes) > 1 else 'NC'
+                    n_out    = nodes[2] if len(nodes) > 2 else 'NC'
+                    vs_pos   = comp.params.get('vs_pos', '15')
+                    vs_neg   = comp.params.get('vs_neg', '-15')
+                    model    = comp.params.get('model', 'LM741')
+                    # Supply rails: create implicit DC supply nodes named after instance
+                    vs_pos_node = f"vsp_{comp.name}"
+                    vs_neg_node = f"vsn_{comp.name}"
+                    # Supply voltage sources for the op-amp rails
+                    device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsPos_{comp.name}",
+                        f"VsPos_{comp.name} {vs_pos_node} 0 DC {vs_pos}"))
+                    device_lines.append((SPICE_PREFIX_ORDER.get('V', 7), f"VsNeg_{comp.name}",
+                        f"VsNeg_{comp.name} {vs_neg_node} 0 DC {vs_neg}"))
+                    # Subcircuit instantiation
+                    line = f"X{comp.name} {n_vplus} {n_vminus} {n_out} {vs_pos_node} {vs_neg_node} {model}"
+                    device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
+                    continue
+    
+                # ── Generic IC: X-prefix subcircuit with dynamic node list ─────
+                if comp.type == 'ic':
+                    subckt_name = comp.params.get('subckt_name', 'MyIC')
+                    node_list = " ".join(nodes) if nodes else "NC"
+                    line = f"X{comp.name} {node_list} {subckt_name}"
+                    device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
+                    continue
+    
+                # ── Transformer: coupled inductor pair + K statement ───────────
+                if comp.type == 'transformer':
+                    n1 = nodes[0] if len(nodes) > 0 else 'NC'
+                    n2 = nodes[1] if len(nodes) > 1 else 'NC'
+                    n3 = nodes[2] if len(nodes) > 2 else 'NC'
+                    n4 = nodes[3] if len(nodes) > 3 else 'NC'
+                    inductance = comp.params.get('value', '1m')
+                    coupling   = comp.params.get('coupling', '0.99')
+                    la_name = f"L{comp.name}a"
+                    lb_name = f"L{comp.name}b"
+                    k_name  = f"K{comp.name}"
+                    device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), la_name,
+                        f"{la_name} {n1} {n2} {inductance}"))
+                    device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), lb_name,
+                        f"{lb_name} {n3} {n4} {inductance}"))
+                    device_lines.append((SPICE_PREFIX_ORDER.get('K', 3), k_name,
+                        f"{k_name} {la_name} {lb_name} {coupling}"))
+                    continue
+    
+                # ── Standard template-based device ────────────────────────────
+                template = SPICE_TEMPLATES.get(comp.type)
+                if not template:
+                    continue
+    
+                # Build context dict for template formatting
+                ctx = {
+                    'name': comp.name,
+                    'n1': nodes[0] if len(nodes) > 0 else '0',
+                    'n2': nodes[1] if len(nodes) > 1 else '0',
+                    'n3': nodes[2] if len(nodes) > 2 else '0',
+                    'n4': nodes[3] if len(nodes) > 3 else '0',
+                }
+                # Merge component params
+                for k, v in comp.params.items():
+                    ctx[k] = v
+    
+                try:
+                    line = template.format(**ctx)
+                    # Sort key: first char of the component name (SPICE prefix)
+                    prefix = comp.name[0].upper() if comp.name else 'Z'
+                    sort_key = SPICE_PREFIX_ORDER.get(prefix, 99)
+                    device_lines.append((sort_key, comp.name, line))
+                except KeyError as e:
+                    device_lines.append((99, comp.name, f"* ERROR: Missing param {e} for {comp.name}"))
+    
+            # Sort by SPICE prefix order, then by name
+            device_lines.sort(key=lambda t: (t[0], t[1]))
+            for _, _, line in device_lines:
+                lines.append(line)
+    
+    
+            # ─── STEP 3: Append simulation command ───
+            lines.append("")
+            sim_mode = request.simConfig.mode.lower()
+            sim_params = request.simConfig.params
+    
+            if sim_mode == "tran":
+                step = sim_params.get("step", "0.1m")
+                stop = sim_params.get("stop", "80m")
+                start = sim_params.get("start", "0")
+                lines.append(f".tran {step} {stop} {start}")
+            elif sim_mode == "dc":
+                src1 = sim_params.get("source1", sim_params.get("source", "V1"))
+                start1 = sim_params.get("start", "0")
+                stop1 = sim_params.get("stop", "5")
+                incr1 = sim_params.get("incr", "0.1")
+                dc_cmd = f".dc {src1} {start1} {stop1} {incr1}"
+                # Secondary sweep (optional, matches Python app)
+                src2 = sim_params.get("source2", "")
+                if src2 and src2.lower() != "none":
+                    start2 = sim_params.get("start2", "0")
+                    stop2 = sim_params.get("stop2", "5")
+                    incr2 = sim_params.get("incr2", "1")
+                    dc_cmd += f" {src2} {start2} {stop2} {incr2}"
+                lines.append(dc_cmd)
+            elif sim_mode == "ac":
+                atype = sim_params.get("type", "DEC")
+                pts = sim_params.get("points", "10")
+                fstart = sim_params.get("fstart", "1")
+                fstop = sim_params.get("fstop", "10meg")
+                lines.append(f".ac {atype} {pts} {fstart} {fstop}")
+            else:
+                lines.append(".op")
+    
+            # ─── STEP 4: Control block (matches PySpice_studio/netlist.py) ───
+            lines.append(".control")
+            lines.append("run")
+    
+            # Color settings
+            colors = request.simConfig.colors
+            if not colors:
+                lines.append("set color0 = white")
+                lines.append("set color1 = black")
+            else:
+                for idx in sorted(colors.keys(), key=lambda k: int(k) if k.isdigit() else 999):
+                    lines.append(f"set color{idx} = {colors[idx]}")
+    
+            lines.append("set xbrushwidth = 2")
+    
+            # Print all for data extraction
+            lines.append("print all > sim_out.txt")
+    
+            # Plot commands — generate hardcopy SVG images for each plot window
+            # Clean up old plot files first
+            for old_file in glob.glob(os.path.join(SIM_DIR, "plot_win*.svg")):
+                try:
+                    os.remove(old_file)
+                except OSError:
+                    pass
+            
+            sim_out_path = os.path.join(SIM_DIR, "sim_out.txt")
+            if os.path.exists(sim_out_path):
+                try:
+                    os.remove(sim_out_path)
+                except OSError:
+                    pass
+    
+            plots = request.simConfig.plots
+            if plots and sim_mode != "op":
+                lines.append("set hcopydevtype = svg")
+                sorted_wins = sorted(plots.keys())
+                for win_id in sorted_wins:
+                    sigs = " ".join(plots[win_id])
+                    svg_file = f"plot_win{win_id}.svg"
+                    lines.append(f"hardcopy {svg_file} {sigs} title 'Graph Window {win_id}'")
+    
+            lines.append(".endc")
+            lines.append(".end")
+    
+            netlist_text = "\n".join(lines)
 
         # ─── STEP 5: Write netlist to file ───
         cir_path = os.path.join(SIM_DIR, "circuit.cir")
@@ -616,63 +635,116 @@ async def simulate_circuit(request: SimulateRequest):
         raw_output = ""
         sim_data = {}
 
+        # ─── STEP 6: Run ngspice subprocess ───
+        raw_output = ""
+        sim_data = {}
+        node_map_json = {f"{pt[0]},{pt[1]}": node for pt, node in node_map.items()}
+
         try:
             if not os.path.exists(NGSPICE_PATH) and NGSPICE_PATH != "ngspice":
+                logs = diagnose_simulation_output("", netlist_text, request.components)
+                logs.append({
+                    "type": "error",
+                    "message": f"ngspice binary not found at: {NGSPICE_PATH}",
+                    "source": "backend",
+                    "component": None,
+                    "node": None,
+                    "line_number": None,
+                    "line_text": None
+                })
                 return JSONResponse(content={
                     "status": "error",
                     "message": f"ngspice binary not found at: {NGSPICE_PATH}",
                     "netlist": netlist_text,
                     "raw_output": "",
-                    "plot_images": []
+                    "plot_images": [],
+                    "node_map": node_map_json,
+                    "logs": logs
                 })
 
-            proc = subprocess.Popen(
-                [NGSPICE_PATH, "-b", cir_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=SIM_DIR
+            log_path = os.path.join(SIM_DIR, "simulation.log")
+            command = [NGSPICE_PATH, "-b", "-o", log_path, cir_path]
+
+            result = subprocess.run(
+                command, capture_output=True, text=True, check=False, shell=True, cwd=SIM_DIR
             )
 
-            try:
-                raw_output, _ = proc.communicate(timeout=30)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                raw_output, _ = proc.communicate()
-                return JSONResponse(content={
-                    "status": "error",
-                    "message": "Simulation timed out after 30 seconds.",
-                    "netlist": netlist_text,
-                    "raw_output": raw_output,
-                    "plot_images": []
-                })
+            # Read simulation.log redirect output
+            log_content = ""
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f_log:
+                        log_content = f_log.read()
+                except Exception as log_err:
+                    log_content = f"Error reading simulation.log: {log_err}"
+
+            # Combine stdout, stderr, and redirected log content for diagnosis and display
+            raw_output = (result.stdout or "") + "\n" + (result.stderr or "") + "\n" + log_content
+
+            # 1. Write errors to errors.txt
+            error_file = os.path.join(SIM_DIR, "errors.txt")
+            if result.stderr:
+                with open(error_file, "w", encoding="utf-8") as f_err:
+                    f_err.write(result.stderr)
+            else:
+                with open(error_file, "w", encoding="utf-8") as f_err:
+                    f_err.write("No errors reported by Ngspice.\n")
+
+            # 2. Write normal output to output.log
+            output_log_file = os.path.join(SIM_DIR, "output.log")
+            if result.stdout:
+                with open(output_log_file, "w", encoding="utf-8") as f_out:
+                    f_out.write(result.stdout)
 
             # ─── STEP 7: Parse ngspice output ───
             sim_out_path = os.path.join(SIM_DIR, "sim_out.txt")
             if os.path.exists(sim_out_path):
                 with open(sim_out_path, "r", encoding="utf-8") as f:
                     file_output = f.read()
-                raw_output = raw_output + "\n\n=== DATA OUTPUT ===\n" + file_output
                 sim_data = parse_ngspice_output(file_output)
             else:
                 sim_data = parse_ngspice_output(raw_output)
 
-            if proc.returncode != 0 and not sim_data:
+            if result.returncode != 0 and not sim_data:
+                logs = diagnose_simulation_output(raw_output, netlist_text, request.components)
+                logs.append({
+                    "type": "error",
+                    "message": f"ngspice exited with code {result.returncode}",
+                    "source": "backend",
+                    "component": None,
+                    "node": None,
+                    "line_number": None,
+                    "line_text": None
+                })
                 return JSONResponse(content={
                     "status": "error",
-                    "message": f"ngspice exited with code {proc.returncode}",
+                    "message": f"ngspice exited with code {result.returncode}",
                     "netlist": netlist_text,
-                    "raw_output": raw_output,
-                    "plot_images": []
+                    "raw_output": "",
+                    "plot_images": [],
+                    "node_map": node_map_json,
+                    "logs": logs
                 })
 
         except FileNotFoundError:
+            logs = diagnose_simulation_output("", netlist_text, request.components)
+            logs.append({
+                "type": "error",
+                "message": f"ngspice executable not found. Tried: {NGSPICE_PATH}.",
+                "source": "backend",
+                "component": None,
+                "node": None,
+                "line_number": None,
+                "line_text": None
+            })
             return JSONResponse(content={
                 "status": "error",
                 "message": f"ngspice executable not found. Tried: {NGSPICE_PATH}. Install ngspice or update config.json.",
                 "netlist": netlist_text,
                 "raw_output": "",
-                "plot_images": []
+                "plot_images": [],
+                "node_map": node_map_json,
+                "logs": logs
             })
 
         # ─── STEP 8: Collect generated plot images ───
@@ -706,27 +778,59 @@ async def simulate_circuit(request: SimulateRequest):
             if comp.type in sweepable_types:
                 sweepable_names.append(comp.name)
 
+        logs = diagnose_simulation_output(raw_output, netlist_text, request.components)
+
         return JSONResponse(content={
             "status": "success",
             "netlist": netlist_text,
-            "raw_output": raw_output,
+            "raw_output": "",
             "data": sim_data,
             "plot_images": plot_images,
             "nodes": unique_nodes,
             "sources": source_names,
             "sweepables": sweepable_names,
+            "node_map": node_map_json,
+            "logs": logs
         })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
+        logs = []
+        if 'raw_output' in locals():
+            logs = diagnose_simulation_output(raw_output, netlist_text if 'netlist_text' in locals() else "", request.components)
+        logs.append({
+            "type": "error",
+            "message": f"Topology / Netlist Generation Error: {str(e)}",
+            "source": "backend",
+            "component": None,
+            "node": None,
+            "line_number": None,
+            "line_text": None
+        })
         return JSONResponse(status_code=500, content={
             "status": "error",
             "message": str(e),
-            "netlist": "",
+            "netlist": netlist_text if 'netlist_text' in locals() else "",
             "raw_output": "",
-            "plot_images": []
+            "plot_images": [],
+            "node_map": node_map_json if 'node_map_json' in locals() else {},
+            "logs": logs
         })
+
+
+@app.get("/api/simulation_log")
+async def get_simulation_log():
+    """Fetch the contents of the simulation log file."""
+    log_path = os.path.join(SIM_DIR, "simulation.log")
+    if not os.path.exists(log_path):
+        return JSONResponse(status_code=404, content={"error": "Simulation log not found"})
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return {"content": content}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/api/plots/{filename}")
@@ -759,6 +863,7 @@ async def solve_nodes_endpoint(request: SimulateRequest):
         )
 
         unique_nodes = sorted(set(node_map.values()))
+        node_map_json = {f"{pt[0]},{pt[1]}": node for pt, node in node_map.items()}
 
         source_names = []
         sweepable_names = []
@@ -775,6 +880,7 @@ async def solve_nodes_endpoint(request: SimulateRequest):
             "nodes": unique_nodes,
             "sources": source_names,
             "sweepables": sweepable_names,
+            "node_map": node_map_json,
         })
     except Exception as e:
         import traceback
@@ -782,6 +888,15 @@ async def solve_nodes_endpoint(request: SimulateRequest):
         return JSONResponse(status_code=500, content={
             "status": "error",
             "message": str(e),
+            "logs": [{
+                "type": "error",
+                "message": f"Topology / Node Solver Error: {str(e)}",
+                "source": "backend",
+                "component": None,
+                "node": None,
+                "line_number": None,
+                "line_text": None
+            }]
         })
 
 
@@ -835,6 +950,121 @@ def parse_ngspice_output(raw: str) -> dict:
                         data_started = False
 
     return result
+
+
+def diagnose_simulation_output(raw_output: str, netlist: str, components: list) -> list:
+    """
+    Parse ngspice stdout/stderr text and generated netlist for warnings/errors.
+    Maps them to specific components, nodes, and netlist line numbers.
+    """
+    logs = []
+    lines = raw_output.split('\n') if raw_output else []
+    netlist_lines = netlist.split('\n') if netlist else []
+
+    def find_netlist_line(pattern: str, check_contains=True):
+        for idx, line in enumerate(netlist_lines):
+            if check_contains:
+                if pattern.lower() in line.lower():
+                    return idx + 1, line
+            else:
+                words = re.findall(r'\b\w+\b', line)
+                if any(w.lower() == pattern.lower() for w in words):
+                    return idx + 1, line
+        return None, None
+
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            continue
+
+        log_type = None
+        message = ""
+        source = "ngspice"
+
+        line_lower = line_strip.lower()
+        if "fatal error" in line_lower:
+            log_type = "error"
+            message = line_strip
+        elif "error" in line_lower or "singular matrix" in line_lower or "check node" in line_lower or "fail" in line_lower or "missing" in line_lower or "unknown device" in line_lower:
+            log_type = "error"
+            message = line_strip
+        elif "warning" in line_lower:
+            log_type = "warning"
+            message = line_strip
+        elif "note" in line_lower:
+            log_type = "info"
+            message = line_strip
+
+        if log_type:
+            words = re.findall(r'\b[\w_]+\b', message)
+            matched_comp = None
+            matched_node = None
+
+            # Look for matching component in the message
+            for comp in components:
+                name = comp.name if hasattr(comp, 'name') else comp.get('name', '')
+                if name and any(w.lower() == name.lower() for w in words):
+                    matched_comp = name
+                    break
+
+            # Look for node name (numeric or vsp_ / vsn_ variables)
+            for w in words:
+                if w.isdigit() or w.lower().startswith("vsp_") or w.lower().startswith("vsn_") or w.lower() == "vsp" or w.lower() == "vsn":
+                    matched_node = w
+
+            netlist_line_num = None
+            netlist_line_text = None
+
+            # If we matched a component, search the netlist for that component
+            if matched_comp:
+                netlist_line_num, netlist_line_text = find_netlist_line(matched_comp, check_contains=False)
+
+            # If no component matched but we have a node, search for the node
+            if not netlist_line_num and matched_node:
+                netlist_line_num, netlist_line_text = find_netlist_line(matched_node, check_contains=True)
+
+            # Check if warning explicitly mentions a line number
+            line_match = re.search(r'\bline\s+(\d+)\b', message, re.I)
+            if line_match:
+                netlist_line_num = int(line_match.group(1))
+                if 1 <= netlist_line_num <= len(netlist_lines):
+                    netlist_line_text = netlist_lines[netlist_line_num - 1]
+
+            logs.append({
+                "type": log_type,
+                "message": message,
+                "source": source,
+                "component": matched_comp,
+                "node": matched_node,
+                "line_number": netlist_line_num,
+                "line_text": netlist_line_text
+            })
+
+    # Scan the netlist for internal error comments generated by template failures
+    for idx, line in enumerate(netlist_lines):
+        if "* error:" in line.lower() or "* warning:" in line.lower():
+            log_type = "error" if "* error:" in line.lower() else "warning"
+            msg = line.replace("* ERROR:", "").replace("* WARNING:", "").strip()
+            
+            matched_comp = None
+            for comp in components:
+                name = comp.name if hasattr(comp, 'name') else comp.get('name', '')
+                if name and name.lower() in msg.lower():
+                    matched_comp = name
+                    break
+
+            logs.append({
+                "type": log_type,
+                "message": msg,
+                "source": "netlist",
+                "component": matched_comp,
+                "node": None,
+                "line_number": idx + 1,
+                "line_text": line
+            })
+
+    return logs
+
 
 
 def generate_plot_images_matplotlib(

@@ -37,6 +37,13 @@ for_report/
 *.json
 .cir
 *.webp
+*.cir
+.json
+.log
+*.log
+*.svg
 
+*.txt
+.txt
 .context
 .context/

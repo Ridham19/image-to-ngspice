@@ -1,28 +1,19 @@
 * WebSpice Studio — Generated Netlist
 
-* --- Ideal Op-Amp Subcircuit: LM741 ---
-.subckt LM741 vplus vminus out vspos vsneg
-Eout out 0 vplus vminus 200000
-Rin vplus vminus 2MEG
-Rout_int out 0 75
-.ends LM741
+.Model Tx NPN (BF=300)
 
-V1 Vin 0 SINE(0 5 1k 0 0 0)
-VsNeg_X1 vsn_X1 0 DC -15
-VsPos_X1 vsp_X1 0 DC 15
-XX1 Vin 0 Vout vsp_X1 vsn_X1 LM741
+Q1 4 2 3 Tx
+R2 2 1 22k
+R4 0 2 22
+RC 4 1 1.0k
+RE 0 3 560k
 
-.tran 0.01m 8m 0
+.op
 .control
 run
 set color0 = white
 set color1 = black
-set color2 = red
-set color3 = red
 set xbrushwidth = 2
 print all > sim_out.txt
-set hcopydevtype = svg
-hardcopy plot_win1.svg v(Vin) title 'Graph Window 1'
-hardcopy plot_win2.svg v(Vout) title 'Graph Window 2'
 .endc
 .end

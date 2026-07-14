@@ -87,6 +87,28 @@
             <div class="grid-background"></div>
             <canvas id="circuitCanvas"></canvas>
             
+            <!-- Console Log Drawer -->
+            <div class="console-drawer" id="consoleDrawer">
+                <div class="console-header" id="consoleHeader">
+                    <div class="console-title-group">
+                        <span class="console-icon">💻</span>
+                        <span class="console-title">Console</span>
+                        <span id="consoleStats" class="console-stats"></span>
+                    </div>
+                    <div class="console-header-actions">
+                        <button id="consoleTabAll" class="console-tab-btn active">All Logs</button>
+                        <button id="consoleTabErrors" class="console-tab-btn">Errors <span class="badge badge-error" id="consoleBadgeErrors" style="display:none;">0</span></button>
+                        <button id="consoleTabWarnings" class="console-tab-btn">Warnings <span class="badge badge-warning" id="consoleBadgeWarnings" style="display:none;">0</span></button>
+                        <span class="console-action-separator"></span>
+                        <button id="consoleBtnClear" class="console-btn-action" title="Clear Console">🧹 Clear</button>
+                        <button id="consoleBtnToggle" class="console-btn-action" title="Expand/Collapse Console">▲</button>
+                    </div>
+                </div>
+                <div class="console-body" id="consoleBody">
+                    <div class="console-placeholder">No output. Run a simulation or solve nodes to inspect results.</div>
+                </div>
+            </div>
+
             <!-- Connection Indicator Badge -->
             <div id="backendConnection" class="connection-badge status-checking" title="Click to test connection">
                 <span class="connection-dot"></span>
@@ -101,10 +123,23 @@
             </div>
 
             <div class="sidebar-header netlist-header" id="netlistToggle">
-                NETLIST <span class="toggle-icon">▼</span>
+                <span>NETLIST</span>
+                <div class="netlist-header-actions">
+                    <button id="netlistBtnEdit" class="netlist-header-btn" title="Toggle Manual Edit Mode">✏️ Edit</button>
+                    <span class="toggle-icon">▼</span>
+                </div>
             </div>
             <div id="netlistPreview" class="sidebar-content netlist-panel">
-                <pre id="netlistText" class="netlist-code">Click RUN to generate</pre>
+                <div class="netlist-viewer-wrap" id="netlistViewerWrap">
+                    <pre id="netlistText" class="netlist-code">Click RUN to generate</pre>
+                </div>
+                <textarea id="netlistEditable" class="netlist-textarea" style="display:none;" placeholder="Write or edit SPICE code here..."></textarea>
+                
+                <!-- Manual edit warning banner -->
+                <div id="netlistManualWarning" class="netlist-manual-warning" style="display:none;">
+                    <span>⚠️ Manual Edit Mode</span>
+                    <button id="netlistBtnReset" class="netlist-reset-btn" title="Reset to match canvas layout">Sync Canvas</button>
+                </div>
             </div>
 
             <div class="sidebar-header">SIMULATION OUTPUT</div>

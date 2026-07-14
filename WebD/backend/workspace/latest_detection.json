@@ -3,221 +3,176 @@
         "name": "Q1",
         "type": "bjt",
         "box": [
-            174,
-            106,
-            77,
-            78
+            928,
+            655,
+            175,
+            170
         ],
         "center": [
-            212.5,
-            145.0
+            1015.5,
+            740.0
         ],
-        "conf": 0.97,
-        "value": "40",
-        "rotation": 270,
-        "text_box": [
-            277,
-            151,
-            24,
-            15
-        ]
-    },
-    {
-        "name": "V1",
-        "type": "ac_source",
-        "box": [
-            16,
-            194,
-            33,
-            36
-        ],
-        "center": [
-            32.5,
-            212.0
-        ],
-        "conf": 0.92,
-        "value": "TEXT_FOUND",
-        "rotation": 270
+        "conf": 0.91,
+        "value": null,
+        "rotation": 0
     },
     {
         "name": "GND1",
         "type": "ground",
         "box": [
-            221,
-            285,
-            25,
-            11
+            1002,
+            1212,
+            93,
+            55
         ],
         "center": [
-            233.5,
-            290.5
+            1048.5,
+            1239.5
         ],
         "conf": 0.89,
         "value": null,
         "rotation": 0
     },
     {
-        "name": "R1",
+        "name": "RE",
         "type": "resistor",
         "box": [
-            118,
-            212,
-            24,
-            46
+            1003,
+            956,
+            90,
+            137
         ],
         "center": [
-            130.0,
-            235.0
+            1048.0,
+            1024.5
         ],
-        "conf": 0.88,
-        "value": "TEXT_FOUND",
-        "rotation": 270
+        "conf": 0.89,
+        "value": "560k",
+        "rotation": 270,
+        "text_box": [
+            1108,
+            1043,
+            154,
+            58
+        ]
     },
     {
         "name": "R2",
         "type": "resistor",
         "box": [
-            222,
-            215,
-            23,
-            45
+            627,
+            443,
+            87,
+            134
         ],
         "center": [
-            233.5,
-            237.5
+            670.5,
+            510.0
         ],
-        "conf": 0.88,
-        "value": "40",
+        "conf": 0.89,
+        "value": "22k",
         "rotation": 270,
         "text_box": [
-            277,
-            151,
-            24,
-            15
+            712,
+            520,
+            153,
+            56
         ]
     },
     {
-        "name": "P1",
-        "type": "terminal",
+        "name": "GND2",
+        "type": "ground",
         "box": [
-            327,
-            4,
-            14,
-            13
+            625,
+            1212,
+            92,
+            56
         ],
         "center": [
-            334.0,
-            10.5
+            671.0,
+            1240.0
         ],
-        "conf": 0.86,
+        "conf": 0.89,
         "value": null,
         "rotation": 0
     },
     {
-        "name": "P2",
-        "type": "terminal",
-        "box": [
-            326,
-            102,
-            15,
-            14
-        ],
-        "center": [
-            333.5,
-            109.0
-        ],
-        "conf": 0.86,
-        "value": null,
-        "rotation": 0
-    },
-    {
-        "name": "R3",
+        "name": "RC",
         "type": "resistor",
         "box": [
-            118,
-            30,
-            24,
-            48
+            1002,
+            380,
+            91,
+            138
         ],
         "center": [
-            130.0,
-            54.0
+            1047.5,
+            449.0
         ],
-        "conf": 0.84,
-        "value": "TEXT_FOUND",
-        "rotation": 270
-    },
-    {
-        "name": "VSS1",
-        "type": "vss",
-        "box": [
-            272,
-            16,
-            10,
-            15
-        ],
-        "center": [
-            277.0,
-            23.5
-        ],
-        "conf": 0.81,
-        "value": null,
-        "rotation": 270
-    },
-    {
-        "name": "C1",
-        "type": "capacitor",
-        "box": [
-            261,
-            232,
-            25,
-            13
-        ],
-        "center": [
-            273.5,
-            238.5
-        ],
-        "conf": 0.8,
-        "value": "40",
-        "rotation": 0,
+        "conf": 0.89,
+        "value": "1.0k",
+        "rotation": 270,
         "text_box": [
-            277,
-            151,
-            24,
-            15
+            1101,
+            460,
+            169,
+            58
         ]
     },
     {
-        "name": "P3",
-        "type": "terminal",
+        "name": "R4",
+        "type": "resistor",
         "box": [
-            269,
-            275,
-            9,
-            8
+            626,
+            901,
+            89,
+            135
         ],
         "center": [
-            273.5,
-            279.0
+            670.5,
+            968.5
         ],
-        "conf": 0.79,
-        "value": null,
-        "rotation": 0
+        "conf": 0.88,
+        "value": "22",
+        "rotation": 270,
+        "text_box": [
+            728,
+            907,
+            68,
+            70
+        ]
     },
     {
         "name": "J1",
         "type": "junction",
         "box": [
-            229,
-            6,
-            9,
-            9
+            1022,
+            217,
+            51,
+            53
         ],
         "center": [
-            233.5,
-            10.5
+            1047.5,
+            243.5
         ],
-        "conf": 0.78,
+        "conf": 0.83,
+        "value": null,
+        "rotation": 270
+    },
+    {
+        "name": "P1",
+        "type": "terminal",
+        "box": [
+            1025,
+            153,
+            49,
+            49
+        ],
+        "center": [
+            1049.5,
+            177.5
+        ],
+        "conf": 0.83,
         "value": null,
         "rotation": 0
     },
@@ -225,141 +180,33 @@
         "name": "J2",
         "type": "junction",
         "box": [
-            126,
-            141,
-            8,
-            9
+            643,
+            713,
+            56,
+            55
         ],
         "center": [
-            130.0,
-            145.5
+            671.0,
+            740.5
         ],
-        "conf": 0.67,
+        "conf": 0.8,
         "value": null,
-        "rotation": 270
+        "rotation": 0
     },
     {
         "name": "J3",
         "type": "junction",
         "box": [
-            125,
-            6,
-            10,
-            9
-        ],
-        "center": [
-            130.0,
-            10.5
-        ],
-        "conf": 0.6,
-        "value": null,
-        "rotation": 0
-    },
-    {
-        "name": "C2",
-        "type": "capacitor",
-        "box": [
-            68,
-            132,
-            17,
-            27
-        ],
-        "center": [
-            76.5,
-            145.5
-        ],
-        "conf": 0.59,
-        "value": "TEXT_FOUND",
-        "rotation": 270
-    },
-    {
-        "name": "R4",
-        "type": "resistor",
-        "box": [
-            222,
-            30,
-            23,
-            48
-        ],
-        "center": [
-            233.5,
-            54.0
-        ],
-        "conf": 0.5,
-        "value": "40",
-        "rotation": 270,
-        "text_box": [
-            277,
-            151,
-            24,
-            15
-        ]
-    },
-    {
-        "name": "VSS2",
-        "type": "vss",
-        "box": [
-            263,
-            113,
-            12,
-            13
-        ],
-        "center": [
-            269.0,
-            119.5
-        ],
-        "conf": 0.49,
-        "value": null,
-        "rotation": 270
-    },
-    {
-        "name": "J4",
-        "type": "junction",
-        "box": [
-            28,
-            142,
-            7,
-            7
-        ],
-        "center": [
-            31.5,
-            145.5
-        ],
-        "conf": 0.48,
-        "value": null,
-        "rotation": 0
-    },
-    {
-        "name": "V2",
-        "type": "source",
-        "box": [
-            68,
-            132,
-            17,
-            27
-        ],
-        "center": [
-            76.5,
-            145.5
-        ],
-        "conf": 0.47,
-        "value": "TEXT_FOUND",
-        "rotation": 270
-    },
-    {
-        "name": "J5",
-        "type": "junction",
-        "box": [
+            654,
             229,
-            105,
-            8,
-            7
+            34,
+            32
         ],
         "center": [
-            233.0,
-            108.5
+            671.0,
+            245.0
         ],
-        "conf": 0.46,
+        "conf": 0.68,
         "value": null,
         "rotation": 0
     }

@@ -368,6 +368,16 @@ document.addEventListener("DOMContentLoaded", () => {
     let availableNodes = [];
     let availableSources = [];
     let availableSweepables = [];
+    
+    // Console and Highlighting State
+    let nodeMap = {};
+    let highlightedComponents = [];
+    let highlightedNodes = [];
+    let highlightedNetlistLine = null;
+    let consoleLogs = [];
+    let consoleFilter = 'all';
+    let lastNetlistText = "";
+    let isManualNetlist = false;
 
     // Camera & Viewport
     let zoom = 1.0;
@@ -565,8 +575,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Helper to check if a horizontal or vertical segment between two points intersects
     // any component's bounding box (hitbox), excluding a list of components.
     function doesSegmentIntersectComponent(pA, pB, allComponents, excludeComps = []) {
+        const IGNORE_ROUTING = new Set(['label', 'junction', 'crossover', 'terminal']);
         for (const c of allComponents) {
-            if (excludeComps.includes(c)) continue;
+            if (excludeComps.includes(c) || IGNORE_ROUTING.has(c.type)) continue;
             const db = COMPONENT_DB[c.type];
             const hb = db ? db.hitbox : { w: 40, h: 40 };
             const rot = c.rotation || 0;
@@ -635,8 +646,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function isOverlappingAny(comp, allComponents, excludeList = []) {
+        if (comp.type === 'label') return false;
         for (const c of allComponents) {
-            if (c === comp || excludeList.includes(c)) continue;
+            if (c === comp || excludeList.includes(c) || c.type === 'label') continue;
             if (componentsOverlap(comp, c)) {
                 return true;
             }
@@ -725,9 +737,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Route a straight horizontal or vertical segment around any component it intersects
     function routeAroundComponent(pA, pB, allComponents, excludeComps = []) {
+        const IGNORE_ROUTING = new Set(['label', 'junction', 'crossover', 'terminal']);
         const offset = (typeof gridSize !== 'undefined') ? gridSize : 20;
         for (const c of allComponents) {
-            if (excludeComps.includes(c)) continue;
+            if (excludeComps.includes(c) || IGNORE_ROUTING.has(c.type)) continue;
             const db = COMPONENT_DB[c.type];
             const hb = db ? db.hitbox : { w: 40, h: 40 };
             const rot = c.rotation || 0;
@@ -805,6 +818,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Reroute all wires in the canvas outward from the components' center of mass
     function rerouteAllWires() {
+        // Clean up redundant junctions (degree < 3 in the current wires list)
+        const junctionDegrees = {};
+        wires.forEach(w => {
+            if (w.length >= 2) {
+                const k1 = Math.round(w[0].x) + "," + Math.round(w[0].y);
+                const k2 = Math.round(w[1].x) + "," + Math.round(w[1].y);
+                junctionDegrees[k1] = (junctionDegrees[k1] || 0) + 1;
+                junctionDegrees[k2] = (junctionDegrees[k2] || 0) + 1;
+            }
+        });
+        components = components.filter(c => {
+            if (c.type === 'junction') {
+                const key = Math.round(c.x) + "," + Math.round(c.y);
+                const deg = junctionDegrees[key] || 0;
+                return deg >= 3;
+            }
+            return true;
+        });
+
         if (components.length === 0) return;
 
         // 1. DSU to find connected points/nodes
@@ -825,12 +857,48 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Union endpoints of all current wires
+        const gSize = gridSize || 20;
+        function getInterpolatedPoints(p1, p2) {
+            const ax = Math.round(p1.x / gSize) * gSize;
+            const ay = Math.round(p1.y / gSize) * gSize;
+            const bx = Math.round(p2.x / gSize) * gSize;
+            const by = Math.round(p2.y / gSize) * gSize;
+
+            const dx = bx - ax;
+            const dy = by - ay;
+
+            const stepsX = dx !== 0 ? Math.floor(Math.abs(dx) / gSize) : 0;
+            const stepsY = dy !== 0 ? Math.floor(Math.abs(dy) / gSize) : 0;
+            const steps = Math.max(stepsX, stepsY);
+
+            const pts = [];
+            pts.push({ x: ax, y: ay });
+            if (steps > 0) {
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const ix = Math.round((ax + dx * t) / gSize) * gSize;
+                    const iy = Math.round((ay + dy * t) / gSize) * gSize;
+                    pts.push({ x: ix, y: iy });
+                }
+            }
+            return pts;
+        }
+
+        // Count degrees of all coordinate steps
+        const coordDegree = {};
+
+        // Union endpoints and intermediate points of all current wires
         wires.forEach(w => {
             if (w.length >= 2) {
-                const k1 = Math.round(w[0].x) + "," + Math.round(w[0].y);
-                const k2 = Math.round(w[1].x) + "," + Math.round(w[1].y);
-                union(k1, k2);
+                const pts = getInterpolatedPoints(w[0], w[1]);
+                for (let i = 0; i < pts.length - 1; i++) {
+                    const k1 = pts[i].x + "," + pts[i].y;
+                    const k2 = pts[i + 1].x + "," + pts[i + 1].y;
+                    union(k1, k2);
+                    
+                    coordDegree[k1] = (coordDegree[k1] || 0) + 1;
+                    coordDegree[k2] = (coordDegree[k2] || 0) + 1;
+                }
             }
         });
 
@@ -847,6 +915,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 netGroups[root].push({ compIdx, pinIdx, x: p.x, y: p.y });
             });
         });
+
+        // Add virtual pins for junction points (degree >= 3) to prevent them from disappearing during rerouting
+        for (const [key, degree] of Object.entries(coordDegree)) {
+            if (degree >= 3) {
+                const [xStr, yStr] = key.split(",");
+                const jx = parseInt(xStr);
+                const jy = parseInt(yStr);
+                const root = find(key);
+                if (!netGroups[root]) {
+                    netGroups[root] = [];
+                }
+                const alreadyExists = netGroups[root].some(p => Math.abs(p.x - jx) < 1 && Math.abs(p.y - jy) < 1);
+                if (!alreadyExists) {
+                    netGroups[root].push({ compIdx: -1, pinIdx: -1, x: jx, y: jy });
+                }
+            }
+        }
 
         // 2. Select minimal optimal pin-to-pin connections via Kruskal's MST
         const connectionsToRoute = [];
@@ -904,50 +989,83 @@ document.addEventListener("DOMContentLoaded", () => {
         wires = [];
 
         // 4. Connect again outward from center with collision-aware routing
+        function getExcludeListForSegment(pA, pB, comp1Idx, comp2Idx) {
+            const exclude = [];
+            if (comp1Idx !== undefined && comp1Idx !== -1) {
+                const c1 = components[comp1Idx];
+                if (c1 && !isWireSegmentGoingInwards(c1, pA, pB)) {
+                    exclude.push(c1);
+                }
+            }
+            if (comp2Idx !== undefined && comp2Idx !== -1) {
+                const c2 = components[comp2Idx];
+                if (c2 && !isWireSegmentGoingInwards(c2, pB, pA)) {
+                    exclude.push(c2);
+                }
+            }
+            return exclude;
+        }
+
         connectionsToRoute.forEach(conn => {
             const p1 = conn.p1;
             const p2 = conn.p2;
-
-            const exclude = [];
-            components.forEach((c, cIdx) => {
-                if (cIdx === p1.compIdx || cIdx === p2.compIdx) {
-                    exclude.push(c);
-                }
-            });
 
             if (p1.x !== p2.x && p1.y !== p2.y) {
                 const mid1 = { x: p2.x, y: p1.y }; // H-then-V
                 const mid2 = { x: p1.x, y: p2.y }; // V-then-H
 
-                const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
-                              doesSegmentIntersectComponent(mid1, p2, components, exclude);
-                const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
-                              doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                // Build exclude lists for collision checks
+                const excl_p1_mid1 = getExcludeListForSegment(p1, mid1, p1.compIdx, -1);
+                const excl_mid1_p2 = getExcludeListForSegment(mid1, p2, -1, p2.compIdx);
+
+                const excl_p1_mid2 = getExcludeListForSegment(p1, mid2, p1.compIdx, -1);
+                const excl_mid2_p2 = getExcludeListForSegment(mid2, p2, -1, p2.compIdx);
+
+                // Avoid routing paths that enter the connected components inwards through their bodies
+                const inwards1 = 
+                    (p1.compIdx !== -1 && isWireSegmentGoingInwards(components[p1.compIdx], p1, mid1)) ||
+                    (p2.compIdx !== -1 && isWireSegmentGoingInwards(components[p2.compIdx], p2, mid1));
+                const inwards2 = 
+                    (p1.compIdx !== -1 && isWireSegmentGoingInwards(components[p1.compIdx], p1, mid2)) ||
+                    (p2.compIdx !== -1 && isWireSegmentGoingInwards(components[p2.compIdx], p2, mid2));
+
+                const coll1 = inwards1 || 
+                              doesSegmentIntersectComponent(p1, mid1, components, excl_p1_mid1) || 
+                              doesSegmentIntersectComponent(mid1, p2, components, excl_mid1_p2);
+                const coll2 = inwards2 || 
+                              doesSegmentIntersectComponent(p1, mid2, components, excl_p1_mid2) || 
+                              doesSegmentIntersectComponent(mid2, p2, components, excl_mid2_p2);
 
                 const dist1 = Math.pow(mid1.x - Cx, 2) + Math.pow(mid1.y - Cy, 2);
                 const dist2 = Math.pow(mid2.x - Cx, 2) + Math.pow(mid2.y - Cy, 2);
 
                 let chosenSegments = [];
+                let chosenExcludes = [];
                 if (coll1 && !coll2) {
                     chosenSegments = [[p1, mid2], [mid2, p2]];
+                    chosenExcludes = [excl_p1_mid2, excl_mid2_p2];
                 } else if (coll2 && !coll1) {
                     chosenSegments = [[p1, mid1], [mid1, p2]];
+                    chosenExcludes = [excl_p1_mid1, excl_mid1_p2];
                 } else {
                     if (dist1 > dist2) {
                         chosenSegments = [[p1, mid1], [mid1, p2]];
+                        chosenExcludes = [excl_p1_mid1, excl_mid1_p2];
                     } else {
                         chosenSegments = [[p1, mid2], [mid2, p2]];
+                        chosenExcludes = [excl_p1_mid2, excl_mid2_p2];
                     }
                 }
 
-                chosenSegments.forEach(seg => {
+                chosenSegments.forEach((seg, idx) => {
                     if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
-                        const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                        const routed = routeAroundComponent(seg[0], seg[1], components, chosenExcludes[idx]);
                         routed.forEach(rSeg => wires.push(rSeg));
                     }
                 });
             } else {
-                const routed = routeAroundComponent(p1, p2, components, exclude);
+                const excl_straight = getExcludeListForSegment(p1, p2, p1.compIdx, p2.compIdx);
+                const routed = routeAroundComponent(p1, p2, components, excl_straight);
                 routed.forEach(rSeg => wires.push(rSeg));
             }
         });
@@ -1027,6 +1145,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (e.button === 0) {
+            // Clear interactive debug highlights on click
+            if (highlightedComponents.length > 0 || highlightedNodes.length > 0 || highlightedNetlistLine !== null) {
+                highlightedComponents = [];
+                highlightedNodes = [];
+                highlightedNetlistLine = null;
+                scheduleAnimation();
+                updateNetlistPreview(lastNetlistText);
+                render();
+            }
+
             if (mode === 'select') {
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
                 const rawWorld = screenToWorldRaw(e.offsetX, e.offsetY);
@@ -1179,6 +1307,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if (!wireStart) {
                     wireStart = snapped;
+                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
+                    if (hitWirePt && !landedOnPin) {
+                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
+                        if (!alreadyHasJunc) {
+                            components.push(createComponent('junction', snapped.x, snapped.y));
+                        }
+                    }
                 } else {
                     // Manhattan wire routing
                     if (wireStart.x !== snapped.x || wireStart.y !== snapped.y) {
@@ -1255,8 +1390,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
                         tempSegments.forEach(rSeg => wires.push(rSeg));
                     }
-                    // If we landed on a pin, auto-terminate the wire
-                    if (landedOnPin) {
+
+                    // Place a junction at the wire body snapping point
+                    let snappedToWire = false;
+                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
+                    if (hitWirePt && !landedOnPin) {
+                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
+                        if (!alreadyHasJunc) {
+                            components.push(createComponent('junction', snapped.x, snapped.y));
+                        }
+                        snappedToWire = true;
+                    }
+
+                    // If we landed on a pin or snapped to a wire, auto-terminate the wire
+                    if (landedOnPin || snappedToWire) {
                         wireStart = null;
                         hoveredPin = null;
                     } else {
@@ -1652,6 +1799,14 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedWires = [];
             selectedWirePts = [];
             mode = 'select';
+            
+            // Clear interactive debug highlights
+            highlightedComponents = [];
+            highlightedNodes = [];
+            highlightedNetlistLine = null;
+            scheduleAnimation();
+            updateNetlistPreview(lastNetlistText);
+
             updateToolUI();
             updatePropertiesPanel();
             render();
@@ -2899,7 +3054,18 @@ document.addEventListener("DOMContentLoaded", () => {
             const p2 = worldToScreen(wire[1].x, wire[1].y);
 
             ctx.save();
-            if (selectedWires.includes(wire)) {
+            
+            // Check if wire belongs to a highlighted node
+            const isNodeHighlighted = highlightedNodes.length > 0 && 
+                (getNodeAt(wire[0]) === highlightedNodes[0] || getNodeAt(wire[1]) === highlightedNodes[0]);
+
+            if (isNodeHighlighted) {
+                const pulse = 1 + 2 * Math.sin(Date.now() / 150);
+                ctx.strokeStyle = "rgba(0, 255, 127, 0.85)"; // Spring Green
+                ctx.shadowColor = "rgba(0, 255, 127, 0.6)";
+                ctx.shadowBlur = 8 + pulse;
+                ctx.lineWidth = Math.max(3.5, 5 * zoom);
+            } else if (selectedWires.includes(wire)) {
                 ctx.strokeStyle = currentThemeColors.wireSelected;
                 ctx.lineWidth = Math.max(2, 3.5 * zoom);
             } else {
@@ -2929,9 +3095,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Draw Components
         components.forEach(comp => {
+            const pos = worldToScreen(comp.x, comp.y);
+            if (comp.type === 'junction') {
+                ctx.save();
+                ctx.fillStyle = currentThemeColors.wireColor || "#4fc1ff";
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 4 * zoom, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                return;
+            }
+
             const SKIP_RENDER_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'text'];
             if (SKIP_RENDER_TYPES.includes(comp.type)) return;
-            const pos = worldToScreen(comp.x, comp.y);
 
             if (comp.type === 'label') {
                 const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
@@ -2957,6 +3133,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     );
                     ctx.restore();
                 }
+
+                // Pulse glow for locate/highlight action
+                if (highlightedComponents.includes(comp)) {
+                    ctx.save();
+                    const textWidth = ctx.measureText(labelText).width;
+                    const padding = 4 * zoom;
+                    const pulse = 2 + 2 * Math.sin(Date.now() / 150);
+                    ctx.strokeStyle = "rgba(255, 64, 129, 0.85)";
+                    ctx.shadowColor = "rgba(255, 64, 129, 0.6)";
+                    ctx.shadowBlur = 8 + pulse;
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeRect(
+                        pos.x - textWidth / 2 - padding - pulse,
+                        pos.y - 24 * zoom - padding - pulse,
+                        textWidth + (padding + pulse) * 2,
+                        18 * zoom + (padding + pulse) * 2
+                    );
+                    ctx.restore();
+                }
                 return;
             }
             // Selection highlight
@@ -2975,6 +3170,28 @@ document.addEventListener("DOMContentLoaded", () => {
                     pos.y - (h / 2 + 6) * zoom,
                     (w + 12) * zoom,
                     (h + 12) * zoom
+                );
+                ctx.restore();
+            }
+
+            // Pulse glow for locate/highlight action
+            if (highlightedComponents.includes(comp)) {
+                const db = COMPONENT_DB[comp.type];
+                const hb = db ? db.hitbox : { w: 40, h: 40 };
+                const rot = comp.rotation || 0;
+                const w = (rot === 90 || rot === 270) ? hb.h : hb.w;
+                const h = (rot === 90 || rot === 270) ? hb.w : hb.h;
+                const pulse = 4 + 4 * Math.sin(Date.now() / 150);
+                ctx.save();
+                ctx.strokeStyle = "rgba(255, 64, 129, 0.85)";
+                ctx.shadowColor = "rgba(255, 64, 129, 0.6)";
+                ctx.shadowBlur = 10 + pulse;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(
+                    pos.x - (w / 2 + pulse) * zoom,
+                    pos.y - (h / 2 + pulse) * zoom,
+                    (w + pulse * 2) * zoom,
+                    (h + pulse * 2) * zoom
                 );
                 ctx.restore();
             }
@@ -3114,6 +3331,27 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
             ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
             ctx.restore();
+        }
+
+        // Draw pulsing dots for pins on highlighted node
+        if (highlightedNodes.length > 0) {
+            components.forEach(comp => {
+                const pins = getCompPins(comp);
+                pins.forEach(pin => {
+                    if (getNodeAt(pin) === highlightedNodes[0]) {
+                        const pos = worldToScreen(pin.x, pin.y);
+                        const pulse = 2 + 2 * Math.sin(Date.now() / 100);
+                        ctx.save();
+                        ctx.fillStyle = "rgba(0, 255, 127, 0.9)";
+                        ctx.shadowColor = "rgba(0, 255, 127, 0.8)";
+                        ctx.shadowBlur = 10 + pulse;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, (5 + pulse) * zoom, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                });
+            });
         }
     }
 
@@ -3507,16 +3745,73 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ═══════════════════════════════════════════
-    // NETLIST PANEL TOGGLE
+    // NETLIST PANEL TOGGLE & EDIT MODE
     // ═══════════════════════════════════════════
     const netlistToggle = document.getElementById("netlistToggle");
+    const netlistBtnEdit = document.getElementById("netlistBtnEdit");
+    const netlistViewerWrap = document.getElementById("netlistViewerWrap");
+    const netlistEditable = document.getElementById("netlistEditable");
+    const netlistManualWarning = document.getElementById("netlistManualWarning");
+    const netlistBtnReset = document.getElementById("netlistBtnReset");
+
     if (netlistToggle) {
-        netlistToggle.addEventListener('click', () => {
+        netlistToggle.addEventListener('click', (e) => {
+            // Do not toggle collapse when clicking Edit button or action bar
+            if (e.target.closest('.netlist-header-actions') || e.target.closest('#netlistBtnEdit')) {
+                return;
+            }
             const panel = document.getElementById("netlistPreview");
             panel.classList.toggle('collapsed');
             const icon = netlistToggle.querySelector('.toggle-icon');
             icon.textContent = panel.classList.contains('collapsed') ? '▶' : '▼';
         });
+    }
+
+    if (netlistBtnEdit) {
+        netlistBtnEdit.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleNetlistEditMode();
+        });
+    }
+
+    if (netlistEditable) {
+        netlistEditable.addEventListener('input', () => {
+            lastNetlistText = netlistEditable.value;
+        });
+    }
+
+    if (netlistBtnReset) {
+        netlistBtnReset.addEventListener('click', (e) => {
+            e.stopPropagation();
+            syncNetlistToCanvas();
+        });
+    }
+
+    function toggleNetlistEditMode(forceState) {
+        isManualNetlist = (forceState !== undefined) ? forceState : !isManualNetlist;
+
+        if (isManualNetlist) {
+            netlistViewerWrap.style.display = 'none';
+            netlistEditable.style.display = 'block';
+            netlistEditable.value = lastNetlistText;
+            netlistBtnEdit.textContent = '🔒 View';
+            netlistBtnEdit.classList.add('active');
+            netlistManualWarning.style.display = 'flex';
+        } else {
+            netlistViewerWrap.style.display = 'block';
+            netlistEditable.style.display = 'none';
+            netlistBtnEdit.textContent = '✏️ Edit';
+            netlistBtnEdit.classList.remove('active');
+            netlistManualWarning.style.display = 'none';
+            updateNetlistPreview(lastNetlistText);
+        }
+    }
+
+    function syncNetlistToCanvas() {
+        // Turn off manual netlist mode
+        toggleNetlistEditMode(false);
+        // Trigger simulation to regenerate netlist
+        runSimulation(simConfig);
     }
 
     // ═══════════════════════════════════════════
@@ -3667,14 +3962,27 @@ document.addEventListener("DOMContentLoaded", () => {
                 availableNodes = data.nodes || [];
                 availableSources = data.sources || [];
                 availableSweepables = data.sweepables || [];
+                nodeMap = data.node_map || {};
+                
                 // Refresh dropdowns
                 populateSelect('sigNodeSelect', availableNodes);
                 populateSelect('sigSourceSelect', availableSources);
                 // Rebuild form to refresh sweepable selects
                 rebuildSimForm();
+            } else {
+                nodeMap = {};
+                if (data.logs) {
+                    pushLogs(data.logs);
+                }
             }
         } catch (e) {
             console.warn('Could not solve nodes:', e);
+            nodeMap = {};
+            pushLogs([{
+                type: 'error',
+                message: `Could not connect to backend to solve nodes: ${e.message || e}`,
+                source: 'backend'
+            }]);
         }
     }
 
@@ -3901,6 +4209,32 @@ document.addEventListener("DOMContentLoaded", () => {
         await runSimulation(config);
     });
 
+    function attachRawOutputDetailsListener(container) {
+        const detailsElements = container.querySelectorAll('.raw-output-details');
+        detailsElements.forEach(details => {
+            details.addEventListener('toggle', async () => {
+                if (details.open) {
+                    const pre = details.querySelector('.raw-output-pre');
+                    if (pre && pre.getAttribute('data-loaded') !== 'true') {
+                        try {
+                            pre.textContent = 'Loading log...';
+                            const resp = await fetch('http://127.0.0.1:8000/api/simulation_log');
+                            const logData = await resp.json();
+                            if (logData.content) {
+                                pre.textContent = logData.content;
+                                pre.setAttribute('data-loaded', 'true');
+                            } else {
+                                pre.textContent = logData.error || 'Could not load log.';
+                            }
+                        } catch (err) {
+                            pre.textContent = `Error fetching log: ${err.message || err}`;
+                        }
+                    }
+                }
+            });
+        });
+    }
+
     async function runSimulation(config) {
         const statusText = document.getElementById('statusText');
         const netlistEl = document.getElementById('netlistText');
@@ -3919,7 +4253,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 { x: w[0].x, y: w[0].y },
                 { x: w[1].x, y: w[1].y }
             ]),
-            simConfig: config
+            simConfig: config,
+            custom_netlist: isManualNetlist ? lastNetlistText : null
         };
 
         try {
@@ -3932,7 +4267,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (data.status === 'success') {
                 statusText.innerText = '✅ Simulation complete.';
-                netlistEl.textContent = data.netlist || 'No netlist generated';
+                updateNetlistPreview(data.netlist);
+                nodeMap = data.node_map || {};
+                pushLogs(data.logs || []);
 
                 // Update available nodes/sources from response
                 if (data.nodes) availableNodes = data.nodes;
@@ -3956,32 +4293,35 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
                 }
 
-                // Show raw output (collapsed if plots exist)
-                if (data.raw_output) {
-                    if (data.plot_images && data.plot_images.length > 0) {
-                        outputHtml += `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:12px;">Raw ngspice output</summary><pre>${escapeHtml(data.raw_output)}</pre></details>`;
-                    } else {
-                        outputHtml += `<pre>${escapeHtml(data.raw_output)}</pre>`;
-                    }
-                }
+                // Show raw output (collapsed by default, only shown/fetched on request)
+                outputHtml += `<details class="raw-output-details" style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:12px;user-select:none;">Raw ngspice output</summary><pre class="raw-output-pre">Click to load raw output...</pre></details>`;
 
                 if (!outputHtml) {
                     outputHtml = '<p class="sim-success">Simulation completed successfully.</p>';
                 }
 
                 simOutput.innerHTML = outputHtml;
+                attachRawOutputDetailsListener(simOutput);
             } else {
                 statusText.innerText = '❌ Simulation failed.';
-                netlistEl.textContent = data.netlist || 'Error';
+                updateNetlistPreview(data.netlist);
+                nodeMap = data.node_map || {};
+                pushLogs(data.logs || []);
+                
                 simOutput.innerHTML = `<p class="sim-error">${escapeHtml(data.message || 'Unknown error')}</p>`;
-                if (data.raw_output) {
-                    simOutput.innerHTML += `<pre>${escapeHtml(data.raw_output)}</pre>`;
-                }
+                simOutput.innerHTML += `<details class="raw-output-details" style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:12px;user-select:none;">Raw ngspice output</summary><pre class="raw-output-pre">Click to load raw output...</pre></details>`;
+                attachRawOutputDetailsListener(simOutput);
             }
         } catch (err) {
             console.error('Simulation request failed:', err);
             statusText.innerText = '❌ Connection error.';
             simOutput.innerHTML = `<p class="sim-error">Could not reach backend at http://127.0.0.1:8000. Is the server running?</p>`;
+            nodeMap = {};
+            pushLogs([{
+                type: 'error',
+                message: `Connection error: Could not reach backend at http://127.0.0.1:8000.`,
+                source: 'backend'
+            }]);
         }
     }
 
@@ -5215,6 +5555,377 @@ document.addEventListener("DOMContentLoaded", () => {
             renderAiPreview();
         }
     });
+
+    function getNodeAt(pt) {
+        if (!nodeMap) return null;
+        return nodeMap[`${snap(pt.x)},${snap(pt.y)}`];
+    }
+
+    let animationFrameId = null;
+    function scheduleAnimation() {
+        const hasHighlights = highlightedComponents.length > 0 || highlightedNodes.length > 0;
+        if (hasHighlights) {
+            if (!animationFrameId) {
+                const anim = () => {
+                    render();
+                    animationFrameId = requestAnimationFrame(anim);
+                };
+                animationFrameId = requestAnimationFrame(anim);
+            }
+        } else {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+    }
+
+    function updateNetlistPreview(netlistText, highlightLineNum = null) {
+        const netlistEl = document.getElementById('netlistText');
+        if (!netlistEl) return;
+        
+        if (netlistText !== undefined) {
+            lastNetlistText = netlistText;
+        } else {
+            netlistText = lastNetlistText;
+        }
+
+        if (!netlistText) {
+            netlistEl.innerHTML = '<span class="placeholder-text">Click RUN to generate</span>';
+            return;
+        }
+        
+        const lines = netlistText.split('\n');
+        netlistEl.innerHTML = '';
+        
+        lines.forEach((line, index) => {
+            const lineNum = index + 1;
+            const lineRow = document.createElement('div');
+            lineRow.className = 'netlist-line-row';
+            if (lineNum === highlightLineNum) {
+                lineRow.classList.add('netlist-line-highlighted');
+            }
+            lineRow.id = `netlist-line-${lineNum}`;
+            
+            const lineNumSp = document.createElement('span');
+            lineNumSp.className = 'netlist-line-number';
+            lineNumSp.textContent = lineNum.toString().padStart(3, ' ');
+            
+            const lineTextSp = document.createElement('span');
+            lineTextSp.className = 'netlist-line-content';
+            lineTextSp.textContent = line;
+            
+            lineRow.appendChild(lineNumSp);
+            lineRow.appendChild(lineTextSp);
+            netlistEl.appendChild(lineRow);
+        });
+
+        if (highlightLineNum !== null) {
+            const targetRow = document.getElementById(`netlist-line-${highlightLineNum}`);
+            if (targetRow) {
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+
+    function locateComponent(name) {
+        const comp = components.find(c => c.name === name);
+        if (!comp) return;
+        
+        selectedComponents = [comp];
+        selectedComp = comp;
+        updatePropertiesPanel();
+
+        offsetX = canvas.width / 2 - comp.x * zoom;
+        offsetY = canvas.height / 2 - comp.y * zoom;
+
+        highlightedComponents = [comp];
+        highlightedNodes = [];
+        highlightedNetlistLine = null;
+        scheduleAnimation();
+        render();
+    }
+
+    function locateNode(nodeId) {
+        const pts = [];
+        for (const [key, node] of Object.entries(nodeMap)) {
+            if (node === nodeId) {
+                const [x, y] = key.split(',').map(Number);
+                pts.push({ x, y });
+            }
+        }
+        
+        if (pts.length === 0) return;
+
+        const avgX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const avgY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+        offsetX = canvas.width / 2 - avgX * zoom;
+        offsetY = canvas.height / 2 - avgY * zoom;
+
+        highlightedComponents = [];
+        highlightedNodes = [nodeId];
+        highlightedNetlistLine = null;
+        scheduleAnimation();
+        render();
+    }
+
+    function locateNetlistLine(lineNum) {
+        highlightedNetlistLine = lineNum;
+        updateNetlistPreview(undefined, lineNum);
+        
+        const panel = document.getElementById("netlistPreview");
+        if (panel && panel.classList.contains('collapsed')) {
+            panel.classList.remove('collapsed');
+            const netlistToggle = document.getElementById("netlistToggle");
+            if (netlistToggle) {
+                const icon = netlistToggle.querySelector('.toggle-icon');
+                if (icon) icon.textContent = '▼';
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // CONSOLE LOG DRAWER
+    // ═══════════════════════════════════════════
+    const consoleDrawer = document.getElementById('consoleDrawer');
+    const consoleHeader = document.getElementById('consoleHeader');
+    const consoleBody = document.getElementById('consoleBody');
+    const consoleStats = document.getElementById('consoleStats');
+    
+    const consoleTabAll = document.getElementById('consoleTabAll');
+    const consoleTabErrors = document.getElementById('consoleTabErrors');
+    const consoleTabWarnings = document.getElementById('consoleTabWarnings');
+    const consoleBadgeErrors = document.getElementById('consoleBadgeErrors');
+    const consoleBadgeWarnings = document.getElementById('consoleBadgeWarnings');
+    
+    const consoleBtnClear = document.getElementById('consoleBtnClear');
+    const consoleBtnToggle = document.getElementById('consoleBtnToggle');
+
+    function toggleConsole(expand) {
+        if (!consoleDrawer) return;
+        if (expand === undefined) {
+            consoleDrawer.classList.toggle('expanded');
+        } else if (expand) {
+            consoleDrawer.classList.add('expanded');
+        } else {
+            consoleDrawer.classList.remove('expanded');
+        }
+        if (consoleBtnToggle) {
+            consoleBtnToggle.textContent = consoleDrawer.classList.contains('expanded') ? '▼' : '▲';
+        }
+    }
+
+    if (consoleHeader) {
+        consoleHeader.addEventListener('click', (e) => {
+            if (e.target.closest('.console-tab-btn') || e.target.closest('.console-btn-action')) {
+                return;
+            }
+            toggleConsole();
+        });
+    }
+    
+    if (consoleBtnToggle) {
+        consoleBtnToggle.addEventListener('click', () => {
+            toggleConsole();
+        });
+    }
+
+    if (consoleBtnClear) {
+        consoleBtnClear.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearConsole();
+        });
+    }
+
+    function clearConsole() {
+        consoleLogs = [];
+        highlightedComponents = [];
+        highlightedNodes = [];
+        highlightedNetlistLine = null;
+        scheduleAnimation();
+        updateNetlistPreview(lastNetlistText);
+        renderConsole();
+        render();
+    }
+
+    if (consoleTabAll) {
+        consoleTabAll.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setConsoleFilter('all');
+        });
+    }
+    if (consoleTabErrors) {
+        consoleTabErrors.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setConsoleFilter('error');
+        });
+    }
+    if (consoleTabWarnings) {
+        consoleTabWarnings.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setConsoleFilter('warning');
+        });
+    }
+
+    function setConsoleFilter(filter) {
+        consoleFilter = filter;
+        [consoleTabAll, consoleTabErrors, consoleTabWarnings].forEach(btn => {
+            if (btn) btn.classList.remove('active');
+        });
+        if (filter === 'all' && consoleTabAll) consoleTabAll.classList.add('active');
+        if (filter === 'error' && consoleTabErrors) consoleTabErrors.classList.add('active');
+        if (filter === 'warning' && consoleTabWarnings) consoleTabWarnings.classList.add('active');
+        renderConsole();
+    }
+
+    function updateConsoleStats() {
+        const errorsCount = consoleLogs.filter(log => log.type === 'error').length;
+        const warningsCount = consoleLogs.filter(log => log.type === 'warning').length;
+
+        if (consoleStats) {
+            if (consoleLogs.length === 0) {
+                consoleStats.textContent = '';
+            } else {
+                consoleStats.textContent = `(${errorsCount} Error${errorsCount !== 1 ? 's' : ''}, ${warningsCount} Warning${warningsCount !== 1 ? 's' : ''})`;
+            }
+        }
+
+        if (consoleBadgeErrors) {
+            if (errorsCount > 0) {
+                consoleBadgeErrors.style.display = 'inline-block';
+                consoleBadgeErrors.textContent = errorsCount;
+            } else {
+                consoleBadgeErrors.style.display = 'none';
+            }
+        }
+        if (consoleBadgeWarnings) {
+            if (warningsCount > 0) {
+                consoleBadgeWarnings.style.display = 'inline-block';
+                consoleBadgeWarnings.textContent = warningsCount;
+            } else {
+                consoleBadgeWarnings.style.display = 'none';
+            }
+        }
+    }
+
+    function renderConsole() {
+        if (!consoleBody) return;
+        
+        updateConsoleStats();
+
+        const filteredLogs = consoleLogs.filter(log => {
+            if (consoleFilter === 'all') return true;
+            return log.type === consoleFilter;
+        });
+
+        if (filteredLogs.length === 0) {
+            consoleBody.innerHTML = `
+                <div class="console-placeholder">
+                    ${consoleFilter === 'all' 
+                        ? 'No output. Run a simulation or solve nodes to inspect results.' 
+                        : `No ${consoleFilter}s found.`}
+                </div>
+            `;
+            return;
+        }
+
+        consoleBody.innerHTML = '';
+        filteredLogs.forEach(log => {
+            const row = document.createElement('div');
+            row.className = `console-log-row log-${log.type}`;
+
+            const icon = document.createElement('span');
+            icon.className = 'log-icon';
+            icon.textContent = log.type === 'error' ? '❌' : (log.type === 'warning' ? '⚠️' : 'ℹ️');
+
+            const source = document.createElement('span');
+            source.className = 'log-source';
+            source.textContent = log.source;
+
+            const msg = document.createElement('span');
+            msg.className = 'log-message';
+            msg.textContent = log.message;
+
+            row.appendChild(icon);
+            row.appendChild(source);
+            row.appendChild(msg);
+
+            const actions = document.createElement('div');
+            actions.className = 'log-actions';
+
+            if (log.component) {
+                const btn = document.createElement('button');
+                btn.className = 'log-action-btn';
+                btn.textContent = `🔍 Locate ${log.component}`;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    locateComponent(log.component);
+                });
+                actions.appendChild(btn);
+            }
+
+            if (log.node) {
+                const btn = document.createElement('button');
+                btn.className = 'log-action-btn';
+                btn.textContent = `📍 Locate Node ${log.node}`;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    locateNode(log.node);
+                });
+                actions.appendChild(btn);
+            }
+
+            if (log.line_number) {
+                const btn = document.createElement('button');
+                btn.className = 'log-action-btn';
+                btn.textContent = `📄 Show Line ${log.line_number}`;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    locateNetlistLine(log.line_number);
+                });
+                actions.appendChild(btn);
+            }
+
+            if (actions.children.length > 0) {
+                row.appendChild(actions);
+            }
+
+            consoleBody.appendChild(row);
+        });
+    }
+
+    function pushLogs(logs) {
+        consoleLogs = logs || [];
+        setConsoleFilter('all');
+        
+        const hasIssue = consoleLogs.some(log => log.type === 'error' || log.type === 'warning');
+        if (hasIssue) {
+            toggleConsole(true);
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // TEST PRESET CIRCUIT LOADER
+    // ═══════════════════════════════════════════
+    if (window.location.search.includes('test=1')) {
+        components = [
+            { id: "V1", type: "source", name: "V1", x: 100, y: 150, rotation: 0, params: { dc: "5" } },
+            { id: "R1", type: "resistor", name: "R1", x: 200, y: 140, rotation: 90, params: { value: "1k" } },
+            { id: "GND1", type: "ground", name: "GND1", x: 100, y: 240, rotation: 0, params: {} },
+            { id: "GND2", type: "ground", name: "GND2", x: 200, y: 240, rotation: 0, params: {} }
+        ];
+        wires = [
+            [{ x: 100, y: 110 }, { x: 200, y: 100 }],
+            [{ x: 100, y: 190 }, { x: 100, y: 220 }],
+            [{ x: 200, y: 180 }, { x: 200, y: 220 }]
+        ];
+        setTimeout(() => {
+            if (typeof rerouteAllWires === 'function') {
+                rerouteAllWires();
+            }
+            render();
+        }, 100);
+    }
 
     // ═══════════════════════════════════════════
     // INITIAL DRAW
