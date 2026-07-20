@@ -5,6 +5,7 @@ import subprocess
 import os
 import sys
 import json
+import re
 
 # --- AI PIPELINE INTEGRATION ---
 # Add the 'proper' directory to the system path so we can import the YOLO model
@@ -123,11 +124,11 @@ class CircuitEditor:
         tk.Label(self.prop_frame, text=text, bg="#333", fg=COLOR_TEXT_LIGHT, font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(10, 0))
 
     def _add_sidebar_footer_shortcuts(self):
-        info = "SHORTCUTS:\n[W] Wire   [P] Probe\n[R] Resistor [C] Cap\n[L] Inductor [D] Diode\n[Del] Delete\n[Ctrl+C/V] Copy/Paste\n[Ctrl+R] Rotate"
+        info = "SHORTCUTS:\n[W] Wire   [P] Probe\n[G] Ground\n[R] Resistor [C] Cap\n[L] Inductor [D] Diode\n[Del] Delete\n[Ctrl+C/V] Copy/Paste\n[Ctrl+R] Rotate"
         tk.Label(self.prop_frame, text=info, bg=COLOR_SIDEBAR_BG, fg="#888", justify="left", font=("Consolas", 8)).pack(side="bottom", pady=20)
 
     def _setup_shortcuts(self):
-        keys = {'w': 'wire', 'p': 'probe', 'r': 'resistor', 'c': 'capacitor', 'l': 'inductor', 'd': 'diode'}
+        keys = {'w': 'wire', 'p': 'probe', 'r': 'resistor', 'c': 'capacitor', 'l': 'inductor', 'd': 'diode', 'g': 'gnd'}
         for key, mode in keys.items(): self.root.bind(key, lambda e, m=mode: self.set_mode(m))
         self.root.bind('<Delete>', self.delete_selection)
         self.root.bind('<Control-r>', self.rotate_command)
@@ -237,7 +238,7 @@ class CircuitEditor:
         self.selected_comps = []
         self.selected_wires = []
         
-        type_mapping = {'voltage': 'source', 'ground': 'gnd', 'transistor': 'bjt_npn'}
+        type_mapping = {'voltage': 'source', 'ground': 'gnd', 'transistor': 'bjt_npn', 'mosfet': 'nmos'}
 
         # 1. Place all components snapped perfectly to the grid
         for item in ai_data:
@@ -330,8 +331,151 @@ class CircuitEditor:
         if not self.ngspice_path or self.ngspice_path == "ngspice": 
             messagebox.showwarning("Warning", "ngspice path not configured. Using system default.")
         
-        try: subprocess.Popen([self.ngspice_path, filepath], cwd=cwd)
-        except Exception as e: messagebox.showerror("Execution Error", f"Failed to run simulation:\n{e}")
+        try:
+            log_path = os.path.join(cwd, "simulation.log")
+            if os.path.exists(log_path):
+                try: os.remove(log_path)
+                except: pass
+            
+            # Start simulation with redirected output to simulation.log
+            subprocess.Popen([self.ngspice_path, "-o", "simulation.log", filepath], cwd=cwd)
+            
+            # Check the log after 1 second
+            self.root.after(1000, lambda: self.check_simulation_log(log_path, netlist_code))
+        except Exception as e:
+            messagebox.showerror("Execution Error", f"Failed to run simulation:\n{e}")
+
+    def check_simulation_log(self, log_path, netlist):
+        if not os.path.exists(log_path):
+            return
+        try:
+            with open(log_path, "r") as f:
+                log_content = f.read()
+            logs = self.diagnose_simulation_output(log_content, netlist, self.components)
+            # Show dialogue if there are errors or warnings
+            has_issues = any(l['type'] in ['error', 'warning'] for l in logs)
+            if has_issues:
+                self.show_diagnostics_dialog(logs)
+        except Exception as e:
+            print("Error reading simulation log:", e)
+
+    def diagnose_simulation_output(self, raw_output, netlist, components):
+        logs = []
+        lines = raw_output.split('\n') if raw_output else []
+        netlist_lines = netlist.split('\n') if netlist else []
+
+        def find_netlist_line(pattern, check_contains=True):
+            for idx, line in enumerate(netlist_lines):
+                if check_contains:
+                    if pattern.lower() in line.lower():
+                        return idx + 1, line
+                else:
+                    words = re.findall(r'\b\w+\b', line)
+                    if any(w.lower() == pattern.lower() for w in words):
+                        return idx + 1, line
+            return None, None
+
+        for line in lines:
+            line_strip = line.strip()
+            if not line_strip:
+                continue
+
+            log_type = None
+            message = ""
+
+            line_lower = line_strip.lower()
+            if "fatal error" in line_lower:
+                log_type = "error"
+                message = line_strip
+            elif "error" in line_lower or "singular matrix" in line_lower or "check node" in line_lower or "fail" in line_lower or "missing" in line_lower or "unknown device" in line_lower:
+                log_type = "error"
+                message = line_strip
+            elif "warning" in line_lower:
+                log_type = "warning"
+                message = line_strip
+            elif "note" in line_lower:
+                log_type = "info"
+                message = line_strip
+
+            if log_type:
+                words = re.findall(r'\b[\w_]+\b', message)
+                matched_comp = None
+                matched_node = None
+
+                for comp in components:
+                    name = comp.name if hasattr(comp, 'name') else comp.get('name', '')
+                    if name and any(w.lower() == name.lower() for w in words):
+                        matched_comp = name
+                        break
+
+                for w in words:
+                    if w.isdigit() or w.lower().startswith("vsp_") or w.lower().startswith("vsn_") or w.lower() == "vsp" or w.lower() == "vsn":
+                        matched_node = w
+
+                netlist_line_num = None
+                netlist_line_text = None
+
+                if matched_comp:
+                    netlist_line_num, netlist_line_text = find_netlist_line(matched_comp, check_contains=False)
+
+                logs.append({
+                    'type': log_type,
+                    'message': message,
+                    'component': matched_comp,
+                    'node': matched_node,
+                    'line': netlist_line_num,
+                    'code': netlist_line_text
+                })
+        return logs
+
+    def show_diagnostics_dialog(self, logs):
+        diag_win = tk.Toplevel(self.root)
+        diag_win.title("Simulation Diagnostics Console")
+        diag_win.geometry("750x450")
+        diag_win.configure(bg="#1E1E1E")
+
+        title_lbl = tk.Label(diag_win, text="🔍 Simulation Diagnostics Console", bg="#1E1E1E", fg="#4CAF50", font=("Segoe UI", 12, "bold"))
+        title_lbl.pack(pady=10)
+
+        text_frame = tk.Frame(diag_win, bg="#1E1E1E")
+        text_frame.pack(fill="both", expand=True, padx=15, pady=5)
+
+        txt = tk.Text(text_frame, bg="#111111", fg="#E0E0E0", insertbackground="white", bd=0, highlightthickness=1, font=("Consolas", 10))
+        txt.pack(fill="both", side="left", expand=True)
+
+        scrollbar = tk.Scrollbar(text_frame, command=txt.yview)
+        scrollbar.pack(side="right", fill="y")
+        txt.config(yscrollcommand=scrollbar.set)
+
+        for idx, log in enumerate(logs):
+            prefix = "[INFO] "
+            color = "#888888"
+            if log['type'] == 'error':
+                prefix = "[ERROR] ❌ "
+                color = "#FF5252"
+            elif log['type'] == 'warning':
+                prefix = "[WARNING] ⚠️ "
+                color = "#FFD740"
+
+            txt.tag_config(f"tag_{idx}", foreground=color)
+            txt.insert("end", prefix, f"tag_{idx}")
+            txt.insert("end", log['message'] + "\n", f"tag_{idx}")
+            
+            details = []
+            if log['component']:
+                details.append(f"Component: {log['component']}")
+            if log['node']:
+                details.append(f"Node: {log['node']}")
+            if log['line']:
+                details.append(f"Netlist Line {log['line']}: '{log['code'].strip()}'")
+            if details:
+                txt.insert("end", "  └─ " + " | ".join(details) + "\n\n", "tag_details")
+
+        txt.tag_config("tag_details", foreground="#88C0D0")
+        txt.config(state="disabled")
+
+        btn = tk.Button(diag_win, text="Dismiss Console", command=diag_win.destroy, bg="#0078D7", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", padx=15, pady=5)
+        btn.pack(pady=10)
 
     # ==========================================
     # SIDEBAR PROPERTY EDITOR
@@ -351,7 +495,21 @@ class CircuitEditor:
         self.param_entries = {}
         for key, value in comp.params.items():
             self._add_prop_label(f"{key.upper()}:")
-            self.param_entries[key] = self._add_prop_entry(str(value))
+            if key == 'custom_subckt':
+                text_frame = tk.Frame(self.prop_container, bg=COLOR_SIDEBAR_BG)
+                text_frame.pack(fill="x", pady=(0, 10))
+                
+                txt = tk.Text(text_frame, bg="#444", fg="white", insertbackground="white", bd=0, highlightthickness=1, height=8, width=25, font=("Consolas", 9))
+                txt.insert("1.0", str(value))
+                txt.pack(fill="both", side="left", expand=True)
+                
+                scrollbar = tk.Scrollbar(text_frame, command=txt.yview)
+                scrollbar.pack(side="right", fill="y")
+                txt.config(yscrollcommand=scrollbar.set)
+                
+                self.param_entries[key] = txt
+            else:
+                self.param_entries[key] = self._add_prop_entry(str(value))
         
         tk.Button(self.prop_container, text="Update Component", command=self.apply_properties, bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(fill="x", pady=10)
 
@@ -368,7 +526,11 @@ class CircuitEditor:
         if len(self.selected_comps) == 1:
             comp = self.selected_comps[0]
             comp.name = self.entry_name.get()
-            for key, entry in self.param_entries.items(): comp.params[key] = entry.get()
+            for key, entry in self.param_entries.items():
+                if isinstance(entry, tk.Text):
+                    comp.params[key] = entry.get("1.0", "end-1c")
+                else:
+                    comp.params[key] = entry.get()
             self.redraw_all()
 
     # ==========================================
@@ -379,27 +541,56 @@ class CircuitEditor:
         ribbon = tk.Frame(parent, bg=COLOR_TOOLBAR_BG) 
         ribbon.grid(row=0, column=0, sticky="ew")
 
-        def create_btn_group(title):
-            f = tk.LabelFrame(ribbon, text=title, bg=COLOR_TOOLBAR_BG, fg="#AAA", font=("Segoe UI", 8), padx=5, pady=2)
-            f.pack(side="left", fill="y", padx=5, pady=5)
-            return f
-
-        groups = {}
+        # Organize components by category
+        categories = {}
         for c_type, data in DB.items():
             cat = data['category']
-            if cat not in groups: groups[cat] = create_btn_group(cat)
-            btn_lbl = data.get('btn_text', data['label']) 
-            tk.Button(groups[cat], text=btn_lbl, command=lambda t=c_type: self.set_mode(t), relief="flat", bg="#444", fg="white", font=("Segoe UI", 9)).pack(side="left", padx=2, pady=2)
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append((c_type, data))
 
-        g_tools = create_btn_group("Drawing Tools")
-        tk.Button(g_tools, text="✏️ WIRE", command=lambda: self.set_mode('wire'), bg=COLOR_ACCENT_BLUE, fg="white", relief="flat").pack(side="left", padx=2)
-        tk.Button(g_tools, text="🔍 PROBE", command=lambda: self.set_mode("probe"), bg="#FF9800", fg="white", relief="flat").pack(side="left", padx=2)
-        
-        g_sim = create_btn_group("Simulation Control")
-        tk.Button(g_sim, text="Config", command=self.open_sim_dialog, bg="#555", fg="white").pack(side="left", padx=2)
-        tk.Button(g_sim, text="RUN", command=self.run_simulation, bg="#2E7D32", fg="white", font=("Segoe UI", 9, "bold")).pack(side="left", padx=5)
-        
-        self.status = tk.Label(ribbon, text="Ready", bg=COLOR_TOOLBAR_BG, fg="#888")
+        # Render Dropdown Menus for Component Selection
+        for cat in ['Passives', 'Active', 'Sources', 'Other']:
+            if cat not in categories:
+                continue
+            mb = tk.Menubutton(ribbon, text=f"▾ {cat}", bg="#333333", fg=COLOR_TEXT_LIGHT, 
+                               activebackground="#444444", activeforeground="white", 
+                               relief="flat", font=("Segoe UI", 9), padx=12, pady=5)
+            mb.pack(side="left", padx=3, pady=5)
+            
+            menu = tk.Menu(mb, tearoff=0, bg="#252526", fg=COLOR_TEXT_LIGHT, 
+                           activebackground=COLOR_ACCENT_BLUE, activeforeground="white", bd=1, relief="solid")
+            mb["menu"] = menu
+            
+            for c_type, data in categories[cat]:
+                lbl = data['label']
+                menu.add_command(label=lbl, command=lambda t=c_type: self.set_mode(t))
+
+        # Spacer between dropdowns and drawing tools
+        tk.Frame(ribbon, width=15, bg=COLOR_TOOLBAR_BG).pack(side="left")
+
+        # Drawing Tools (Direct Buttons)
+        g_tools = tk.Frame(ribbon, bg=COLOR_TOOLBAR_BG)
+        g_tools.pack(side="left", pady=5)
+        tk.Button(g_tools, text="✏️ WIRE", command=lambda: self.set_mode('wire'), 
+                  bg=COLOR_ACCENT_BLUE, fg="white", relief="flat", font=("Segoe UI", 9), padx=10, pady=3).pack(side="left", padx=2)
+        tk.Button(g_tools, text="🔍 PROBE", command=lambda: self.set_mode("probe"), 
+                  bg="#FF9800", fg="white", relief="flat", font=("Segoe UI", 9), padx=10, pady=3).pack(side="left", padx=2)
+        tk.Button(g_tools, text="⏚ GND", command=lambda: self.set_mode('gnd'), 
+                  bg="#43A047", fg="white", relief="flat", font=("Segoe UI", 9), padx=10, pady=3).pack(side="left", padx=2)
+
+        # Spacer between drawing tools and simulation control
+        tk.Frame(ribbon, width=15, bg=COLOR_TOOLBAR_BG).pack(side="left")
+
+        # Simulation Control (Direct Buttons)
+        g_sim = tk.Frame(ribbon, bg=COLOR_TOOLBAR_BG)
+        g_sim.pack(side="left", pady=5)
+        tk.Button(g_sim, text="Config", command=self.open_sim_dialog, 
+                  bg="#555555", fg="white", relief="flat", font=("Segoe UI", 9), padx=10, pady=3).pack(side="left", padx=2)
+        tk.Button(g_sim, text="RUN", command=self.run_simulation, 
+                  bg="#2E7D32", fg="white", font=("Segoe UI", 9, "bold"), relief="flat", padx=15, pady=3).pack(side="left", padx=5)
+
+        self.status = tk.Label(ribbon, text="Ready", bg=COLOR_TOOLBAR_BG, fg="#888888", font=("Segoe UI", 9))
         self.status.pack(side="right", padx=20)
 
     def _init_canvas(self, parent):
@@ -453,8 +644,14 @@ class CircuitEditor:
         if self.hovered_pin: wx, wy = self.hovered_pin
         if self.wire_start:
             sx, sy = self.wire_start
-            if sx != wx: self.wires.append(((sx, sy), (wx, sy)))
-            if sy != wy: self.wires.append(((wx, sy), (wx, wy)))
+            if sx != wx:
+                self.wires.append(((sx, sy), (wx, sy)))
+                self._check_and_add_junction(sx, sy)
+                self._check_and_add_junction(wx, sy)
+            if sy != wy:
+                self.wires.append(((wx, sy), (wx, wy)))
+                self._check_and_add_junction(wx, sy)
+                self._check_and_add_junction(wx, wy)
             self.redraw_all()
             self.wire_start = None if self.hovered_pin else (wx, wy)
         else:
@@ -465,6 +662,9 @@ class CircuitEditor:
         if clicked_comp:
             self.selected_comps, self.selected_wires = [clicked_comp], []
             self.drag_start_world = (wx, wy)
+            self.drag_start_positions = {c: (c.x, c.y) for c in self.selected_comps}
+            self.pre_existing_overlap_pairs = self._get_overlap_pairs()
+            self.pre_existing_wire_overlaps = self._get_wire_overlaps()
         else:
             clicked_wire = None
             for w in self.wires:
@@ -511,13 +711,160 @@ class CircuitEditor:
             self.canvas.delete("sel_box")
             self.update_sidebar()
             self.redraw_all()
+        elif self.mode == 'select' and self.selected_comps and self.drag_start_world:
+            collision = False
+            for c in self.selected_comps:
+                for other in self.components:
+                    if other == c or other in self.selected_comps:
+                        continue
+                    if c.type in ['label', 'junction', 'crossover', 'terminal', 'gnd'] or other.type in ['label', 'junction', 'crossover', 'terminal', 'gnd']:
+                        continue
+                    if self.components_overlap(c, other):
+                        pair = tuple(sorted([c.name, other.name]))
+                        if not hasattr(self, 'pre_existing_overlap_pairs') or pair not in self.pre_existing_overlap_pairs:
+                            collision = True
+                            break
+                if collision:
+                    break
+                
+                for w in self.wires:
+                    if self.does_comp_overlap_wire(c, w):
+                        overlap = (c.name, w)
+                        if not hasattr(self, 'pre_existing_wire_overlaps') or overlap not in self.pre_existing_wire_overlaps:
+                            collision = True
+                            break
+                if collision:
+                    break
+            
+            if collision:
+                for c, pos in self.drag_start_positions.items():
+                    c.x, c.y = pos
+                self.status.config(text="⚠️ Overlap detected! Rollback snapped.")
+                self.redraw_all()
+            else:
+                self.status.config(text="Ready")
+            
+            self.drag_start_positions = {}
+            self.pre_existing_overlap_pairs = set()
+            self.pre_existing_wire_overlaps = set()
+
         self.drag_start_world = None
 
     # ==========================================
     # DRAWING UTILITIES
     # ==========================================
 
+    def get_hitbox(self, comp):
+        w, h = 80, 40  # default
+        if comp.type in DB:
+            shape = DB[comp.type]['shape']
+            if shape == 'label':
+                w, h = 10, 10
+            elif shape in ['3_pin_bjt', '3_pin_fet']:
+                w, h = 40, 80
+            elif shape == 'v_source':
+                w, h = 50, 80
+            elif shape == '1_pin':
+                w, h = 40, 30
+            elif shape == 'opamp':
+                w, h = 70, 60
+            elif shape == 'ic':
+                num_pins = int(comp.params.get('num_pins', '2'))
+                half = (num_pins + 1) // 2
+                body_h = max(30, half * 20)
+                w, h = 100, body_h + 20
+            elif shape == 'transformer':
+                w, h = 80, 60
+        if comp.rotation in [90, 270]:
+            w, h = h, w
+        return w, h
+
+    def components_overlap(self, c1, c2):
+        w1, h1 = self.get_hitbox(c1)
+        w2, h2 = self.get_hitbox(c2)
+        return (
+            abs(c1.x - c2.x) < (w1 + w2) / 2 and
+            abs(c1.y - c2.y) < (h1 + h2) / 2
+        )
+
+    def does_comp_overlap_wire(self, comp, wire):
+        w, h = self.get_hitbox(comp)
+        bx1, by1 = comp.x - w/2, comp.y - h/2
+        bx2, by2 = comp.x + w/2, comp.y + h/2
+        (x1, y1), (x2, y2) = wire
+        
+        if x1 == x2: # Vertical wire
+            if bx1 <= x1 <= bx2:
+                if min(y1, y2) < by2 and max(y1, y2) > by1:
+                    return True
+        elif y1 == y2: # Horizontal wire
+            if by1 <= y1 <= by2:
+                if min(x1, x2) < bx2 and max(x1, x2) > bx1:
+                    return True
+        return False
+
+    def _get_overlap_pairs(self):
+        pairs = set()
+        for i, c1 in enumerate(self.components):
+            for j in range(i + 1, len(self.components)):
+                c2 = self.components[j]
+                if c1.type in ['label', 'junction', 'crossover', 'terminal', 'gnd'] or c2.type in ['label', 'junction', 'crossover', 'terminal', 'gnd']:
+                    continue
+                if self.components_overlap(c1, c2):
+                    pairs.add(tuple(sorted([c1.name, c2.name])))
+        return pairs
+
+    def _get_wire_overlaps(self):
+        overlaps = set()
+        for c in self.components:
+            if c.type in ['label', 'junction', 'crossover', 'terminal', 'gnd']:
+                continue
+            for w in self.wires:
+                if self.does_comp_overlap_wire(c, w):
+                    overlaps.add((c.name, w))
+        return overlaps
+
+    def _check_and_add_junction(self, x, y):
+        x = round(x / GRID_SIZE) * GRID_SIZE
+        y = round(y / GRID_SIZE) * GRID_SIZE
+        for c in self.components:
+            if c.x == x and c.y == y:
+                return
+        for w in self.wires:
+            (x1, y1), (x2, y2) = w
+            if x1 == x2:
+                if x == x1 and min(y1, y2) < y < max(y1, y2):
+                    self.create_junction(x, y)
+                    break
+            elif y1 == y2:
+                if y == y1 and min(x1, x2) < x < max(x1, x2):
+                    self.create_junction(x, y)
+                    break
+
+    def create_junction(self, x, y):
+        self.counts['J'] = self.counts.get('J', 0) + 1
+        comp = Component('junction', x, y, f"J{self.counts['J']}")
+        self.components.append(comp)
+
+    def cleanup_junctions(self):
+        junctions = [c for c in self.components if c.type == 'junction']
+        for j in junctions:
+            degree = 0
+            for w in self.wires:
+                (x1, y1), (x2, y2) = w
+                if (x1 == j.x and y1 == j.y) or (x2 == j.x and y2 == j.y):
+                    degree += 1
+                elif x1 == x2 and x1 == j.x and min(y1, y2) < j.y < max(y1, y2):
+                    degree += 2
+                elif y1 == y2 and y1 == j.y and min(x1, x2) < j.x < max(x1, x2):
+                    degree += 2
+            
+            if degree < 3:
+                if j in self.components:
+                    self.components.remove(j)
+
     def redraw_all(self):
+        self.cleanup_junctions()
         self.canvas.delete("all")
         self._draw_grid()
         self._draw_wires()
@@ -546,7 +893,7 @@ class CircuitEditor:
 
     def _draw_component_visual(self, comp):
         sx, sy = self.world_to_screen(comp.x, comp.y)
-        tk_img, _ = ComponentHelper.render_image(comp.type, comp.rotation, self.zoom)
+        tk_img, _ = ComponentHelper.render_image(comp.type, comp.rotation, self.zoom, comp)
         if not tk_img: return
         
         comp.img_ref = tk_img
