@@ -186,8 +186,22 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         mosfet: {
             prefix: 'M', label: 'N-MOSFET',
-            params: { model: 'Mx' },
-            spice: '{name} {n2} {n1} {n3} {n3} {model}',
+            params: { model: 'Mx', w: '10u', l: '0.18u' },
+            spice: '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
+            pins: [[-20, 0], [20, -40], [20, 40]],  // Gate, Drain, Source
+            hitbox: { w: 60, h: 80 }
+        },
+        nmos: {
+            prefix: 'M', label: 'N-MOSFET',
+            params: { model: 'nmos', w: '10u', l: '0.18u' },
+            spice: '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
+            pins: [[-20, 0], [20, -40], [20, 40]],  // Gate, Drain, Source
+            hitbox: { w: 60, h: 80 }
+        },
+        pmos: {
+            prefix: 'M', label: 'P-MOSFET',
+            params: { model: 'pmos', w: '10u', l: '0.18u' },
+            spice: '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
             pins: [[-20, 0], [20, -40], [20, 40]],  // Gate, Drain, Source
             hitbox: { w: 60, h: 80 }
         },
@@ -1963,6 +1977,8 @@ document.addEventListener("DOMContentLoaded", () => {
         diode_led: drawDiodeLED,
         diode_zener: drawDiodeZener,
         mosfet: drawMOSFET,
+        nmos: drawMOSFET,
+        pmos: drawMOSFET_PMOS,
         phototransistor: drawPhototransistor,
         opamp: drawOpAmp,
         ic: drawIC,
@@ -2720,6 +2736,69 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Arrow on source (pointing inward for N-channel)
         drawArrow(ctx, sx + 10 * z, sy + 10 * z, sx - 2 * z, sy + 10 * z, z);
+
+        // Body connection (substrate to source)
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy);
+        ctx.lineTo(sx + 10 * z, sy);
+        ctx.lineTo(sx + 10 * z, sy + 10 * z);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 20 * z, sy, z);
+        drawPinDot(ctx, sx + 20 * z, sy - 40 * z, z);
+        drawPinDot(ctx, sx + 20 * z, sy + 40 * z, z);
+    }
+
+    function drawMOSFET_PMOS(ctx, sx, sy, z) {
+        // Gate lead (pin at [-20, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy);
+        ctx.lineTo(sx - 12 * z, sy);
+        ctx.stroke();
+
+        // Bubble at gate
+        ctx.beginPath();
+        ctx.arc(sx - 9 * z, sy, 3 * z, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Gate vertical bar (insulated)
+        ctx.lineWidth = Math.max(1, 2.5 * z);
+        ctx.beginPath();
+        ctx.moveTo(sx - 6 * z, sy - 14 * z);
+        ctx.lineTo(sx - 6 * z, sy + 14 * z);
+        ctx.stroke();
+        ctx.lineWidth = Math.max(1, 2 * z);
+
+        // Channel bar (dashed for enhancement mode)
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy - 14 * z);
+        ctx.lineTo(sx - 2 * z, sy + 14 * z);
+        ctx.stroke();
+
+        // Drain lead (top — pin at [20, -40])
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy - 10 * z);
+        ctx.lineTo(sx + 10 * z, sy - 10 * z);
+        ctx.lineTo(sx + 10 * z, sy - 24 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy - 24 * z);
+        ctx.lineTo(sx + 20 * z, sy - 40 * z);
+        ctx.stroke();
+
+        // Source lead (bottom — pin at [20, 40])
+        ctx.beginPath();
+        ctx.moveTo(sx - 2 * z, sy + 10 * z);
+        ctx.lineTo(sx + 10 * z, sy + 10 * z);
+        ctx.lineTo(sx + 10 * z, sy + 24 * z);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10 * z, sy + 24 * z);
+        ctx.lineTo(sx + 20 * z, sy + 40 * z);
+        ctx.stroke();
+
+        // Arrow on source (pointing outward for P-channel)
+        drawArrow(ctx, sx - 2 * z, sy + 10 * z, sx + 10 * z, sy + 10 * z, z);
 
         // Body connection (substrate to source)
         ctx.beginPath();
@@ -5351,7 +5430,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     components = data.components
                         .filter(c => !NON_COMPONENT_TYPES.includes(c.type))
                         .map(c => {
-                            const type = c.type;
+                            const type = c.type === 'mosfet' ? 'nmos' : c.type;
                             const db = COMPONENT_DB[type];
                             const params = db ? Object.assign({}, db.params) : { value: '1k' };
 

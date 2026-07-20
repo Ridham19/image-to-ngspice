@@ -56,6 +56,8 @@ PIN_MAP: Dict[str, List[Tuple[int, int]]] = {
     'bjt_pnp':              [(-20, 0), (20, -40), (20, 40)],
     'bjt':                  [(-20, 0), (20, -40), (20, 40)],
     'mosfet':               [(-20, 0), (20, -40), (20, 40)],
+    'nmos':                 [(-20, 0), (20, -40), (20, 40)],
+    'pmos':                 [(-20, 0), (20, -40), (20, 40)],
     'phototransistor':      [(-20, 0), (20, -40), (20, 40)],
     # ── ICs / Op-Amps ──
     # opamp has 3 fixed pins: V+(in+), V−(in−), Out

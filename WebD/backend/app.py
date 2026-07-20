@@ -124,7 +124,9 @@ SPICE_TEMPLATES = {
     'bjt_npn':        '{name} {n2} {n1} {n3} {model}',
     'bjt_pnp':        '{name} {n2} {n1} {n3} {model}',
     'bjt':            '{name} {n2} {n1} {n3} {model}',
-    'mosfet':         '{name} {n2} {n1} {n3} {n3} {model}',
+    'mosfet':         '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
+    'nmos':           '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
+    'pmos':           '{name} {n2} {n1} {n3} {n3} {model} w={w} l={l}',
     'phototransistor': '{name} {n2} {n1} {n3} {model}',
     # ── Subcircuit / IC types — handled specially in simulate endpoint ──
     # 'opamp'       → emits: X{name} {n_vplus} {n_vminus} {n_out} {vs_pos_node} {vs_neg_node} {model}
@@ -428,8 +430,12 @@ async def simulate_circuit(request: SimulateRequest):
                     models_needed.add(".Model Tx NPN (BF=300)")
                 elif comp.type == 'bjt_pnp':
                     models_needed.add(".Model Tx_pnp PNP (BF=300)")
-                elif comp.type == 'mosfet':
-                    models_needed.add(".Model Mx NMOS (VTO=1 KP=2m)")
+                elif comp.type in ('mosfet', 'nmos'):
+                    model_param = comp.params.get('model', 'Mx' if comp.type == 'mosfet' else 'nmos')
+                    models_needed.add(f".model {model_param} nmos level=54")
+                elif comp.type == 'pmos':
+                    model_param = comp.params.get('model', 'pmos')
+                    models_needed.add(f".model {model_param} pmos level=54")
                 elif comp.type == 'opamp':
                     # Only embed the built-in LM741 definition if no custom subckt provided
                     model_name = comp.params.get('model', 'LM741')
@@ -525,6 +531,8 @@ async def simulate_circuit(request: SimulateRequest):
                     'n2': nodes[1] if len(nodes) > 1 else '0',
                     'n3': nodes[2] if len(nodes) > 2 else '0',
                     'n4': nodes[3] if len(nodes) > 3 else '0',
+                    'w': '10u',
+                    'l': '0.18u',
                 }
                 # Merge component params
                 for k, v in comp.params.items():
