@@ -14,12 +14,12 @@ source.docx
 *.pth
 *.pt
 
-# # Datasets (Large folders)
-# dataset_full_yolo/
-# dataset_corrected/
-# cghd_raw/
-# cghd1152/
-# runs/
+# Datasets (Large folders)
+dataset_full_yolo/
+dataset_corrected/
+cghd_raw/
+cghd1152/
+runs/
 
 epoch_40.pt
 
@@ -51,3 +51,20 @@ WebD/backend/workspace/simulations/circuit.cir
 WebD/backend/workspace/simulations/sim_out.txt
 WebD/backend/workspace/simulations/circuit.cir
 WebD/backend/workspace/simulations/sim_out.txt
+
+python_web_browser
+python_web_browser/
+python_web_browser/*
+
+DATA/
+DATA
+DATA/*
+
+old_models
+old_models/
+
+test_files
+test_files/
+
+detected_components.json
+source_classifier_massive.pt
