@@ -5358,32 +5358,260 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ═══════════════════════════════════════════
+    // CLIENT-SIDE CANNY THRESHOLD PREVIEW ENGINE
+    // ═══════════════════════════════════════════
+    let currentCannyFile = null;
+    let cannySourceCanvas = document.createElement("canvas");
+
+    function runClientCannyEdgeDetection(sourceCanvas, targetCanvas, lowThreshold, highThreshold) {
+        const srcCtx = sourceCanvas.getContext("2d");
+        const width = sourceCanvas.width;
+        const height = sourceCanvas.height;
+        if (!width || !height) return;
+
+        targetCanvas.width = width;
+        targetCanvas.height = height;
+        const tgtCtx = targetCanvas.getContext("2d");
+
+        const srcData = srcCtx.getImageData(0, 0, width, height);
+        const pixels = srcData.data;
+
+        // Step 1: Grayscale & 3x3 Gaussian Blur Smoothing
+        const gray = new Float32Array(width * height);
+        for (let i = 0; i < pixels.length; i += 4) {
+            gray[i / 4] = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+        }
+
+        const blurred = new Float32Array(width * height);
+        const gKernel = [1, 2, 1, 2, 4, 2, 1, 2, 1];
+        for (let y = 1; y < height - 1; y++) {
+            const yOffset = y * width;
+            for (let x = 1; x < width - 1; x++) {
+                let sum = 0;
+                let kIdx = 0;
+                for (let ky = -1; ky <= 1; ky++) {
+                    const rowOffset = (y + ky) * width;
+                    for (let kx = -1; kx <= 1; kx++) {
+                        sum += gray[rowOffset + (x + kx)] * gKernel[kIdx++];
+                    }
+                }
+                blurred[yOffset + x] = sum / 16;
+            }
+        }
+
+        // Step 2: Sobel Operator Gradients & Direction Quantization
+        const mag = new Float32Array(width * height);
+        const dir = new Uint8Array(width * height);
+
+        for (let y = 1; y < height - 1; y++) {
+            const yOffset = y * width;
+            for (let x = 1; x < width - 1; x++) {
+                const idx = yOffset + x;
+                const gx = 
+                    -1 * blurred[(y - 1) * width + (x - 1)] + 1 * blurred[(y - 1) * width + (x + 1)] +
+                    -2 * blurred[yOffset + (x - 1)]       + 2 * blurred[yOffset + (x + 1)] +
+                    -1 * blurred[(y + 1) * width + (x - 1)] + 1 * blurred[(y + 1) * width + (x + 1)];
+
+                const gy = 
+                    -1 * blurred[(y - 1) * width + (x - 1)] - 2 * blurred[(y - 1) * width + x] - 1 * blurred[(y - 1) * width + (x + 1)] +
+                     1 * blurred[(y + 1) * width + (x - 1)] + 2 * blurred[(y + 1) * width + x] + 1 * blurred[(y + 1) * width + (x + 1)];
+
+                const m = Math.sqrt(gx * gx + gy * gy);
+                mag[idx] = m;
+
+                let angle = Math.atan2(gy, gx) * (180 / Math.PI);
+                if (angle < 0) angle += 180;
+
+                if ((angle >= 0 && angle < 22.5) || (angle >= 157.5 && angle <= 180)) {
+                    dir[idx] = 0; // Horizontal
+                } else if (angle >= 22.5 && angle < 67.5) {
+                    dir[idx] = 1; // 45 deg
+                } else if (angle >= 67.5 && angle < 112.5) {
+                    dir[idx] = 2; // Vertical
+                } else {
+                    dir[idx] = 3; // 135 deg
+                }
+            }
+        }
+
+        // Step 3: Non-Maximum Suppression (NMS)
+        const nms = new Float32Array(width * height);
+        for (let y = 1; y < height - 1; y++) {
+            const yOffset = y * width;
+            for (let x = 1; x < width - 1; x++) {
+                const idx = yOffset + x;
+                const m = mag[idx];
+                const d = dir[idx];
+                let p1 = 0, p2 = 0;
+
+                if (d === 0) {
+                    p1 = mag[idx - 1];
+                    p2 = mag[idx + 1];
+                } else if (d === 1) {
+                    p1 = mag[(y - 1) * width + (x + 1)];
+                    p2 = mag[(y + 1) * width + (x - 1)];
+                } else if (d === 2) {
+                    p1 = mag[(y - 1) * width + x];
+                    p2 = mag[(y + 1) * width + x];
+                } else if (d === 3) {
+                    p1 = mag[(y - 1) * width + (x - 1)];
+                    p2 = mag[(y + 1) * width + (x + 1)];
+                }
+
+                nms[idx] = (m >= p1 && m >= p2) ? m : 0;
+            }
+        }
+
+        // Step 4: Double Hysteresis Thresholding & Edge Connectivity
+        const outData = tgtCtx.createImageData(width, height);
+        const outPixels = outData.data;
+        const edges = new Uint8Array(width * height);
+
+        for (let i = 0; i < nms.length; i++) {
+            const val = nms[i];
+            if (val >= highThreshold) {
+                edges[i] = 2; // Strong edge
+            } else if (val >= lowThreshold) {
+                edges[i] = 1; // Weak edge
+            }
+        }
+
+        for (let y = 1; y < height - 1; y++) {
+            const yOffset = y * width;
+            for (let x = 1; x < width - 1; x++) {
+                const idx = yOffset + x;
+                if (edges[idx] === 1) {
+                    if (
+                        edges[idx - width - 1] === 2 || edges[idx - width] === 2 || edges[idx - width + 1] === 2 ||
+                        edges[idx - 1] === 2         ||                             edges[idx + 1] === 2 ||
+                        edges[idx + width - 1] === 2 || edges[idx + width] === 2 || edges[idx + width + 1] === 2
+                    ) {
+                        edges[idx] = 2;
+                    } else {
+                        edges[idx] = 0;
+                    }
+                }
+            }
+        }
+
+        // Render output pixels (white edges on black background)
+        for (let i = 0; i < edges.length; i++) {
+            const pxIdx = i * 4;
+            const val = edges[i] === 2 ? 255 : 0;
+            outPixels[pxIdx]     = val;
+            outPixels[pxIdx + 1] = val;
+            outPixels[pxIdx + 2] = val;
+            outPixels[pxIdx + 3] = 255;
+        }
+
+        tgtCtx.putImageData(outData, 0, 0);
+    }
+
+    function renderCannyThresholdPreview() {
+        const lowVal = parseInt(document.getElementById("cannyLowSlider").value, 10);
+        const highVal = parseInt(document.getElementById("cannyHighSlider").value, 10);
+
+        document.getElementById("cannyLowVal").textContent = lowVal;
+        document.getElementById("cannyHighVal").textContent = highVal;
+
+        const targetCanvas = document.getElementById("cannyPreviewCanvas");
+        runClientCannyEdgeDetection(cannySourceCanvas, targetCanvas, lowVal, highVal);
+    }
+
+    // ═══════════════════════════════════════════
     // AI IMPORT LOGIC
     // ═══════════════════════════════════════════
     const fileInput = document.getElementById("fileInput");
     document.getElementById("btnLoadImage").addEventListener("click", () => fileInput.click());
 
-    fileInput.addEventListener("change", async (event) => {
+    fileInput.addEventListener("change", (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
-        document.getElementById("statusText").innerText = "Processing Image...";
+        currentCannyFile = file;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                // Scale down max dimension to 800px for ultra-fast frontend Canny rendering
+                const maxDim = 800;
+                let w = img.naturalWidth;
+                let h = img.naturalHeight;
+                if (w > maxDim || h > maxDim) {
+                    if (w > h) {
+                        h = Math.round((h * maxDim) / w);
+                        w = maxDim;
+                    } else {
+                        w = Math.round((w * maxDim) / h);
+                        h = maxDim;
+                    }
+                }
+
+                cannySourceCanvas.width = w;
+                cannySourceCanvas.height = h;
+                const ctx = cannySourceCanvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+
+                // Reset sliders to defaults (Low=50, High=150)
+                document.getElementById("cannyLowSlider").value = 50;
+                document.getElementById("cannyHighSlider").value = 150;
+
+                // Show modal & render client-side Canny edge preview
+                document.getElementById("cannyThresholdModal").style.display = "flex";
+                renderCannyThresholdPreview();
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Slider Input Event Listeners
+    document.getElementById("cannyLowSlider").addEventListener("input", renderCannyThresholdPreview);
+    document.getElementById("cannyHighSlider").addEventListener("input", renderCannyThresholdPreview);
+
+    // Reset Defaults Button
+    document.getElementById("btnCannyReset").addEventListener("click", () => {
+        document.getElementById("cannyLowSlider").value = 50;
+        document.getElementById("cannyHighSlider").value = 150;
+        renderCannyThresholdPreview();
+    });
+
+    // Close Modal Handler
+    const closeCannyModal = () => {
+        document.getElementById("cannyThresholdModal").style.display = "none";
+        fileInput.value = "";
+    };
+    document.getElementById("cannyModalClose").addEventListener("click", closeCannyModal);
+    document.getElementById("btnCannyCancel").addEventListener("click", closeCannyModal);
+
+    // Run Detection & Wire Tracing Handler
+    document.getElementById("btnCannyRun").addEventListener("click", async () => {
+        if (!currentCannyFile) return;
+
+        document.getElementById("cannyThresholdModal").style.display = "none";
+        document.getElementById("statusText").innerText = "Processing Image & Tracing Wires...";
+
+        const lowVal = document.getElementById("cannyLowSlider").value;
+        const highVal = document.getElementById("cannyHighSlider").value;
+
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("file", currentCannyFile);
+        formData.append("canny_low", lowVal);
+        formData.append("canny_high", highVal);
 
         try {
             const response = await fetch("http://127.0.0.1:8000/api/detect", { method: "POST", body: formData });
             const data = await response.json();
 
             if (data.status === "success") {
-                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components. Review & edit connections.`;
+                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components (Canny: low=${lowVal}, high=${highVal}). Review & edit connections.`;
 
                 // Show modal and initialize the interactive preview editor
                 const modal = document.getElementById("aiDebugModal");
                 modal.style.display = "flex";
 
                 // Initialize the interactive editor with the API data
-                // Use requestAnimationFrame to ensure the modal is visible before sizing canvas
                 requestAnimationFrame(() => {
                     initAiPreviewEditor(data);
                 });

@@ -1235,3 +1235,185 @@ canvas {
     color: #000;
     border-color: #f59e0b;
 }
+
+/* ═══════════════════════════════════════════ */
+/* CANNY THRESHOLD MODAL STYLING               */
+/* ═══════════════════════════════════════════ */
+.canny-modal-container {
+    width: 92vw;
+    max-width: 960px;
+    background: var(--bg-primary, #1e1e24);
+    border-radius: 12px;
+    border: 1px solid var(--border-color, #333);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.canny-modal-body {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    padding: 20px;
+    background: var(--bg-secondary, #141418);
+    min-height: 420px;
+}
+
+@media (max-width: 768px) {
+    .canny-modal-body {
+        flex-direction: column;
+    }
+}
+
+.canny-controls-panel {
+    flex: 0 0 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 18px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canny-control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.canny-slider-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main, #e2e8f0);
+}
+
+.canny-val-badge {
+    background: #3b82f6;
+    color: #ffffff;
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.canny-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #334155;
+    outline: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.canny-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #3b82f6;
+    border: 2px solid #ffffff;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.1s, background 0.2s;
+}
+
+.canny-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    background: #60a5fa;
+}
+
+.canny-help-text {
+    font-size: 11px;
+    color: #94a3b8;
+    margin: 0;
+    line-height: 1.3;
+}
+
+.canny-actions-row {
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-start;
+}
+
+.canny-btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.canny-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.canny-preview-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #090d16;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.canny-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+.canny-preview-tag {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.canny-preview-canvas-wrap {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px;
+    background: #05070c;
+    overflow: auto;
+    min-height: 320px;
+}
+
+#cannyPreviewCanvas {
+    max-width: 100%;
+    max-height: 480px;
+    object-fit: contain;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}

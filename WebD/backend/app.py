@@ -47,7 +47,7 @@ def _safe_filename(name: str) -> str:
     # Fallback for edge-case empty result
     return name or "upload"
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.encoders import jsonable_encoder
@@ -226,7 +226,11 @@ def read_root():
 
 
 @app.post("/api/detect")
-async def detect_circuit(file: UploadFile = File(...)):
+async def detect_circuit(
+    file: UploadFile = File(...),
+    canny_low: int = Form(50),
+    canny_high: int = Form(150),
+):
     """
     Upload a circuit image, run YOLO + OCR component detection, then execute
     the full wire-tracing vision pipeline to yield a connectivity matrix.
@@ -267,7 +271,7 @@ async def detect_circuit(file: UploadFile = File(...)):
                 },
             )
 
-        print(f"🖼️  Image decoded: {bgr_image.shape[1]}x{bgr_image.shape[0]} px")
+        print(f"🖼️  Image decoded: {bgr_image.shape[1]}x{bgr_image.shape[0]} px (Canny thresholds: low={canny_low}, high={canny_high})")
 
         # Step 3 -- YOLO + OCR detection
         # Pass the preloaded BGR matrix to avoid a second disk read inside detect()
@@ -282,13 +286,14 @@ async def detect_circuit(file: UploadFile = File(...)):
         try:
             from core.processing import compute_pin_anchors, TRANSPARENT_TYPES
             from wire_tracer.tracer import trace_wires
+            from wire_tracer.config import WireTracerConfig
             import cv2, base64
 
             # Step 4a: Compute pin anchors using the core dual-path preprocessor
             # for high-quality rotation calibration (this preprocessor is
             # validated on hand-drawn circuit images).
             from core.processing import preprocess_image as core_preprocess
-            _, _, core_binary = core_preprocess(bgr_image)
+            _, _, core_binary = core_preprocess(bgr_image, canny_low=canny_low, canny_high=canny_high)
             pin_anchors = compute_pin_anchors(detected_comps, wire_mask=core_binary)
             
             # Step 4b: Transform detected_comps to wire_tracer format
@@ -314,10 +319,12 @@ async def detect_circuit(file: UploadFile = File(...)):
                 
                 wt_components.append(wt_comp)
                 
-            # Step 5: Run the wire_tracer pipeline (has its own preprocessing)
+            # Step 5: Run the wire_tracer pipeline (has its own preprocessing with custom Canny parameters)
+            tracer_cfg = WireTracerConfig(canny_low=canny_low, canny_high=canny_high)
             netlist, debug_info = trace_wires(
                 bgr_image, 
                 wt_components, 
+                config=tracer_cfg,
                 method="connected_components", 
                 debug=True
             )

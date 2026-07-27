@@ -247,6 +247,59 @@
     </div>
 
     <!-- ═══════════════════════════════════════════ -->
+    <!-- CANNY THRESHOLDING PREVIEW MODAL            -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="cannyThresholdModal" class="modal-overlay" style="display:none;">
+        <div class="modal-container canny-modal-container">
+            <div class="modal-header">
+                <h2>🖼️ Edge Detection & Thresholding Setup</h2>
+                <button id="cannyModalClose" class="modal-close-btn">&times;</button>
+            </div>
+
+            <div class="canny-modal-body">
+                <div class="canny-controls-panel">
+                    <div class="canny-control-group">
+                        <div class="canny-slider-label">
+                            <span>Canny Low Threshold:</span>
+                            <span id="cannyLowVal" class="canny-val-badge">50</span>
+                        </div>
+                        <input type="range" id="cannyLowSlider" min="0" max="255" value="50" class="canny-slider">
+                        <p class="canny-help-text">Filters out weak background noise below this intensity.</p>
+                    </div>
+
+                    <div class="canny-control-group">
+                        <div class="canny-slider-label">
+                            <span>Canny High Threshold:</span>
+                            <span id="cannyHighVal" class="canny-val-badge">150</span>
+                        </div>
+                        <input type="range" id="cannyHighSlider" min="0" max="255" value="150" class="canny-slider">
+                        <p class="canny-help-text">Triggers strong edge detection above this intensity.</p>
+                    </div>
+
+                    <div class="canny-actions-row">
+                        <button id="btnCannyReset" class="canny-btn-secondary">↺ Reset Defaults (50 / 150)</button>
+                    </div>
+                </div>
+
+                <div class="canny-preview-panel">
+                    <div class="canny-preview-header">
+                        <span>Live Canny Edge Mask</span>
+                        <span class="canny-preview-tag">Frontend Rendered</span>
+                    </div>
+                    <div class="canny-preview-canvas-wrap">
+                        <canvas id="cannyPreviewCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btnCannyCancel" class="modal-btn-cancel">Cancel</button>
+                <button id="btnCannyRun" class="modal-btn-run">▶ Run Detection & Wire Tracing</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
     <!-- AI DETECTION PREVIEW MODAL                   -->
     <!-- ═══════════════════════════════════════════ -->
     <div id="aiDebugModal" class="modal-overlay" style="display:none;">
