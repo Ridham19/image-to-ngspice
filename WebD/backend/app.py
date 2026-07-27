@@ -81,9 +81,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(SIM_DIR, exist_ok=True)
 
 # ═══════════════════════════════════════════
-# NGSPICE CONFIGURATION
+# CONFIGURATION LOAD (NGSPICE & MODEL PATHS)
 # ═══════════════════════════════════════════
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+if not os.path.exists(CONFIG_FILE):
+    CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.json")
+
 NGSPICE_PATH = "ngspice"  # fallback: expect on system PATH
 
 if os.path.exists(CONFIG_FILE):
@@ -91,7 +94,7 @@ if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             cfg = json.load(f)
             NGSPICE_PATH = cfg.get("ngspice_path", NGSPICE_PATH)
-        print(f"📋 Loaded ngspice path from config: {NGSPICE_PATH}")
+        print(f"📋 Loaded config from {CONFIG_FILE}: ngspice_path='{NGSPICE_PATH}'")
     except Exception as e:
         print(f"⚠️ Could not read config.json: {e}")
 

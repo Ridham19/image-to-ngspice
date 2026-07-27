@@ -101,14 +101,25 @@ def classify_text(text, comp_type, comp_prefix):
         return 'name'
     return 'value'
 
+try:
+    from core.ocr_validator import correct_ocr_value
+except ImportError:
+    try:
+        from ocr_validator import correct_ocr_value
+    except ImportError:
+        correct_ocr_value = None
+
 def correct_component_value(value_str, comp_type):
     """Normalise an OCR-read value string into a valid SPICE literal.
 
-    Applies handwriting digit corrections, European notation expansion,
-    and component-aware unit autocorrect.
+    Delegates validation and autocorrection to core.ocr_validator module.
     """
     if not value_str:
         return value_str
+
+    if correct_ocr_value is not None:
+        corrected, _, _ = correct_ocr_value(value_str, comp_type)
+        return corrected
 
     comp_type = comp_type.lower()
 
@@ -205,15 +216,58 @@ def correct_component_value(value_str, comp_type):
 
     return f"{numeric_part}{unit_part}"
 
-class ComponentDetector:
-    def __init__(self, model_name="best.pt"):
-        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        model_path = os.path.join(root_dir, model_name)
+def _find_model_file(filename, start_dir):
+    if not filename:
+        return None
+    if os.path.exists(filename):
+        return filename
+    candidates = [
+        os.path.join(start_dir, filename),
+        os.path.join(os.path.dirname(start_dir), filename),
+        os.path.join(os.path.dirname(os.path.dirname(start_dir)), filename),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
-        print(f"🧠 Loading YOLO Model: {model_path}")
+def _load_config(start_dir):
+    config_file = _find_model_file("config.json", start_dir)
+    if config_file and os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                return json.load(f), os.path.dirname(config_file)
+        except Exception as e:
+            print(f"⚠️ Could not load config.json: {e}")
+    return {}, start_dir
+
+class ComponentDetector:
+    def __init__(self, model_name=None):
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cfg, cfg_dir = _load_config(root_dir)
+
+        # Configurable model paths from config.json (with fallback search)
+        cfg_yolo = cfg.get("yolo_model_path") or cfg.get("yolo_model")
+        cfg_bjt = cfg.get("bjt_model_path") or cfg.get("bjt_model")
+
+        yolo_target = model_name or cfg_yolo or "epoch_40.pt"
+        model_path = _find_model_file(yolo_target, root_dir) or _find_model_file(yolo_target, cfg_dir) or _find_model_file("best.pt", root_dir)
+
+        print(f"🧠 Loading Primary YOLO Model: {model_path}")
         self.model = None
-        if os.path.exists(model_path):
+        if model_path and os.path.exists(model_path):
             self.model = YOLO(model_path)
+
+        bjt_target = cfg_bjt or "bjt_best_model.pt"
+        bjt_model_path = _find_model_file(bjt_target, root_dir) or _find_model_file(bjt_target, cfg_dir)
+
+        self.bjt_classifier = None
+        if bjt_model_path and os.path.exists(bjt_model_path) and HAS_ML:
+            print(f"🧠 Loading BJT Classifier Model: {bjt_model_path}")
+            try:
+                self.bjt_classifier = YOLO(bjt_model_path)
+            except Exception as e:
+                print(f"⚠️ Failed to load BJT classifier: {e}")
             
         self.ocr_reader = None
         if HAS_ML:
@@ -241,8 +295,12 @@ class ComponentDetector:
         'transistor.photo':       'phototransistor',
         'operational_amplifier':  'opamp',
         'integrated_circuit':     'ic',
-        # Legacy remap
+        # Legacy remap & BJT classifier remap
         'transistor':             'bjt',
+        'BjtNpn':                 'bjt_npn',
+        'BjtPnp':                 'bjt_pnp',
+        'bjt_npn':                'bjt_npn',
+        'bjt_pnp':                'bjt_pnp',
     }
 
     # SPICE prefix for auto-naming
@@ -311,6 +369,42 @@ class ComponentDetector:
                     'value': None,
                     'rotation': rotation
                 })
+
+        # --- BJT NPN / PNP CLASSIFICATION REFINEMENT ---
+        if self.bjt_classifier is not None and cv_img is not None:
+            for comp in raw_detections:
+                if comp['type'] in ('bjt', 'transistor', 'bjt_npn', 'bjt_pnp'):
+                    x, y, w, h = comp['box']
+                    pad_w = int(w * 0.15)
+                    pad_h = int(h * 0.15)
+                    h_img, w_img = cv_img.shape[:2]
+                    x1 = max(0, x - pad_w)
+                    y1 = max(0, y - pad_h)
+                    x2 = min(w_img, x + w + pad_w)
+                    y2 = min(h_img, y + h + pad_h)
+
+                    crop_img = cv_img[y1:y2, x1:x2]
+                    if crop_img.shape[0] > 0 and crop_img.shape[1] > 0:
+                        try:
+                            bjt_results = self.bjt_classifier.predict(crop_img, conf=0.10, verbose=False)
+                            best_bjt_cls = None
+                            best_bjt_conf = 0.0
+                            for res in bjt_results:
+                                for b in res.boxes:
+                                    c_id = int(b.cls[0])
+                                    c_conf = float(b.conf[0])
+                                    if c_conf > best_bjt_conf:
+                                        best_bjt_conf = c_conf
+                                        raw_bjt_label = self.bjt_classifier.names[c_id]
+                                        best_bjt_cls = self.CLASS_REMAP.get(raw_bjt_label, 'bjt_npn')
+
+                            if best_bjt_cls:
+                                print(f"🔬 BJT Classifier refined {comp['name']} ({comp['type']}) -> {best_bjt_cls} (conf: {best_bjt_conf:.2f})")
+                                comp['type'] = best_bjt_cls
+                            else:
+                                comp['type'] = 'bjt_npn'
+                        except Exception as bjt_err:
+                            print(f"⚠️ Error running BJT classifier on crop: {bjt_err}")
         
         # --- SPATIAL TEXT MATCHING & OCR ---
         # Junction detections are kept but separated — they act as wire merge points

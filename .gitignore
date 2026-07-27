@@ -35,7 +35,7 @@ for_report
 for_report/
 **/for_report/
 *.json
-.cir
+*.cir
 *.webp
 *.cir
 .json

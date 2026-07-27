@@ -596,7 +596,7 @@ class CircuitEditor:
         if not img_path: return
 
         try:
-            self.status.config(text="🤖 AI is processing image... Please wait.")
+            self.status.config(text="AI is processing image... Please wait.")
             self.root.update()
 
             import cv2

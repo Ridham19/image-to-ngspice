@@ -5367,7 +5367,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const file = event.target.files[0];
         if (!file) return;
 
-        document.getElementById("statusText").innerText = "🤖 Processing Image...";
+        document.getElementById("statusText").innerText = "Processing Image...";
         const formData = new FormData();
         formData.append("file", file);
 
