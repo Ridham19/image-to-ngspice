@@ -355,10 +355,20 @@ class ComponentDetector:
                 counters[prefix] = counters.get(prefix, 0) + 1
                 name = f"{prefix}{counters[prefix]}"
 
-                # Determine rotation from bounding box aspect ratio
-                # If vertical (h > w), rotate 90 degrees anticlockwise (270 degrees in canvas space)
-                # Else horizontal, keep rotation as 0 degrees
-                rotation = 270 if h > w else 0
+                # Determine rotation from bounding box aspect ratio for rotatable components.
+                # Sources, BJTs, MOSFETs, and Ground stay fixed at 0 degrees.
+                FIXED_ZERO_ROTATION_TYPES = {
+                    'source', 'voltage_source', 'current_source', 'ac_source', 'vss',
+                    'sine_source', 'pulse_source', 'exp_source', 'am_source', 'sffm_source', 'pwl_source',
+                    'bjt_npn', 'bjt_pnp', 'bjt', 'transistor', 'phototransistor',
+                    'mosfet', 'nmos', 'pmos',
+                    'ground'
+                }
+
+                if label in FIXED_ZERO_ROTATION_TYPES:
+                    rotation = 0
+                else:
+                    rotation = 270 if h > w else 0
 
                 raw_detections.append({
                     'name': name,

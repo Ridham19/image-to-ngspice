@@ -22,7 +22,7 @@ class WireTracerConfig:
     min_wire_area: int = 25
 
     # Pin assignment
-    max_search_radius: int = 40
+    max_search_radius: int = 80
     pin_assignment_strategy: str = "dominant"   # "dominant" or "nearest"
 
     # Wire continuity enhancement (post-masking)

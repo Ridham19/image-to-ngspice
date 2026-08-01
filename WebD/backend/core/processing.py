@@ -41,26 +41,55 @@ from typing import List, Dict, Any, Tuple, Optional
 # ===================================================================
 PIN_OFFSET_RULES: Dict[str, List[Tuple[float, float]]] = {
     # 2-terminal horizontal devices
-    "resistor":       [(-1.0, 0.0), (1.0, 0.0)],
-    "capacitor":      [(-1.0, 0.0), (1.0, 0.0)],
-    "inductor":       [(-1.0, 0.0), (1.0, 0.0)],
-    "diode":          [(-1.0, 0.0), (1.0, 0.0)],
+    "resistor":           [(-1.0, 0.0), (1.0, 0.0)],
+    "resistor_photo":     [(-1.0, 0.0), (1.0, 0.0)],
+    "capacitor":          [(-1.0, 0.0), (1.0, 0.0)],
+    "capacitor_polarized":[(-1.0, 0.0), (1.0, 0.0)],
+    "inductor":           [(-1.0, 0.0), (1.0, 0.0)],
+    "diode":              [(-1.0, 0.0), (1.0, 0.0)],
+    "diode_led":          [(-1.0, 0.0), (1.0, 0.0)],
+    "diode_zener":        [(-1.0, 0.0), (1.0, 0.0)],
 
     # Vertical sources (+ on top, - on bottom)
-    "source":         [(0.0, -1.0), (0.0, 1.0)],
-    "voltage_source": [(0.0, -1.0), (0.0, 1.0)],
-    "current_source": [(0.0, -1.0), (0.0, 1.0)],
-    "ac_source":      [(0.0, -1.0), (0.0, 1.0)],
+    "source":             [(0.0, -1.0), (0.0, 1.0)],
+    "voltage_source":     [(0.0, -1.0), (0.0, 1.0)],
+    "current_source":     [(0.0, -1.0), (0.0, 1.0)],
+    "ac_source":          [(0.0, -1.0), (0.0, 1.0)],
+    "vss":                [(0.0, -1.0), (0.0, 1.0)],
+    "sine_source":        [(0.0, -1.0), (0.0, 1.0)],
+    "pulse_source":       [(0.0, -1.0), (0.0, 1.0)],
+    "exp_source":         [(0.0, -1.0), (0.0, 1.0)],
+    "pwl_source":         [(0.0, -1.0), (0.0, 1.0)],
 
     # Ground has a single pin at its top edge
-    "ground":         [(0.0, -1.0)],
+    "ground":             [(0.0, -1.0)],
 
     # BJTs: Base (left-center), Collector (right-top), Emitter (right-bottom)
-    "bjt_npn":        [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
-    "bjt_pnp":        [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
-    "bjt":            [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
-    "transistor":     [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "bjt_npn":            [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "bjt_pnp":            [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "bjt":                [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "transistor":         [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "phototransistor":    [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+
+    # MOSFETs: Gate (left-center), Drain (right-top), Source (right-bottom)
+    "mosfet":             [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "nmos":               [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
+    "pmos":               [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
 }
+
+# Component types whose rotation should stay fixed at 0 degrees
+FIXED_ZERO_ROTATION_TYPES = {
+    # Sources
+    "source", "voltage_source", "current_source", "ac_source", "vss",
+    "sine_source", "pulse_source", "exp_source", "am_source", "sffm_source", "pwl_source",
+    # Transistors
+    "bjt_npn", "bjt_pnp", "bjt", "transistor", "phototransistor",
+    # MOSFETs
+    "mosfet", "nmos", "pmos",
+    # Ground
+    "ground"
+}
+
 
 # Component types whose internals should NOT be masked (they are not symbols)
 TRANSPARENT_TYPES = {"wire", "junction", "text", "label"}
@@ -388,10 +417,10 @@ def compute_pin_anchors(
 
         best_rot = 0
 
-        if "rotation" in det:
-            best_rot = det["rotation"]
-        elif comp_type == "ground":
+        if comp_type in FIXED_ZERO_ROTATION_TYPES:
             best_rot = 0
+        elif "rotation" in det:
+            best_rot = det["rotation"]
         elif wire_mask is not None:
             is_vertical   = bh > bw * 1.15
             is_horizontal = bw > bh * 1.15

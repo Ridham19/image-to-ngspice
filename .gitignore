@@ -68,3 +68,9 @@ test_files/
 
 detected_components.json
 source_classifier_massive.pt
+
+final_year_report
+final_year_report/
+final_year_report/*
+WebD/backend/workspace/latest_detection.json
+
