@@ -399,14 +399,26 @@ class ComponentDetector:
                             bjt_results = self.bjt_classifier.predict(crop_img, conf=0.10, verbose=False)
                             best_bjt_cls = None
                             best_bjt_conf = 0.0
-                            for res in bjt_results:
-                                for b in res.boxes:
-                                    c_id = int(b.cls[0])
-                                    c_conf = float(b.conf[0])
-                                    if c_conf > best_bjt_conf:
-                                        best_bjt_conf = c_conf
-                                        raw_bjt_label = self.bjt_classifier.names[c_id]
-                                        best_bjt_cls = self.CLASS_REMAP.get(raw_bjt_label, 'bjt_npn')
+                            if bjt_results:
+                                for res in bjt_results:
+                                    if res is None:
+                                        continue
+                                    # Case 1: YOLO Classification model (res.probs)
+                                    if hasattr(res, 'probs') and res.probs is not None:
+                                        top1_idx = int(res.probs.top1)
+                                        top1_conf = float(res.probs.top1conf)
+                                        raw_bjt_label = res.names[top1_idx]
+                                        best_bjt_cls = self.CLASS_REMAP.get(raw_bjt_label, raw_bjt_label)
+                                        best_bjt_conf = top1_conf
+                                    # Case 2: YOLO Detection model (res.boxes)
+                                    elif getattr(res, 'boxes', None) is not None:
+                                        for b in res.boxes:
+                                            c_id = int(b.cls[0])
+                                            c_conf = float(b.conf[0])
+                                            if c_conf > best_bjt_conf:
+                                                best_bjt_conf = c_conf
+                                                raw_bjt_label = self.bjt_classifier.names[c_id]
+                                                best_bjt_cls = self.CLASS_REMAP.get(raw_bjt_label, 'bjt_npn')
 
                             if best_bjt_cls:
                                 print(f"🔬 BJT Classifier refined {comp['name']} ({comp['type']}) -> {best_bjt_cls} (conf: {best_bjt_conf:.2f})")
