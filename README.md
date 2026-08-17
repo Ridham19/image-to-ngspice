@@ -2,8 +2,9 @@
 
 > 🚧 **WORK IN PROGRESS:** This project is currently under active development. The codebase, pipeline, and features are subject to rapid changes and restructuring. 🚧
 
-## 🔗 Live Demo
-Check out the interactive frontend preview: **[Frontend Live Preview](https://ridham19.github.io/image-to-ngspice/)**
+## 🔗 Demo & Preview
+* 🌐 **Interactive Frontend Preview:** [Frontend Live Preview](https://ridham19.github.io/image-to-ngspice/)
+* 🎥 **Video Demo:** [Watch on YouTube](https://youtu.be/5eEAm4J13wY)
 
 ## 📖 Overview
 This project aims to completely bridge the gap between physical circuit sketches and simulation software. It is an end-to-end Machine Learning pipeline designed to take an image of a handwritten circuit diagram, detect the electronic components, trace the wire routing, and automatically generate a fully executable **NGSPICE netlist**. It now includes both a web-based and desktop-based studio for editing and simulating the recognized circuits.
