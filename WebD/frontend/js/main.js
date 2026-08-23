@@ -255,8 +255,8 @@ document.addEventListener("DOMContentLoaded", () => {
             hitbox: { w: 20, h: 20 }
         },
         label: {
-            prefix: 'LBL', label: 'Node Label',
-            params: { name: 'Vout' },
+            prefix: 'NET', label: 'Node Label',
+            params: { name: 'NET' },
             spice: '',
             pins: [[0, 0]],
             hitbox: { w: 40, h: 20 }
@@ -577,10 +577,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const name = nextName(db.prefix);
         const params = Object.assign({}, db.params);
+        if (type === 'label') {
+            params.name = name;
+        }
         return {
             type, x: worldX, y: worldY,
             name,
-            value: params.value || params.dc || params.mag || '',
+            value: params.value || params.dc || params.mag || params.name || '',
             params,
             rotation: 0
         };
@@ -1150,15 +1153,172 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 2. Mouse Down
     canvas.addEventListener("mousedown", (e) => {
-        // Middle Click to Pan
-        if (e.button === 1) {
+        // Panning: Middle Click (1) in any mode OR Left Click (0) in select mode
+        if (e.button === 1 || (e.button === 0 && mode === 'select')) {
+            // Clear interactive debug highlights on click
+            if (highlightedComponents.length > 0 || highlightedNodes.length > 0 || highlightedNetlistLine !== null) {
+                highlightedComponents = [];
+                highlightedNodes = [];
+                highlightedNetlistLine = null;
+                scheduleAnimation();
+                updateNetlistPreview(lastNetlistText);
+                render();
+            }
+
             isPanning = true;
             panStart = { x: e.offsetX, y: e.offsetY };
             canvas.style.cursor = 'grabbing';
             return;
         }
 
+        // Left Click (0) in non-select modes (wire drawing or component placement)
         if (e.button === 0) {
+            // Clear interactive debug highlights on click
+            if (highlightedComponents.length > 0 || highlightedNodes.length > 0 || highlightedNetlistLine !== null) {
+                highlightedComponents = [];
+                highlightedNodes = [];
+                highlightedNetlistLine = null;
+                scheduleAnimation();
+                updateNetlistPreview(lastNetlistText);
+                render();
+            }
+
+            if (mode === 'wire') {
+                // Use smart snapping for wire endpoints (pin > grid)
+                const snapped = smartSnap(e.offsetX, e.offsetY);
+                const raw = screenToWorldRaw(e.offsetX, e.offsetY);
+                const landedOnPin = findNearestPin(raw.x, raw.y);
+
+                if (!wireStart) {
+                    wireStart = snapped;
+                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
+                    if (hitWirePt && !landedOnPin) {
+                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
+                        if (!alreadyHasJunc) {
+                            components.push(createComponent('junction', snapped.x, snapped.y));
+                        }
+                    }
+                } else {
+                    // Manhattan wire routing
+                    if (wireStart.x !== snapped.x || wireStart.y !== snapped.y) {
+                        saveState();
+                        const p1 = { x: wireStart.x, y: wireStart.y };
+                        const p2 = { x: snapped.x, y: snapped.y };
+                        
+                        // Find components to exclude (those connected to either end of the segment)
+                        const exclude = [];
+                        components.forEach(c => {
+                            const pins = getCompPins(c);
+                            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
+                            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
+                            if (hasP1 || hasP2) exclude.push(c);
+                        });
+
+                        const mid1 = { x: p2.x, y: p1.y };
+                        const mid2 = { x: p1.x, y: p2.y };
+                        
+                        const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid1, p2, components, exclude);
+                        const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
+                                      doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                        
+                        let chosenSegments = [];
+                        if (coll1 && !coll2) {
+                            // Choose V-then-H
+                            chosenSegments = [
+                                [p1, { x: p1.x, y: p2.y }],
+                                [{ x: p1.x, y: p2.y }, p2]
+                            ];
+                        } else {
+                            // Choose H-then-V
+                            chosenSegments = [
+                                [p1, { x: p2.x, y: p1.y }],
+                                [{ x: p2.x, y: p1.y }, p2]
+                            ];
+                        }
+                        
+                        // Route each chosen segment around any obstacle
+                        let tempSegments = [];
+                        let intersectsComponent = false;
+                        chosenSegments.forEach(seg => {
+                            if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
+                                const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
+                                routed.forEach(rSeg => {
+                                    if (doesSegmentIntersectComponent(rSeg[0], rSeg[1], components, exclude)) {
+                                        intersectsComponent = true;
+                                    }
+                                    components.forEach(c => {
+                                        const pins = getCompPins(c);
+                                        const connectsP1 = pins.some(p => Math.abs(p.x - rSeg[0].x) < 1 && Math.abs(p.y - rSeg[0].y) < 1);
+                                        const connectsP2 = pins.some(p => Math.abs(p.x - rSeg[1].x) < 1 && Math.abs(p.y - rSeg[1].y) < 1);
+                                        if (connectsP1 && isWireSegmentGoingInwards(c, rSeg[0], rSeg[1])) {
+                                            intersectsComponent = true;
+                                        }
+                                        if (connectsP2 && isWireSegmentGoingInwards(c, rSeg[1], rSeg[0])) {
+                                            intersectsComponent = true;
+                                        }
+                                    });
+                                    tempSegments.push(rSeg);
+                                });
+                            }
+                        });
+
+                        if (intersectsComponent) {
+                            if (undoStack.length > 0) {
+                                undoStack.pop();
+                                updateUndoRedoButtons();
+                            }
+                            document.getElementById("statusText").innerText = "Cannot route wire: Blocked by a component.";
+                            return;
+                        }
+
+                        tempSegments.forEach(rSeg => wires.push(rSeg));
+                    }
+
+                    // Place a junction at the wire body snapping point
+                    let snappedToWire = false;
+                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
+                    if (hitWirePt && !landedOnPin) {
+                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
+                        if (!alreadyHasJunc) {
+                            components.push(createComponent('junction', snapped.x, snapped.y));
+                        }
+                        snappedToWire = true;
+                    }
+
+                    // If we landed on a pin or snapped to a wire, auto-terminate the wire
+                    if (landedOnPin || snappedToWire) {
+                        wireStart = null;
+                        hoveredPin = null;
+                    } else {
+                        wireStart = snapped;
+                    }
+                }
+            }
+            else {
+                // Place a new component (always grid-snap)
+                const worldPos = screenToWorld(e.offsetX, e.offsetY);
+                const comp = createComponent(mode, worldPos.x, worldPos.y);
+                comp.rotation = placementRotation || 0;
+                if (isOverlappingAny(comp, components) || doesCompOverlapAnyWire(comp, wires)) {
+                    document.getElementById("statusText").innerText = "Cannot place component: Overlaps another component or wire.";
+                    return;
+                }
+                saveState();
+                components.push(comp);
+                selectedComponents = [comp];
+                selectedComp = comp;
+                selectedWirePts = [];
+                mode = 'select';
+                placementRotation = 0;
+                updateToolUI();
+                updatePropertiesPanel();
+            }
+            render();
+        }
+
+        // Right Click (2 / MB2) in select mode -> Selection, Dragging, Box Select
+        if (e.button === 2) {
             // Clear interactive debug highlights on click
             if (highlightedComponents.length > 0 || highlightedNodes.length > 0 || highlightedNetlistLine !== null) {
                 highlightedComponents = [];
@@ -1244,7 +1404,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         wires.forEach(wire => {
                             if (wire.length < 2) return;
                             [wire[0], wire[wire.length - 1]].forEach(pt => {
-                                // Skip if the wire point is already in selectedWirePts (moved directly)
                                 if (selectedWirePts.includes(pt)) return;
 
                                 const pinIdx = pins.findIndex(pin => Math.abs(pin.x - pt.x) < 1 && Math.abs(pin.y - pt.y) < 1);
@@ -1312,139 +1471,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     selectionStart = screenToWorldRaw(e.offsetX, e.offsetY);
                     selectionEnd = { ...selectionStart };
                 }
+                render();
             }
-            else if (mode === 'wire') {
-                // Use smart snapping for wire endpoints (pin > grid)
-                const snapped = smartSnap(e.offsetX, e.offsetY);
-                const raw = screenToWorldRaw(e.offsetX, e.offsetY);
-                const landedOnPin = findNearestPin(raw.x, raw.y);
-
-                if (!wireStart) {
-                    wireStart = snapped;
-                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
-                    if (hitWirePt && !landedOnPin) {
-                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
-                        if (!alreadyHasJunc) {
-                            components.push(createComponent('junction', snapped.x, snapped.y));
-                        }
-                    }
-                } else {
-                    // Manhattan wire routing
-                    if (wireStart.x !== snapped.x || wireStart.y !== snapped.y) {
-                        saveState();
-                        const p1 = { x: wireStart.x, y: wireStart.y };
-                        const p2 = { x: snapped.x, y: snapped.y };
-                        
-                        // Find components to exclude (those connected to either end of the segment)
-                        const exclude = [];
-                        components.forEach(c => {
-                            const pins = getCompPins(c);
-                            const hasP1 = pins.some(p => Math.abs(p.x - p1.x) < 1 && Math.abs(p.y - p1.y) < 1);
-                            const hasP2 = pins.some(p => Math.abs(p.x - p2.x) < 1 && Math.abs(p.y - p2.y) < 1);
-                            if (hasP1 || hasP2) exclude.push(c);
-                        });
-
-                        const mid1 = { x: p2.x, y: p1.y };
-                        const mid2 = { x: p1.x, y: p2.y };
-                        
-                        const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
-                                      doesSegmentIntersectComponent(mid1, p2, components, exclude);
-                        const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
-                                      doesSegmentIntersectComponent(mid2, p2, components, exclude);
-                        
-                        let chosenSegments = [];
-                        if (coll1 && !coll2) {
-                            // Choose V-then-H
-                            chosenSegments = [
-                                [p1, { x: p1.x, y: p2.y }],
-                                [{ x: p1.x, y: p2.y }, p2]
-                            ];
-                        } else {
-                            // Choose H-then-V
-                            chosenSegments = [
-                                [p1, { x: p2.x, y: p1.y }],
-                                [{ x: p2.x, y: p1.y }, p2]
-                            ];
-                        }
-                        
-                        // Route each chosen segment around any obstacle
-                        let tempSegments = [];
-                        let intersectsComponent = false;
-                        chosenSegments.forEach(seg => {
-                            if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
-                                const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
-                                routed.forEach(rSeg => {
-                                    if (doesSegmentIntersectComponent(rSeg[0], rSeg[1], components, exclude)) {
-                                        intersectsComponent = true;
-                                    }
-                                    components.forEach(c => {
-                                        const pins = getCompPins(c);
-                                        const connectsP1 = pins.some(p => Math.abs(p.x - rSeg[0].x) < 1 && Math.abs(p.y - rSeg[0].y) < 1);
-                                        const connectsP2 = pins.some(p => Math.abs(p.x - rSeg[1].x) < 1 && Math.abs(p.y - rSeg[1].y) < 1);
-                                        if (connectsP1 && isWireSegmentGoingInwards(c, rSeg[0], rSeg[1])) {
-                                            intersectsComponent = true;
-                                        }
-                                        if (connectsP2 && isWireSegmentGoingInwards(c, rSeg[1], rSeg[0])) {
-                                            intersectsComponent = true;
-                                        }
-                                    });
-                                    tempSegments.push(rSeg);
-                                });
-                            }
-                        });
-
-                        if (intersectsComponent) {
-                            if (undoStack.length > 0) {
-                                undoStack.pop();
-                                updateUndoRedoButtons();
-                            }
-                            document.getElementById("statusText").innerText = "⚠️ Cannot route wire: Blocked by a component.";
-                            return;
-                        }
-
-                        tempSegments.forEach(rSeg => wires.push(rSeg));
-                    }
-
-                    // Place a junction at the wire body snapping point
-                    let snappedToWire = false;
-                    const hitWirePt = findNearestWireSegment(raw.x, raw.y);
-                    if (hitWirePt && !landedOnPin) {
-                        const alreadyHasJunc = components.some(c => c.type === 'junction' && Math.abs(c.x - snapped.x) < 1 && Math.abs(c.y - snapped.y) < 1);
-                        if (!alreadyHasJunc) {
-                            components.push(createComponent('junction', snapped.x, snapped.y));
-                        }
-                        snappedToWire = true;
-                    }
-
-                    // If we landed on a pin or snapped to a wire, auto-terminate the wire
-                    if (landedOnPin || snappedToWire) {
-                        wireStart = null;
-                        hoveredPin = null;
-                    } else {
-                        wireStart = snapped;
-                    }
-                }
-            }
-            else {
-                // Place a new component (always grid-snap)
-                const worldPos = screenToWorld(e.offsetX, e.offsetY);
-                const comp = createComponent(mode, worldPos.x, worldPos.y);
-                comp.rotation = placementRotation || 0;
-                if (isOverlappingAny(comp, components) || doesCompOverlapAnyWire(comp, wires)) {
-                    document.getElementById("statusText").innerText = "⚠️ Cannot place component: Overlaps another component or wire.";
-                    return;
-                }
-                saveState();
-                components.push(comp);
-                selectedComponents = [comp];
-                selectedComp = comp;
-                selectedWirePts = [];
-                mode = 'select';
-                placementRotation = 0;
-                updateToolUI();
-                updatePropertiesPanel();
-            }
-            render();
         }
     });
 
@@ -1513,9 +1541,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 4. Mouse Up
     canvas.addEventListener("mouseup", (e) => {
-        if (e.button === 1) {
+        if (e.button === 1 || e.button === 0) {
             isPanning = false;
-            canvas.style.cursor = 'crosshair';
+            canvas.style.cursor = mode === 'select' ? 'default' : 'crosshair';
         }
         if (isSelectingBox && selectionStart && selectionEnd) {
             isSelectingBox = false;
@@ -1748,7 +1776,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     wires = cleanState.wires;
                     updateUndoRedoButtons();
                 }
-                document.getElementById("statusText").innerText = "⚠️ Drag cancelled: Overlaps another component or wire.";
+                document.getElementById("statusText").innerText = "Drag cancelled: Overlaps another component or wire.";
                 selectedComponents = [];
                 selectedComp = null;
                 selectedWires = [];
@@ -1772,16 +1800,18 @@ document.addEventListener("DOMContentLoaded", () => {
         preExistingWireOverlaps = [];
     });
 
-    // 5. Right Click (Cancel)
+    // 5. Right Click (Cancel in non-select modes)
     canvas.addEventListener("contextmenu", (e) => {
         e.preventDefault();
-        wireStart = null;
-        selectedComp = null;
-        selectedWires = [];
-        mode = 'select';
-        updateToolUI();
-        updatePropertiesPanel();
-        render();
+        if (mode !== 'select') {
+            wireStart = null;
+            selectedComp = null;
+            selectedWires = [];
+            mode = 'select';
+            updateToolUI();
+            updatePropertiesPanel();
+            render();
+        }
     });
 
     // Keyboard shortcut listener
@@ -1838,7 +1868,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 });
                 if (overlapDetected) {
-                    document.getElementById("statusText").innerText = "⚠️ Cannot rotate: Overlaps another component or wire.";
+                    document.getElementById("statusText").innerText = "Cannot rotate: Overlaps another component or wire.";
                     return;
                 }
 
@@ -3054,6 +3084,26 @@ document.addEventListener("DOMContentLoaded", () => {
         ctx.stroke();
     }
 
+    // Helper to find all duplicate node label names across canvas components
+    function getDuplicateLabelNames() {
+        const labelCounts = {};
+        components.forEach(c => {
+            if (c.type === 'label') {
+                const name = (c.params && c.params.name ? c.params.name : c.name || '').trim();
+                if (name) {
+                    labelCounts[name] = (labelCounts[name] || 0) + 1;
+                }
+            }
+        });
+        const duplicates = new Set();
+        for (const [name, count] of Object.entries(labelCounts)) {
+            if (count > 1) {
+                duplicates.add(name);
+            }
+        }
+        return duplicates;
+    }
+
     function drawTerminal(ctx, sx, sy, z) {
         // Small open circle with a lead
         ctx.beginPath();
@@ -3126,6 +3176,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        // Identify duplicate labels for warning indicators
+        const duplicateLabelNames = getDuplicateLabelNames();
+
         // Draw Wires
         wires.forEach(wire => {
             if (wire.length < 2) return;
@@ -3190,11 +3243,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (comp.type === 'label') {
                 const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
-                ctx.fillStyle = currentThemeColors.valueColor || "#FFC107";
+                const isDuplicate = duplicateLabelNames.has(labelText);
+
+                ctx.fillStyle = isDuplicate ? "#f59e0b" : (currentThemeColors.valueColor || "#FFC107");
                 ctx.font = `bold ${14 * zoom}px 'Segoe UI', Arial`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "bottom";
                 ctx.fillText(labelText, pos.x, pos.y - 8 * zoom);
+
+                const textWidth = ctx.measureText(labelText).width;
+                const padding = 4 * zoom;
+
+                // Visual warning for duplicate labels
+                if (isDuplicate) {
+                    ctx.save();
+                    if (!selectedComponents.includes(comp)) {
+                        ctx.strokeStyle = "rgba(245, 158, 11, 0.85)";
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([3, 2]);
+                        ctx.strokeRect(
+                            pos.x - textWidth / 2 - padding,
+                            pos.y - 24 * zoom - padding,
+                            textWidth + padding * 2,
+                            18 * zoom + padding * 2
+                        );
+                    }
+                    ctx.restore();
+                }
 
                 // Draw selection highlight for label text
                 if (selectedComponents.includes(comp)) {
@@ -3498,7 +3573,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const delBtn = document.createElement('button');
             delBtn.className = 'prop-delete-btn';
-            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.textContent = 'Delete Selected';
             delBtn.addEventListener('click', deleteSelectedItems);
             panel.appendChild(delBtn);
             return;
@@ -3537,7 +3612,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const delBtn = document.createElement('button');
             delBtn.className = 'prop-delete-btn';
-            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.textContent = 'Delete Selected';
             delBtn.addEventListener('click', deleteSelectedItems);
             panel.appendChild(delBtn);
             return;
@@ -3558,7 +3633,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const delBtn = document.createElement('button');
             delBtn.className = 'prop-delete-btn';
-            delBtn.textContent = '🗑 Delete Selected';
+            delBtn.textContent = 'Delete Selected';
             delBtn.addEventListener('click', deleteSelectedItems);
             panel.appendChild(delBtn);
             return;
@@ -3572,6 +3647,58 @@ document.addEventListener("DOMContentLoaded", () => {
         badge.className = 'prop-type-badge';
         badge.textContent = db ? db.label : comp.type;
         panel.appendChild(badge);
+
+        // ─── Special Node Label Configuration panel ─────────────────────
+        if (comp.type === 'label') {
+            const labelTitle = document.createElement('p');
+            labelTitle.className = 'prop-section-title';
+            labelTitle.textContent = 'Node Label Configuration';
+            panel.appendChild(labelTitle);
+
+            const currentLabelVal = comp.params?.name || comp.name || 'NET';
+            const warningContainer = document.createElement('div');
+
+            const refreshWarning = (val) => {
+                warningContainer.innerHTML = '';
+                const trimmed = (val || '').trim();
+                if (!trimmed) return;
+                const matching = components.filter(c => c !== comp && c.type === 'label' && (c.params?.name || c.name || '').trim() === trimmed);
+                if (matching.length > 0) {
+                    const warnDiv = document.createElement('div');
+                    warnDiv.className = 'prop-duplicate-warning';
+                    const compNames = matching.map(c => c.name || 'Label').join(', ');
+                    warnDiv.innerHTML = `<span><strong>Shared Node Name:</strong> '${trimmed}' is also assigned to ${compNames}. These points will be connected into the same SPICE node.</span>`;
+                    warningContainer.appendChild(warnDiv);
+                }
+            };
+
+            addPropField(panel, 'Node Name', currentLabelVal, (val) => {
+                saveState();
+                const trimmed = val.trim() || 'NET';
+                comp.name = trimmed;
+                if (!comp.params) comp.params = {};
+                comp.params.name = trimmed;
+                comp.value = trimmed;
+                refreshWarning(trimmed);
+                render();
+            });
+
+            panel.appendChild(warningContainer);
+            refreshWarning(currentLabelVal);
+
+            // Position fields (read-only)
+            addPropField(panel, 'Type', comp.type, null, true);
+            addPropField(panel, 'X', String(comp.x), null, true);
+            addPropField(panel, 'Y', String(comp.y), null, true);
+
+            // Delete button
+            const delBtn = document.createElement('button');
+            delBtn.className = 'prop-delete-btn';
+            delBtn.textContent = 'Delete Selected';
+            delBtn.addEventListener('click', deleteSelectedItems);
+            panel.appendChild(delBtn);
+            return;
+        }
 
         // Section: Identity
         const idTitle = document.createElement('p');
@@ -3600,7 +3727,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (comp.type === 'ic') {
                 const icTitle = document.createElement('p');
                 icTitle.className = 'prop-section-title';
-                icTitle.textContent = '🔌 IC Configuration';
+                icTitle.textContent = 'IC Configuration';
                 panel.appendChild(icTitle);
 
                 // Subcircuit name
@@ -3699,7 +3826,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const newRot = parseInt(e.target.value);
             const tempComp = { ...comp, rotation: newRot };
             if (isOverlappingAny(tempComp, components, [comp]) || doesCompOverlapAnyWire(tempComp, wires)) {
-                document.getElementById("statusText").innerText = "⚠️ Cannot rotate: Overlaps another component or wire.";
+                document.getElementById("statusText").innerText = "Cannot rotate: Overlaps another component or wire.";
                 rotSel.value = comp.rotation || 0;
                 return;
             }
@@ -3713,7 +3840,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Delete button
         const delBtn = document.createElement('button');
         delBtn.className = 'prop-delete-btn';
-        delBtn.textContent = '🗑 Delete Selected';
+        delBtn.textContent = 'Delete Selected';
         delBtn.addEventListener('click', deleteSelectedItems);
         panel.appendChild(delBtn);
     }
@@ -3803,7 +3930,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeBtn = document.getElementById(`tool-${mode}`);
         if (activeBtn) activeBtn.classList.add('active');
 
-        // Highlight dropdown categories if their value is active
+        // Highlight dropdown categories if their value is active, otherwise reset value to ''
         document.querySelectorAll('.toolbar-select').forEach(sel => {
             let found = false;
             Array.from(sel.options).forEach(opt => {
@@ -3815,9 +3942,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (found) {
                 sel.classList.add('active');
             } else {
-                if (sel.value === mode) {
-                    sel.value = '';
-                }
+                sel.value = '';
                 sel.classList.remove('active');
             }
         });
@@ -3873,13 +3998,13 @@ document.addEventListener("DOMContentLoaded", () => {
             netlistViewerWrap.style.display = 'none';
             netlistEditable.style.display = 'block';
             netlistEditable.value = lastNetlistText;
-            netlistBtnEdit.textContent = '🔒 View';
+            netlistBtnEdit.textContent = 'View';
             netlistBtnEdit.classList.add('active');
             netlistManualWarning.style.display = 'flex';
         } else {
             netlistViewerWrap.style.display = 'block';
             netlistEditable.style.display = 'none';
-            netlistBtnEdit.textContent = '✏️ Edit';
+            netlistBtnEdit.textContent = 'Edit';
             netlistBtnEdit.classList.remove('active');
             netlistManualWarning.style.display = 'none';
             updateNetlistPreview(lastNetlistText);
@@ -3903,7 +4028,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openSimModal() {
         if (components.length === 0) {
-            document.getElementById('statusText').innerText = '⚠️ No components to simulate.';
+            document.getElementById('statusText').innerText = 'No components to simulate.';
             return;
         }
         // Restore last-used mode
@@ -4270,17 +4395,111 @@ document.addEventListener("DOMContentLoaded", () => {
         return warnings;
     }
 
+    function checkDuplicateNodeLabels() {
+        const labelMap = {};
+        components.forEach(comp => {
+            if (comp.type === 'label') {
+                const labelName = (comp.params?.name || comp.name || 'NET').trim();
+                if (!labelMap[labelName]) {
+                    labelMap[labelName] = [];
+                }
+                labelMap[labelName].push(comp);
+            }
+        });
+
+        const warnings = [];
+        for (const [name, comps] of Object.entries(labelMap)) {
+            if (comps.length > 1) {
+                const compNames = comps.map(c => c.name || 'Label').join(', ');
+                warnings.push({
+                    type: 'duplicate',
+                    name: name,
+                    text: `Node label '${name}' is assigned to ${comps.length} different locations (${compNames}). These points will be connected into the same SPICE node.`,
+                    comps: comps
+                });
+            }
+        }
+        return warnings;
+    }
+
+    function showWarningModal(warnings, onProceed) {
+        const modal = document.getElementById('warningModal');
+        if (!modal) {
+            const confirmMsg = warnings.map(w => w.text).join('\n') + '\n\nDo you want to proceed with the simulation anyway?';
+            if (confirm(confirmMsg)) {
+                if (typeof onProceed === 'function') onProceed();
+            }
+            return;
+        }
+
+        const list = document.getElementById('warningModalList');
+        const btnCancel = document.getElementById('btnWarningCancel');
+        const btnProceed = document.getElementById('btnWarningProceed');
+        const btnClose = document.getElementById('warningModalClose');
+
+        if (list) {
+            list.innerHTML = '';
+            warnings.forEach(w => {
+                const item = document.createElement('div');
+                item.className = 'warning-list-item';
+                item.innerHTML = `
+                    <span class="warning-list-bullet">•</span>
+                    <span class="warning-list-text">${escapeHtml(w.text)}</span>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        const closeModal = () => {
+            modal.style.display = 'none';
+        };
+
+        const proceed = () => {
+            closeModal();
+            if (typeof onProceed === 'function') {
+                onProceed();
+            }
+        };
+
+        if (btnCancel) btnCancel.onclick = closeModal;
+        if (btnClose) btnClose.onclick = closeModal;
+        if (btnProceed) btnProceed.onclick = proceed;
+
+        modal.style.display = 'flex';
+    }
+
     // ═══════════════════════════════════════════
     // SIMULATION EXECUTION
     // ═══════════════════════════════════════════
     document.getElementById('btnModalRun').addEventListener('click', async () => {
-        // Run ground connection warning check on the frontend
-        const warnings = checkGroundConnectedLabels();
-        if (warnings.length > 0) {
-            const confirmMsg = warnings.join('\n') + '\n\nDo you want to proceed with the simulation?';
-            if (!confirm(confirmMsg)) {
-                return; // User canceled simulation run
-            }
+        // Run topology warning checks on the frontend
+        const groundWarns = checkGroundConnectedLabels();
+        const dupWarns = checkDuplicateNodeLabels();
+
+        const allWarnings = [];
+        groundWarns.forEach(w => allWarnings.push({ text: typeof w === 'string' ? w : w.text, type: 'ground' }));
+        dupWarns.forEach(w => allWarnings.push(w));
+
+        if (allWarnings.length > 0) {
+            // Record structured warnings in Error Log Console
+            const logsToPush = allWarnings.map(w => ({
+                type: 'warning',
+                message: `Topology Notice: ${w.text}`,
+                source: 'frontend',
+                component: w.comps && w.comps[0] ? w.comps[0].name : null,
+                node: w.name || null,
+                line_number: null,
+                line_text: null
+            }));
+            pushLogs(logsToPush);
+
+            // Display pre-simulation warning dialog with 'Proceed Anyway' option
+            showWarningModal(allWarnings, async () => {
+                const config = collectSimConfig();
+                closeSimModal();
+                await runSimulation(config);
+            });
+            return;
         }
 
         const config = collectSimConfig();
@@ -4319,7 +4538,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const netlistEl = document.getElementById('netlistText');
         const simOutput = document.getElementById('simulationOutput');
 
-        statusText.innerText = '⚙️ Generating netlist & running simulation...';
+        statusText.innerText = 'Generating netlist & running simulation...';
         simOutput.innerHTML = '<p class="placeholder-text">Running simulation...</p>';
 
         const payload = {
@@ -4345,7 +4564,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (data.status === 'success') {
-                statusText.innerText = '✅ Simulation complete.';
+                statusText.innerText = 'Simulation complete.';
                 updateNetlistPreview(data.netlist);
                 nodeMap = data.node_map || {};
                 pushLogs(data.logs || []);
@@ -4382,7 +4601,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 simOutput.innerHTML = outputHtml;
                 attachRawOutputDetailsListener(simOutput);
             } else {
-                statusText.innerText = '❌ Simulation failed.';
+                statusText.innerText = 'Simulation failed.';
                 updateNetlistPreview(data.netlist);
                 nodeMap = data.node_map || {};
                 pushLogs(data.logs || []);
@@ -4393,7 +4612,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             console.error('Simulation request failed:', err);
-            statusText.innerText = '❌ Connection error.';
+            statusText.innerText = 'Connection error.';
             simOutput.innerHTML = `<p class="sim-error">Could not reach backend at http://127.0.0.1:8000. Is the server running?</p>`;
             nodeMap = {};
             pushLogs([{
@@ -4725,10 +4944,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateAiStats() {
         const nets = computeNets(aiPreview.connections, aiPreview.pinAnchors);
         aiStatsEl.innerHTML = `
-            <span class="stat-item"><span class="stat-icon">📦</span> ${aiPreview.components.length} components</span>
-            <span class="stat-item"><span class="stat-icon">🔗</span> ${aiPreview.connections.length} connections</span>
-            <span class="stat-item"><span class="stat-icon">🌐</span> ${nets.connectedNets} nets</span>
-            <span class="stat-item"><span class="stat-icon">📌</span> ${aiPreview.pinAnchors.length} pins</span>
+            <span class="stat-item">${aiPreview.components.length} components</span>
+            <span class="stat-item">${aiPreview.connections.length} connections</span>
+            <span class="stat-item">${nets.connectedNets} nets</span>
+            <span class="stat-item">${aiPreview.pinAnchors.length} pins</span>
         `;
     }
 
@@ -5053,7 +5272,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 aiPreview.pinAnchors = aiPreview.pinAnchors.filter(a =>
                     !(a.comp_idx === -1 && a.pin_id === pinId)
                 );
-                aiInfoEl.textContent = `🗑️ Removed junction J${pinId} and its connections.`;
+                aiInfoEl.textContent = `Removed junction J${pinId} and its connections.`;
                 aiInfoEl.style.color = '#EF4444';
                 aiEditor.hoveredJunction = null;
                 updateAiStats();
@@ -5096,7 +5315,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                 aiInfoEl.style.color = '#EF4444';
                             } else {
                                 aiPreview.connections.push({ pin1: p1, pin2: p2 });
-                                aiInfoEl.textContent = `✅ Connected ${p1.comp_idx}_${p1.pin_id} → ${p2.comp_idx}_${p2.pin_id}`;
+                                aiInfoEl.textContent = `Connected ${p1.comp_idx}_${p1.pin_id} → ${p2.comp_idx}_${p2.pin_id}`;
                                 aiInfoEl.style.color = '#10B981';
                                 updateAiStats();
                             }
@@ -5108,7 +5327,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (aiEditor.tool === 'delete') {
                 if (aiEditor.hoveredConnIdx !== null) {
                     const removed = aiPreview.connections.splice(aiEditor.hoveredConnIdx, 1)[0];
-                    aiInfoEl.textContent = `🗑️ Removed connection ${removed.pin1.comp_idx}_${removed.pin1.pin_id} — ${removed.pin2.comp_idx}_${removed.pin2.pin_id}`;
+                    aiInfoEl.textContent = `Removed connection ${removed.pin1.comp_idx}_${removed.pin1.pin_id} — ${removed.pin2.comp_idx}_${removed.pin2.pin_id}`;
                     aiInfoEl.style.color = '#EF4444';
                     aiEditor.hoveredConnIdx = null;
                     updateAiStats();
@@ -5605,7 +5824,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (data.status === "success") {
-                document.getElementById("statusText").innerText = `✅ Loaded ${data.components.length} components (Canny: low=${lowVal}, high=${highVal}). Review & edit connections.`;
+                document.getElementById("statusText").innerText = `Loaded ${data.components.length} components (Canny: low=${lowVal}, high=${highVal}). Review & edit connections.`;
 
                 // Show modal and initialize the interactive preview editor
                 const modal = document.getElementById("aiDebugModal");
@@ -5629,7 +5848,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Use the EDITED connections from the preview editor
                     const editedConnections = aiPreview.connections;
 
-                    document.getElementById("statusText").innerText = `✅ Imported ${data.components.length} components with ${editedConnections.length} connections.`;
+                    document.getElementById("statusText").innerText = `Imported ${data.components.length} components with ${editedConnections.length} connections.`;
 
                     // Dynamically calculate SCALE_FACTOR based on average component width
                     // This prevents components from being placed too far apart on high-res images
@@ -5843,14 +6062,14 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             console.error(err);
-            document.getElementById("statusText").innerText = "❌ AI import failed.";
+            document.getElementById("statusText").innerText = "AI import failed.";
         }
     });
 
     // Close logic for the AI Debug modal
     const closeAiDebugModal = () => {
         document.getElementById("aiDebugModal").style.display = "none";
-        document.getElementById("statusText").innerText = "❌ Import cancelled.";
+        document.getElementById("statusText").innerText = "Import cancelled.";
     };
     document.getElementById("aiDebugModalClose").addEventListener("click", closeAiDebugModal);
     document.getElementById("btnAiDebugCancel").addEventListener("click", closeAiDebugModal);
@@ -6142,8 +6361,8 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = `console-log-row log-${log.type}`;
 
             const icon = document.createElement('span');
-            icon.className = 'log-icon';
-            icon.textContent = log.type === 'error' ? '❌' : (log.type === 'warning' ? '⚠️' : 'ℹ️');
+            icon.className = `log-tag log-tag-${log.type}`;
+            icon.textContent = log.type === 'error' ? 'ERR' : (log.type === 'warning' ? 'WARN' : 'INFO');
 
             const source = document.createElement('span');
             source.className = 'log-source';
@@ -6163,7 +6382,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (log.component) {
                 const btn = document.createElement('button');
                 btn.className = 'log-action-btn';
-                btn.textContent = `🔍 Locate ${log.component}`;
+                btn.textContent = `Locate ${log.component}`;
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     locateComponent(log.component);
@@ -6174,7 +6393,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (log.node) {
                 const btn = document.createElement('button');
                 btn.className = 'log-action-btn';
-                btn.textContent = `📍 Locate Node ${log.node}`;
+                btn.textContent = `Locate Node ${log.node}`;
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     locateNode(log.node);
@@ -6185,7 +6404,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (log.line_number) {
                 const btn = document.createElement('button');
                 btn.className = 'log-action-btn';
-                btn.textContent = `📄 Show Line ${log.line_number}`;
+                btn.textContent = `Show Line ${log.line_number}`;
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     locateNetlistLine(log.line_number);

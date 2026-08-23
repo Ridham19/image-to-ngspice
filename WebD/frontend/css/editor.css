@@ -1061,10 +1061,37 @@ canvas {
     border-left-color: var(--accent-cyan);
     color: #bae6fd; /* light blue text */
 }
+.log-tag {
+    display: inline-block;
+    margin-right: 8px;
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: 'Inter', monospace;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.log-tag-error {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.log-tag-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.log-tag-info {
+    background: rgba(0, 229, 255, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(0, 229, 255, 0.3);
+}
 .log-icon {
     margin-right: 8px;
     flex-shrink: 0;
-    font-size: 13px;
+    font-size: 11px;
 }
 .log-source {
     font-weight: 700;
@@ -1729,4 +1756,49 @@ canvas {
 [data-theme="light"] #cannyPreviewCanvas {
     border-color: rgba(15, 23, 42, 0.15);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+/* ═══════════════════════════════════════════ */
+/* NODE LABEL VALIDATION & WARNINGS            */
+/* ═══════════════════════════════════════════ */
+.prop-duplicate-warning {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 6px;
+    color: #f59e0b;
+    font-size: 11.5px;
+    line-height: 1.4;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+[data-theme="light"] .prop-duplicate-warning {
+    background: rgba(217, 119, 6, 0.1);
+    border-color: rgba(217, 119, 6, 0.3);
+    color: #b45309;
+}
+
+.warning-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+.warning-list-item:last-child {
+    margin-bottom: 0;
+}
+.warning-list-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+}
+.warning-list-text {
+    flex: 1;
 }
