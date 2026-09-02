@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Caches and test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Git and source control
+.git/
+.gitignore
+.github/
+
+# IDE and editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary outputs and log files
+*.log
+workspace/uploads/*
+!workspace/uploads/.gitkeep
+workspace/simulations/*
+!workspace/simulations/.gitkeep
+backend/workspace/uploads/*
+!backend/workspace/uploads/.gitkeep
+backend/workspace/simulations/*
+!backend/workspace/simulations/.gitkeep
+debug_res.png
+wire_detection_test_result*.png
+
+# Node / frontend build caches (if any)
+node_modules/
+npm-debug.log*
+
+# Environment and local secret/config files
+.env
+.env.*
+config.json
+**/config.json
