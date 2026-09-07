@@ -755,7 +755,8 @@ class CircuitEditor:
         # Map to keep track of the relationship between ai_data index and actual Component
         index_to_comp = {}
 
-        # 2. Place all components snapped perfectly to the grid
+        # 2. Place all components snapped perfectly to the grid with name deduplication
+        existing_names = {c.name for c in self.components}
         for idx, item in enumerate(ai_data):
             raw_type = item['type']
             if raw_type in NON_COMPONENT_TYPES: continue 
@@ -771,7 +772,23 @@ class CircuitEditor:
                 x, y, w, h = item['box']
                 if h > w * 1.2: rotation = 90
 
-            comp = Component(sp_type, snapped_x, snapped_y, item['name'])
+            cname = item['name']
+            prefix = DB.get(sp_type, {}).get('prefix', 'C')
+            if cname in existing_names:
+                cnt = self.counts.get(prefix, 0) + 1
+                new_name = f"{prefix}{cnt}"
+                while new_name in existing_names:
+                    cnt += 1
+                    new_name = f"{prefix}{cnt}"
+                self.counts[prefix] = cnt
+                cname = new_name
+            else:
+                m = re.search(r'\d+$', cname)
+                if m:
+                    self.counts[prefix] = max(self.counts.get(prefix, 0), int(m.group(0)))
+            existing_names.add(cname)
+
+            comp = Component(sp_type, snapped_x, snapped_y, cname)
             comp.rotation = rotation
 
             detected_val = item.get('value')

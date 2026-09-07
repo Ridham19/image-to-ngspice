@@ -321,6 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const gridSize = 20;
     let nameCounts = {};  // Per-prefix auto-naming counters
     let placementRotation = 0;
+    let pendingImportCluster = null; // Holds imported circuit cluster awaiting mouse placement
 
     let undoStack = [];
     let redoStack = [];
@@ -1344,6 +1345,61 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
             }
+            else if (mode === 'place_imported' && pendingImportCluster) {
+                // Place the imported circuit cluster at the clicked grid position
+                const worldPos = screenToWorld(e.offsetX, e.offsetY);
+                const dx = worldPos.x - pendingImportCluster.cx;
+                const dy = worldPos.y - pendingImportCluster.cy;
+
+                const targetComponents = pendingImportCluster.components.map(c => ({
+                    ...c,
+                    x: snap(c.x + dx),
+                    y: snap(c.y + dy)
+                }));
+                const targetWires = pendingImportCluster.wires.map(w => [
+                    { x: snap(w[0].x + dx), y: snap(w[0].y + dy) },
+                    { x: snap(w[1].x + dx), y: snap(w[1].y + dy) }
+                ]);
+
+                // Collision check against existing components & wires
+                let collision = false;
+                for (const comp of targetComponents) {
+                    if (isOverlappingAny(comp, components) || doesCompOverlapAnyWire(comp, wires)) {
+                        collision = true;
+                        break;
+                    }
+                }
+                if (!collision) {
+                    for (const wire of targetWires) {
+                        for (const existingComp of components) {
+                            if (doesSegmentIntersectComponent(wire[0], wire[1], [existingComp])) {
+                                collision = true;
+                                break;
+                            }
+                        }
+                        if (collision) break;
+                    }
+                }
+
+                if (collision) {
+                    document.getElementById("statusText").innerText = "Cannot place circuit here: Overlaps existing components or wires. Move to free space.";
+                    return;
+                }
+
+                saveState();
+                components.push(...targetComponents);
+                wires.push(...targetWires);
+                selectedComponents = [...targetComponents];
+                selectedWires = [...targetWires];
+                selectedComp = targetComponents[0] || null;
+                selectedWirePts = [];
+                pendingImportCluster = null;
+                mode = 'select';
+                rerouteAllWires();
+                updateToolUI();
+                updatePropertiesPanel();
+                document.getElementById("statusText").innerText = `Imported ${targetComponents.length} components placed successfully.`;
+            }
             else {
                 // Place a new component (always grid-snap)
                 const worldPos = screenToWorld(e.offsetX, e.offsetY);
@@ -1853,6 +1909,10 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         if (mode !== 'select') {
+            if (mode === 'place_imported') {
+                pendingImportCluster = null;
+                document.getElementById("statusText").innerText = "Import placement cancelled.";
+            }
             wireStart = null;
             selectedComp = null;
             selectedWires = [];
@@ -1886,6 +1946,10 @@ document.addEventListener("DOMContentLoaded", () => {
             deleteSelectedItems();
         }
         if (e.key === 'Escape') {
+            if (mode === 'place_imported') {
+                pendingImportCluster = null;
+                document.getElementById("statusText").innerText = "Import placement cancelled.";
+            }
             wireStart = null;
             selectedComponents = [];
             selectedComp = null;
@@ -2076,10 +2140,21 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     function drawLabel(ctx, sx, sy, z, comp) {
-        // A label is just a small pin marker, the text is drawn elsewhere
+        // A label is a pin marker dot; the text label is positioned above it
+        ctx.save();
+        ctx.fillStyle = currentThemeColors.wireColor || "#4fc1ff";
         ctx.beginPath();
-        ctx.arc(sx, sy, 3 * z, 0, 2 * Math.PI);
+        ctx.arc(sx, sy, 3.5 * z, 0, 2 * Math.PI);
         ctx.fill();
+
+        if (comp && comp.params && comp.params.name) {
+            ctx.fillStyle = currentThemeColors.valueColor || "#FFC107";
+            ctx.font = `bold ${14 * z}px 'Segoe UI', Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.fillText(comp.params.name, sx, sy - 8 * z);
+        }
+        ctx.restore();
     }
 
     function drawResistor(ctx, sx, sy, z) {
@@ -3555,6 +3630,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
                 const isDuplicate = duplicateLabelNames.has(labelText);
 
+                // Draw node label connection dot at the pin coordinate
+                ctx.save();
+                ctx.fillStyle = isDuplicate ? "#f59e0b" : (selectedComponents.includes(comp) ? (currentThemeColors.wireSelected || "#38bdf8") : (currentThemeColors.wireColor || "#4fc1ff"));
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 3.5 * zoom, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
                 ctx.fillStyle = isDuplicate ? "#f59e0b" : (currentThemeColors.valueColor || "#FFC107");
                 ctx.font = `bold ${14 * zoom}px 'Segoe UI', Arial`;
                 ctx.textAlign = "center";
@@ -3749,8 +3832,120 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.fill();
         }
 
-        // Ghost component preview (while placing)
-        if (mode !== 'select' && mode !== 'wire') {
+        // Ghost preview of imported circuit cluster while in place_imported mode
+        if (mode === 'place_imported' && pendingImportCluster) {
+            const anchor = mousePos;
+            const dx = anchor.x - pendingImportCluster.cx;
+            const dy = anchor.y - pendingImportCluster.cy;
+
+            // Check collision against existing canvas elements
+            let hasCollision = false;
+            for (const comp of pendingImportCluster.components) {
+                const tempComp = { ...comp, x: comp.x + dx, y: comp.y + dy };
+                if (isOverlappingAny(tempComp, components) || doesCompOverlapAnyWire(tempComp, wires)) {
+                    hasCollision = true;
+                    break;
+                }
+            }
+            if (!hasCollision) {
+                for (const wire of pendingImportCluster.wires) {
+                    const tempP1 = { x: wire[0].x + dx, y: wire[0].y + dy };
+                    const tempP2 = { x: wire[1].x + dx, y: wire[1].y + dy };
+                    for (const existingComp of components) {
+                        if (doesSegmentIntersectComponent(tempP1, tempP2, [existingComp])) {
+                            hasCollision = true;
+                            break;
+                        }
+                    }
+                    if (hasCollision) break;
+                }
+            }
+
+            ctx.save();
+            ctx.globalAlpha = 0.75;
+
+            // Draw ghost wires
+            ctx.strokeStyle = hasCollision ? "rgba(239, 68, 68, 0.85)" : (currentThemeColors.wireColor || "#4fc1ff");
+            ctx.lineWidth = Math.max(1.5, 2.5 * zoom);
+            pendingImportCluster.wires.forEach(wire => {
+                if (wire.length < 2) return;
+                const p1 = worldToScreen(wire[0].x + dx, wire[0].y + dy);
+                const p2 = worldToScreen(wire[1].x + dx, wire[1].y + dy);
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                if (wire[0].x !== wire[1].x && wire[0].y !== wire[1].y) {
+                    ctx.lineTo(p2.x, p1.y);
+                }
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+            });
+
+            // Draw ghost components
+            pendingImportCluster.components.forEach(comp => {
+                const pos = worldToScreen(comp.x + dx, comp.y + dy);
+
+                if (comp.type === 'junction') {
+                    ctx.fillStyle = hasCollision ? "#ef4444" : (currentThemeColors.wireColor || "#4fc1ff");
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4 * zoom, 0, Math.PI * 2);
+                    ctx.fill();
+                    return;
+                }
+
+                if (comp.type === 'label') {
+                    const labelText = comp.params && comp.params.name ? comp.params.name : comp.name;
+                    ctx.fillStyle = hasCollision ? "#ef4444" : (currentThemeColors.wireColor || "#4fc1ff");
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 3.5 * zoom, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = hasCollision ? "#ef4444" : (currentThemeColors.valueColor || "#FFC107");
+                    ctx.font = `bold ${14 * zoom}px 'Segoe UI', Arial`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText(labelText, pos.x, pos.y - 8 * zoom);
+                    return;
+                }
+
+                ctx.strokeStyle = hasCollision ? "#ef4444" : (currentThemeColors.componentColor || "#E0E0E0");
+                ctx.lineWidth = Math.max(1, 2 * zoom);
+                const renderer = SYMBOL_RENDERERS[comp.type];
+                ctx.save();
+                ctx.translate(pos.x, pos.y);
+                ctx.rotate((comp.rotation || 0) * Math.PI / 180);
+                if (renderer) {
+                    renderer(ctx, 0, 0, zoom, comp);
+                } else {
+                    drawFallback(ctx, 0, 0, zoom, comp.type);
+                }
+                ctx.restore();
+
+                // Draw name label
+                ctx.fillStyle = hasCollision ? "#ef4444" : (currentThemeColors.labelColor || "#E0E0E0");
+                ctx.font = `bold ${12 * zoom}px 'Segoe UI', Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                const db = COMPONENT_DB[comp.type];
+                const rot = comp.rotation || 0;
+                const h_rotated = (rot === 90 || rot === 270) ? (db ? db.hitbox.w : 40) : (db ? db.hitbox.h : 40);
+                const labelOffY = h_rotated / 2 + 14;
+                ctx.fillText(comp.name, pos.x, pos.y - labelOffY * zoom);
+
+                // Draw value label
+                const mainValue = comp.value || getDisplayValue(comp);
+                if (mainValue && comp.type !== 'ground') {
+                    ctx.fillStyle = hasCollision ? "#ef4444" : (currentThemeColors.valueColor || "#FF9800");
+                    ctx.font = `${11 * zoom}px 'Segoe UI', Arial`;
+                    ctx.textBaseline = "top";
+                    ctx.fillText(mainValue, pos.x, pos.y + labelOffY * zoom);
+                }
+            });
+
+            ctx.restore();
+        }
+
+        // Ghost component preview (while placing a single component)
+        if (mode !== 'select' && mode !== 'wire' && mode !== 'place_imported') {
             const gPos = worldToScreen(mousePos.x, mousePos.y);
             ctx.globalAlpha = 0.4;
             ctx.strokeStyle = "#E0E0E0";
@@ -6152,16 +6347,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnImport.parentNode.replaceChild(newBtnImport, btnImport);
 
                 newBtnImport.addEventListener("click", () => {
-                    saveState();
                     modal.style.display = "none";
 
                     // Use the EDITED connections from the preview editor
                     const editedConnections = aiPreview.connections;
 
-                    document.getElementById("statusText").innerText = `Imported ${data.components.length} components with ${editedConnections.length} connections.`;
-
                     // Dynamically calculate SCALE_FACTOR based on average component width
-                    // This prevents components from being placed too far apart on high-res images
                     let sumW = 0, countW = 0;
                     data.components.forEach(c => {
                         const NON_COMP = ['wire', 'junction', 'crossover', 'terminal', 'text'];
@@ -6171,24 +6362,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     });
                     const avgW = countW > 0 ? (sumW / countW) : 100;
-                    // Standard canvas component is ~80px wide. We use 100 for a bit of breathing room.
                     const SCALE_FACTOR = countW > 0 ? (100.0 / avgW) : 1.0;
 
-                    // Extract junction centers for wire merging
-                    // Junctions are NOT components — they are wire connection points
                     const NON_COMPONENT_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'text'];
-                    const junctionPoints = data.components
-                        .filter(c => c.type === 'junction')
-                        .map(c => ({
-                            x: snap(c.center[0] * SCALE_FACTOR),
-                            y: snap(c.center[1] * SCALE_FACTOR)
-                        }));
 
-                    components = data.components
+                    // Build non-destructive deduplicated components
+                    const existingNames = new Set(components.map(c => c.name));
+                    const newComponents = data.components
                         .filter(c => !NON_COMPONENT_TYPES.includes(c.type))
                         .map(c => {
                             const type = c.type === 'mosfet' ? 'nmos' : c.type;
                             const db = COMPONENT_DB[type];
+                            const prefix = db ? db.prefix : (type.charAt(0).toUpperCase());
                             const params = db ? Object.assign({}, db.params) : { value: '1k' };
 
                             // Override value from OCR if available
@@ -6197,9 +6382,32 @@ document.addEventListener("DOMContentLoaded", () => {
                                 else if (params.dc !== undefined) params.dc = c.value;
                             }
 
+                            let compName = c.name;
+                            if (existingNames.has(compName)) {
+                                let nextNum = (nameCounts[prefix] || 0) + 1;
+                                let newName = `${prefix}${nextNum}`;
+                                while (existingNames.has(newName)) {
+                                    nextNum++;
+                                    newName = `${prefix}${nextNum}`;
+                                }
+                                nameCounts[prefix] = nextNum;
+                                compName = newName;
+                            } else {
+                                const match = compName.match(/\d+$/);
+                                if (match) {
+                                    const num = parseInt(match[0]);
+                                    nameCounts[prefix] = Math.max(nameCounts[prefix] || 0, num);
+                                }
+                            }
+                            existingNames.add(compName);
+
+                            if (type === 'label') {
+                                params.name = compName;
+                            }
+
                             return {
                                 type,
-                                name: c.name,
+                                name: compName,
                                 value: c.value === "TEXT_FOUND" ? (params.value || '') : (c.value || ''),
                                 x: snap(c.center[0] * SCALE_FACTOR),
                                 y: snap(c.center[1] * SCALE_FACTOR),
@@ -6209,20 +6417,18 @@ document.addEventListener("DOMContentLoaded", () => {
                             };
                         });
 
-                    // Rebuild name counters from imported data
-                    nameCounts = {};
-                    components.forEach(c => {
-                        const db = COMPONENT_DB[c.type];
-                        if (db) {
-                            const match = c.name.match(/\d+$/);
-                            if (match) {
-                                const num = parseInt(match[0]);
-                                nameCounts[db.prefix] = Math.max(nameCounts[db.prefix] || 0, num);
-                            }
-                        }
+                    // Calculate centroid (cx, cy) of the imported cluster
+                    let minX = Infinity, maxX = -Infinity;
+                    let minY = Infinity, maxY = -Infinity;
+                    newComponents.forEach(c => {
+                        minX = Math.min(minX, c.x);
+                        maxX = Math.max(maxX, c.x);
+                        minY = Math.min(minY, c.y);
+                        maxY = Math.max(maxY, c.y);
                     });
+                    const cx = newComponents.length > 0 ? snap((minX + maxX) / 2) : 0;
+                    const cy = newComponents.length > 0 ? snap((minY + maxY) / 2) : 0;
 
-                    // Load Wires (Logical Pin-to-Pin connection)
                     // Map original component index to filtered components index
                     const compIdxMap = {};
                     let filteredIdx = 0;
@@ -6235,13 +6441,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
 
                     // Load Wires using the EDITED connections
-                    wires = [];
+                    const newWires = [];
                     if (editedConnections && editedConnections.length > 0) {
                         editedConnections.forEach(conn => {
-                            // Helper to resolve pin to main editor coordinate space
                             const getPinCoords = (pinRef) => {
                                 if (pinRef.comp_idx === -1) {
-                                    // It's a junction. Find the corresponding anchor in aiPreview.pinAnchors
                                     const anchor = aiPreview.pinAnchors.find(a => a.comp_idx === -1 && a.pin_id === pinRef.pin_id);
                                     if (anchor) {
                                         return {
@@ -6251,10 +6455,9 @@ document.addEventListener("DOMContentLoaded", () => {
                                     }
                                     return null;
                                 } else {
-                                    // It's a regular component pin
                                     const idx = compIdxMap[pinRef.comp_idx];
                                     if (idx !== undefined && idx !== -1) {
-                                        const comp = components[idx];
+                                        const comp = newComponents[idx];
                                         const pins = getCompPins(comp);
                                         return pins[pinRef.pin_id];
                                     }
@@ -6266,32 +6469,29 @@ document.addEventListener("DOMContentLoaded", () => {
                             const p2 = getPinCoords(conn.pin2);
 
                             if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
-                                const comp1 = components[compIdxMap[conn.pin1.comp_idx]];
-                                const comp2 = components[compIdxMap[conn.pin2.comp_idx]];
+                                const comp1 = newComponents[compIdxMap[conn.pin1.comp_idx]];
+                                const comp2 = newComponents[compIdxMap[conn.pin2.comp_idx]];
                                 const exclude = [comp1, comp2].filter(Boolean);
 
                                 if (p1.x === p2.x || p1.y === p2.y) {
-                                    const routed = routeAroundComponent(p1, p2, components, exclude);
-                                    routed.forEach(rSeg => wires.push(rSeg));
+                                    const routed = routeAroundComponent(p1, p2, newComponents, exclude);
+                                    routed.forEach(rSeg => newWires.push(rSeg));
                                 } else {
-                                    // Collision-aware L-shaped routing
                                     const mid1 = { x: p2.x, y: p1.y };
                                     const mid2 = { x: p1.x, y: p2.y };
                                     
-                                    const coll1 = doesSegmentIntersectComponent(p1, mid1, components, exclude) || 
-                                                  doesSegmentIntersectComponent(mid1, p2, components, exclude);
-                                    const coll2 = doesSegmentIntersectComponent(p1, mid2, components, exclude) || 
-                                                  doesSegmentIntersectComponent(mid2, p2, components, exclude);
+                                    const coll1 = doesSegmentIntersectComponent(p1, mid1, newComponents, exclude) || 
+                                                  doesSegmentIntersectComponent(mid1, p2, newComponents, exclude);
+                                    const coll2 = doesSegmentIntersectComponent(p1, mid2, newComponents, exclude) || 
+                                                  doesSegmentIntersectComponent(mid2, p2, newComponents, exclude);
                                     
                                     let chosenSegments = [];
                                     if (coll1 && !coll2) {
-                                        // Option 1 (H-then-V) collides, but Option 2 (V-then-H) is clean. Choose V-then-H
                                         chosenSegments = [
                                             [p1, { x: p1.x, y: p2.y }],
                                             [{ x: p1.x, y: p2.y }, p2]
                                         ];
                                     } else {
-                                        // Default to Option 1
                                         chosenSegments = [
                                             [p1, { x: p2.x, y: p1.y }],
                                             [{ x: p2.x, y: p1.y }, p2]
@@ -6300,8 +6500,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                                     chosenSegments.forEach(seg => {
                                         if (seg[0].x !== seg[1].x || seg[0].y !== seg[1].y) {
-                                            const routed = routeAroundComponent(seg[0], seg[1], components, exclude);
-                                            routed.forEach(rSeg => wires.push(rSeg));
+                                            const routed = routeAroundComponent(seg[0], seg[1], newComponents, exclude);
+                                            routed.forEach(rSeg => newWires.push(rSeg));
                                         }
                                     });
                                 }
@@ -6309,64 +6509,22 @@ document.addEventListener("DOMContentLoaded", () => {
                         });
                     }
 
-                    // Auto-Center and Zoom Camera dynamically to fit the imported circuit
-                    if (components.length > 0 || wires.length > 0) {
-                        let minX = Infinity, maxX = -Infinity;
-                        let minY = Infinity, maxY = -Infinity;
+                    // Prepare cluster for interactive mouse placement
+                    pendingImportCluster = {
+                        components: newComponents,
+                        wires: newWires,
+                        cx: cx,
+                        cy: cy
+                    };
 
-                        components.forEach(c => {
-                            minX = Math.min(minX, c.x);
-                            maxX = Math.max(maxX, c.x);
-                            minY = Math.min(minY, c.y);
-                            maxY = Math.max(maxY, c.y);
-                        });
-
-                        wires.forEach(w => {
-                            w.forEach(pt => {
-                                minX = Math.min(minX, pt.x);
-                                maxX = Math.max(maxX, pt.x);
-                                minY = Math.min(minY, pt.y);
-                                maxY = Math.max(maxY, pt.y);
-                            });
-                        });
-
-                        // Add a margin
-                        const margin = 80;
-                        const circuitWidth = (maxX - minX) || 100;
-                        const circuitHeight = (maxY - minY) || 100;
-
-                        const canvasW = canvas.width || 800;
-                        const canvasH = canvas.height || 600;
-
-                        // Compute optimal zoom to fit all components/wires within the canvas
-                        const zoomX = (canvasW - margin * 2) / circuitWidth;
-                        const zoomY = (canvasH - margin * 2) / circuitHeight;
-                        zoom = Math.min(zoomX, zoomY);
-
-                        // Clamp zoom to reasonable levels (0.2 to 2.0)
-                        zoom = Math.max(0.2, Math.min(2.0, zoom));
-
-                        // Center the circuit on the canvas
-                        const circuitCenterX = (minX + maxX) / 2;
-                        const circuitCenterY = (minY + maxY) / 2;
-                        offsetX = canvasW / 2 - circuitCenterX * zoom;
-                        offsetY = canvasH / 2 - circuitCenterY * zoom;
-                    } else {
-                        offsetX = 100;
-                        offsetY = 100;
-                        zoom = 1.0;
-                    }
+                    mode = 'place_imported';
                     selectedComponents = [];
                     selectedComp = null;
                     selectedWires = [];
                     selectedWirePts = [];
 
-                    // Auto-fix any wires that run through component bodies after import.
-                    // Overlapping component placements from AI detection can cause wires to
-                    // intersect component hitboxes — rerouting resolves this silently.
-                    rerouteAllWires();
-
-                    updatePropertiesPanel();
+                    updateToolUI();
+                    document.getElementById("statusText").innerText = `Move mouse to position ${newComponents.length} imported components. Left-click to place on grid (Right-click or Esc to cancel).`;
                     render();
                 });
             }
