@@ -233,6 +233,55 @@ document.addEventListener("DOMContentLoaded", () => {
             pins: [[-40, -20], [-40, 20], [40, -20], [40, 20]],
             hitbox: { w: 80, h: 60 }
         },
+        and_gate: {
+            prefix: 'U', label: 'AND Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
+        or_gate: {
+            prefix: 'U', label: 'OR Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
+        not_gate: {
+            prefix: 'U', label: 'NOT Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, 0], [40, 0]],
+            hitbox: { w: 80, h: 40 }
+        },
+        nand_gate: {
+            prefix: 'U', label: 'NAND Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
+        nor_gate: {
+            prefix: 'U', label: 'NOR Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
+        xor_gate: {
+            prefix: 'U', label: 'XOR Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
+        xnor_gate: {
+            prefix: 'U', label: 'XNOR Gate',
+            params: { vhigh: '5', vlow: '0', vth: '2.5' },
+            spice: '',
+            pins: [[-40, -20], [-40, 20], [40, 0]],
+            hitbox: { w: 80, h: 60 }
+        },
         junction: {
             prefix: 'J', label: 'Junction',
             params: {},
@@ -2015,7 +2064,15 @@ document.addEventListener("DOMContentLoaded", () => {
         transformer: drawTransformer,
         junction: drawJunction,
         crossover: drawCrossover,
-        terminal: drawTerminal
+        terminal: drawTerminal,
+        // ── Logic Gates renderers ──
+        and_gate: drawANDGate,
+        or_gate: drawORGate,
+        not_gate: drawNOTGate,
+        nand_gate: drawNANDGate,
+        nor_gate: drawNORGate,
+        xor_gate: drawXORGate,
+        xnor_gate: drawXNORGate
     };
 
     function drawLabel(ctx, sx, sy, z, comp) {
@@ -3056,6 +3113,259 @@ document.addEventListener("DOMContentLoaded", () => {
         drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
         drawPinDot(ctx, sx + 40 * z, sy - 20 * z, z);
         drawPinDot(ctx, sx + 40 * z, sy + 20 * z, z);
+    }
+
+    // ═══════════════════════════════════════════
+    // LOGIC GATES SCHEMATIC RENDERERS
+    // ═══════════════════════════════════════════
+
+    function drawANDGate(ctx, sx, sy, z) {
+        // Left input leads (pins at [-40, -20] and [-40, 20])
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 20 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 20 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // AND body: flat back, horizontal top/bottom, semicircular front
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy - 24 * z);
+        ctx.lineTo(sx, sy - 24 * z);
+        ctx.arc(sx, sy, 24 * z, -Math.PI / 2, Math.PI / 2, false);
+        ctx.lineTo(sx - 20 * z, sy + 24 * z);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Output lead (pin at [40, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawNANDGate(ctx, sx, sy, z) {
+        // Left input leads
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 20 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 20 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // AND body
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy - 24 * z);
+        ctx.lineTo(sx, sy - 24 * z);
+        ctx.arc(sx, sy, 24 * z, -Math.PI / 2, Math.PI / 2, false);
+        ctx.lineTo(sx - 20 * z, sy + 24 * z);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Inversion bubble
+        const bubbleR = 3.5 * z;
+        ctx.beginPath();
+        ctx.arc(sx + 24 * z + bubbleR, sy, bubbleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Output lead
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z + bubbleR * 2, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawORGate(ctx, sx, sy, z) {
+        // Input leads
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 16 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 16 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // OR gate body
+        ctx.beginPath();
+        ctx.moveTo(sx - 22 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx + 4 * z, sy - 22 * z, sx + 24 * z, sy);
+        ctx.quadraticCurveTo(sx + 4 * z, sy + 22 * z, sx - 22 * z, sy + 24 * z);
+        ctx.quadraticCurveTo(sx - 10 * z, sy, sx - 22 * z, sy - 24 * z);
+        ctx.stroke();
+
+        // Output lead
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawNORGate(ctx, sx, sy, z) {
+        // Input leads
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 16 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 16 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // OR gate body
+        ctx.beginPath();
+        ctx.moveTo(sx - 22 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx + 4 * z, sy - 22 * z, sx + 24 * z, sy);
+        ctx.quadraticCurveTo(sx + 4 * z, sy + 22 * z, sx - 22 * z, sy + 24 * z);
+        ctx.quadraticCurveTo(sx - 10 * z, sy, sx - 22 * z, sy - 24 * z);
+        ctx.stroke();
+
+        // Inversion bubble
+        const bubbleR = 3.5 * z;
+        ctx.beginPath();
+        ctx.arc(sx + 24 * z + bubbleR, sy, bubbleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Output lead
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z + bubbleR * 2, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawXORGate(ctx, sx, sy, z) {
+        // Input leads
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 24 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 24 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // Extra back arc for XOR
+        ctx.beginPath();
+        ctx.moveTo(sx - 28 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx - 16 * z, sy, sx - 28 * z, sy + 24 * z);
+        ctx.stroke();
+
+        // Main body
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx + 4 * z, sy - 22 * z, sx + 24 * z, sy);
+        ctx.quadraticCurveTo(sx + 4 * z, sy + 22 * z, sx - 20 * z, sy + 24 * z);
+        ctx.quadraticCurveTo(sx - 8 * z, sy, sx - 20 * z, sy - 24 * z);
+        ctx.stroke();
+
+        // Output lead
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawXNORGate(ctx, sx, sy, z) {
+        // Input leads
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy - 20 * z);
+        ctx.lineTo(sx - 24 * z, sy - 20 * z);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy + 20 * z);
+        ctx.lineTo(sx - 24 * z, sy + 20 * z);
+        ctx.stroke();
+
+        // Extra back arc for XOR
+        ctx.beginPath();
+        ctx.moveTo(sx - 28 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx - 16 * z, sy, sx - 28 * z, sy + 24 * z);
+        ctx.stroke();
+
+        // Main body
+        ctx.beginPath();
+        ctx.moveTo(sx - 20 * z, sy - 24 * z);
+        ctx.quadraticCurveTo(sx + 4 * z, sy - 22 * z, sx + 24 * z, sy);
+        ctx.quadraticCurveTo(sx + 4 * z, sy + 22 * z, sx - 20 * z, sy + 24 * z);
+        ctx.quadraticCurveTo(sx - 8 * z, sy, sx - 20 * z, sy - 24 * z);
+        ctx.stroke();
+
+        // Inversion bubble
+        const bubbleR = 3.5 * z;
+        ctx.beginPath();
+        ctx.arc(sx + 24 * z + bubbleR, sy, bubbleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Output lead
+        ctx.beginPath();
+        ctx.moveTo(sx + 24 * z + bubbleR * 2, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy - 20 * z, z);
+        drawPinDot(ctx, sx - 40 * z, sy + 20 * z, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
+    }
+
+    function drawNOTGate(ctx, sx, sy, z) {
+        // Input lead (pin at [-40, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx - 40 * z, sy);
+        ctx.lineTo(sx - 18 * z, sy);
+        ctx.stroke();
+
+        // Triangle body
+        ctx.beginPath();
+        ctx.moveTo(sx - 18 * z, sy - 18 * z);
+        ctx.lineTo(sx - 18 * z, sy + 18 * z);
+        ctx.lineTo(sx + 14 * z, sy);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Inversion bubble
+        const bubbleR = 3.5 * z;
+        ctx.beginPath();
+        ctx.arc(sx + 14 * z + bubbleR, sy, bubbleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Output lead (pin at [40, 0])
+        ctx.beginPath();
+        ctx.moveTo(sx + 14 * z + bubbleR * 2, sy);
+        ctx.lineTo(sx + 40 * z, sy);
+        ctx.stroke();
+
+        drawPinDot(ctx, sx - 40 * z, sy, z);
+        drawPinDot(ctx, sx + 40 * z, sy, z);
     }
 
     function drawJunction(ctx, sx, sy, z) {

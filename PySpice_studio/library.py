@@ -1,4 +1,9 @@
 import schemdraw.elements as elm
+try:
+    import schemdraw.logic as logic_elm
+except ImportError:
+    logic_elm = elm
+
 
 # Safe Import
 def get_mosfet(type_='n'):
@@ -267,5 +272,49 @@ DB = {
         'params': {'va': '5', 'fc': '1k', 'mf': '100', 'ph': '0'},
         'spice': "{name} {n1} {n2} AM({va} {fc} {mf} {ph})",
         'btn_text': 'AM'
+    },
+
+    # LOGIC GATES
+    'and_gate': {
+        'label': 'AND Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'And', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'AND'
+    },
+    'or_gate': {
+        'label': 'OR Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Or', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'OR'
+    },
+    'not_gate': {
+        'label': 'NOT Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Not', elm.Resistor), 'shape': 'logic_gate_1in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'NOT'
+    },
+    'nand_gate': {
+        'label': 'NAND Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Nand', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'NAND'
+    },
+    'nor_gate': {
+        'label': 'NOR Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Nor', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'NOR'
+    },
+    'xor_gate': {
+        'label': 'XOR Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Xor', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'XOR'
+    },
+    'xnor_gate': {
+        'label': 'XNOR Gate', 'prefix': 'U', 'category': 'Logic',
+        'element': getattr(logic_elm, 'Xnor', elm.Resistor), 'shape': 'logic_gate_2in',
+        'params': {'vhigh': '5', 'vlow': '0', 'vth': '2.5'}, 'spice': "",
+        'btn_text': 'XNOR'
     }
 }

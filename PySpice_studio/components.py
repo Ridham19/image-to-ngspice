@@ -55,6 +55,14 @@ PIN_MAP = {
     'pwl_source':           [(0, -40), (0, 40)],
     'sffm_source':          [(0, -40), (0, 40)],
     'am_source':            [(0, -40), (0, 40)],
+    # Logic Gates
+    'and_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'or_gate':              [(-40, -20), (-40, 20), (40, 0)],
+    'not_gate':             [(-40, 0), (40, 0)],
+    'nand_gate':            [(-40, -20), (-40, 20), (40, 0)],
+    'nor_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'xor_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'xnor_gate':            [(-40, -20), (-40, 20), (40, 0)],
 }
 
 class ComponentHelper:
@@ -141,6 +149,9 @@ class ComponentHelper:
                 img = img.resize((int(70 * zoom_scale), int(60 * zoom_scale)), Image.Resampling.LANCZOS)
 
             elif shape == 'transformer':
+                img = img.resize((int(80 * zoom_scale), int(60 * zoom_scale)), Image.Resampling.LANCZOS)
+
+            elif shape in ['logic_gate_2in', 'logic_gate_1in']:
                 img = img.resize((int(80 * zoom_scale), int(60 * zoom_scale)), Image.Resampling.LANCZOS)
 
             else: # Standard 2-pin

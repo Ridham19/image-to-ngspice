@@ -64,6 +64,14 @@ PIN_MAP: Dict[str, List[Tuple[int, int]]] = {
     # ic uses dynamic pin count — computed at runtime from params['num_pins']
     'opamp':                [(-30, -20), (-30, 20), (30, 0)],
     'ic':                   [(-40, 0), (40, 0)],  # default 2-pin; overridden by num_pins
+    # ── Logic Gates ──
+    'and_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'or_gate':              [(-40, -20), (-40, 20), (40, 0)],
+    'not_gate':             [(-40, 0), (40, 0)],
+    'nand_gate':            [(-40, -20), (-40, 20), (40, 0)],
+    'nor_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'xor_gate':             [(-40, -20), (-40, 20), (40, 0)],
+    'xnor_gate':            [(-40, -20), (-40, 20), (40, 0)],
 }
 
 # Types that don't generate SPICE device lines

@@ -1304,7 +1304,7 @@ class CircuitEditor:
             categories[cat].append((c_type, data))
 
         # Render Dropdown Menus for Component Selection
-        for cat in ['Passives', 'Active', 'Sources', 'Other']:
+        for cat in ['Passives', 'Active', 'Sources', 'Logic', 'Other']:
             if cat not in categories:
                 continue
             mb = tk.Menubutton(ribbon, text=f"▾ {cat}", bg="#333333", fg=COLOR_TEXT_LIGHT, 

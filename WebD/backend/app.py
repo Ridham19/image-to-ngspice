@@ -165,11 +165,81 @@ Rout_int int out 75
 
     # Transformer: no .subckt needed — uses coupled inductors directly
     'transformer': None,
+
+    # ── Built-in Logic Gate Models (Smooth tanh behavioral subcircuits) ──
+    'and_gate': """\
+* --- 2-Input AND Gate Subcircuit ---
+.subckt AND2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (( (1 + tanh(4*(v(in1)-2.5)))/2 ) * ( (1 + tanh(4*(v(in2)-2.5)))/2 )) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends AND2""",
+
+    'or_gate': """\
+* --- 2-Input OR Gate Subcircuit ---
+.subckt OR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (1 - (1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends OR2""",
+
+    'not_gate': """\
+* --- NOT Gate / Inverter Subcircuit ---
+.subckt NOT1 in out
+Rin in 0 100MEG
+B_out out_int 0 V = (1 - (1 + tanh(4*(v(in)-2.5)))/2) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NOT1""",
+
+    'nand_gate': """\
+* --- 2-Input NAND Gate Subcircuit ---
+.subckt NAND2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (1 - ((1 + tanh(4*(v(in1)-2.5)))/2) * ((1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NAND2""",
+
+    'nor_gate': """\
+* --- 2-Input NOR Gate Subcircuit ---
+.subckt NOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ((1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NOR2""",
+
+    'xor_gate': """\
+* --- 2-Input XOR Gate Subcircuit ---
+.subckt XOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends XOR2""",
+
+    'xnor_gate': """\
+* --- 2-Input XNOR Gate Subcircuit ---
+.subckt XNOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ( 1 - ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) ) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends XNOR2""",
 }
 
 # SPICE prefix order for sorted netlist output
-# X = subcircuit instances (op-amps, ICs, etc.); K = mutual inductance (transformers)
-SPICE_PREFIX_ORDER = {'C': 0, 'D': 1, 'I': 2, 'K': 3, 'L': 4, 'Q': 5, 'R': 6, 'V': 7, 'X': 8}
+# X = subcircuit instances (op-amps, ICs, logic gates, etc.); K = mutual inductance (transformers)
+SPICE_PREFIX_ORDER = {'C': 0, 'D': 1, 'I': 2, 'K': 3, 'L': 4, 'Q': 5, 'R': 6, 'U': 7, 'V': 7, 'X': 8}
 
 # ═══════════════════════════════════════════
 # PYDANTIC MODELS
@@ -460,6 +530,11 @@ async def simulate_circuit(request: SimulateRequest):
                     key = f'ic_{subckt_name}'
                     if custom_body and key not in subckts_needed:
                         subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+                elif comp.type in ('and_gate', 'or_gate', 'not_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate'):
+                    if comp.type not in subckts_needed:
+                        defn = SUBCKT_DEFINITIONS.get(comp.type)
+                        if defn:
+                            subckts_needed[comp.type] = defn
     
             # Prepend .subckt definitions (before .model statements)
             for defn_text in subckts_needed.values():
@@ -527,6 +602,27 @@ async def simulate_circuit(request: SimulateRequest):
                         f"{lb_name} {n3} {n4} {inductance}"))
                     device_lines.append((SPICE_PREFIX_ORDER.get('K', 3), k_name,
                         f"{k_name} {la_name} {lb_name} {coupling}"))
+                    continue
+
+                # ── Logic Gates: X-prefix subcircuit instantiation ─────────────
+                if comp.type in ('and_gate', 'or_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate'):
+                    in1 = nodes[0] if len(nodes) > 0 else 'NC'
+                    in2 = nodes[1] if len(nodes) > 1 else 'NC'
+                    out = nodes[2] if len(nodes) > 2 else 'NC'
+                    subckt_map = {
+                        'and_gate': 'AND2', 'or_gate': 'OR2', 'nand_gate': 'NAND2',
+                        'nor_gate': 'NOR2', 'xor_gate': 'XOR2', 'xnor_gate': 'XNOR2'
+                    }
+                    sub_name = subckt_map.get(comp.type, 'AND2')
+                    line = f"X{comp.name} {in1} {in2} {out} {sub_name}"
+                    device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
+                    continue
+
+                if comp.type == 'not_gate':
+                    in1 = nodes[0] if len(nodes) > 0 else 'NC'
+                    out = nodes[1] if len(nodes) > 1 else 'NC'
+                    line = f"X{comp.name} {in1} {out} NOT1"
+                    device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{comp.name}", line))
                     continue
     
                 # ── Standard template-based device ────────────────────────────

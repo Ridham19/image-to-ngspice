@@ -92,6 +92,67 @@ Rout_int int out 75
             key = f'ic_{subckt_name}'
             if custom_body and key not in subckts_needed:
                 subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+        elif c.type in ['and_gate', 'or_gate', 'not_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate']:
+            if c.type not in subckts_needed:
+                gate_subckts = {
+                    'and_gate': """* --- 2-Input AND Gate Subcircuit ---
+.subckt AND2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (( (1 + tanh(4*(v(in1)-2.5)))/2 ) * ( (1 + tanh(4*(v(in2)-2.5)))/2 )) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends AND2""",
+                    'or_gate': """* --- 2-Input OR Gate Subcircuit ---
+.subckt OR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (1 - (1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends OR2""",
+                    'not_gate': """* --- NOT Gate / Inverter Subcircuit ---
+.subckt NOT1 in out
+Rin in 0 100MEG
+B_out out_int 0 V = (1 - (1 + tanh(4*(v(in)-2.5)))/2) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NOT1""",
+                    'nand_gate': """* --- 2-Input NAND Gate Subcircuit ---
+.subckt NAND2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (1 - ((1 + tanh(4*(v(in1)-2.5)))/2) * ((1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NAND2""",
+                    'nor_gate': """* --- 2-Input NOR Gate Subcircuit ---
+.subckt NOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ((1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends NOR2""",
+                    'xor_gate': """* --- 2-Input XOR Gate Subcircuit ---
+.subckt XOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends XOR2""",
+                    'xnor_gate': """* --- 2-Input XNOR Gate Subcircuit ---
+.subckt XNOR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = ( 1 - ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) ) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends XNOR2"""
+                }
+                if c.type in gate_subckts:
+                    subckts_needed[c.type] = gate_subckts[c.type]
     
     for defn in subckts_needed.values():
         lines.append(defn)
@@ -154,6 +215,27 @@ Rout_int int out 75
             device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), la_name, f"{la_name} {n1} {n2} {inductance}"))
             device_lines.append((SPICE_PREFIX_ORDER.get('L', 4), lb_name, f"{lb_name} {n3} {n4} {inductance}"))
             device_lines.append((SPICE_PREFIX_ORDER.get('K', 3), k_name, f"{k_name} {la_name} {lb_name} {coupling}"))
+            continue
+
+        # Logic Gate Translation
+        if c.type in ['and_gate', 'or_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate']:
+            in1 = nodes[0] if len(nodes) > 0 else 'NC'
+            in2 = nodes[1] if len(nodes) > 1 else 'NC'
+            out = nodes[2] if len(nodes) > 2 else 'NC'
+            subckt_map = {
+                'and_gate': 'AND2', 'or_gate': 'OR2', 'nand_gate': 'NAND2',
+                'nor_gate': 'NOR2', 'xor_gate': 'XOR2', 'xnor_gate': 'XNOR2'
+            }
+            sub_name = subckt_map.get(c.type, 'AND2')
+            line = f"X{c.name} {in1} {in2} {out} {sub_name}"
+            device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{c.name}", line))
+            continue
+
+        if c.type == 'not_gate':
+            in1 = nodes[0] if len(nodes) > 0 else 'NC'
+            out = nodes[1] if len(nodes) > 1 else 'NC'
+            line = f"X{c.name} {in1} {out} NOT1"
+            device_lines.append((SPICE_PREFIX_ORDER.get('X', 8), f"X{c.name}", line))
             continue
 
         if c.type in DB:

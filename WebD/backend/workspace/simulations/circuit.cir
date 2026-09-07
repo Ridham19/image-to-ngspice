@@ -1,22 +1,31 @@
 * WebSpice Studio — Generated Netlist
 
-.Model Tx NPN (BF=300)
+* --- 2-Input OR Gate Subcircuit ---
+.subckt OR2 in1 in2 out
+Rin1 in1 0 100MEG
+Rin2 in2 0 100MEG
+B_out out_int 0 V = (1 - (1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
+R_out out_int out 50
+C_out out 0 10p
+.ends OR2
 
-Q1 4 2 3 Tx
-R2 2 1 22k
-R2 4 1 1.0k
-R4 0 2 22
-RE 0 3 560k
+V2 A 0 PULSE(0 5 0 1n 1n 10u 20u)
+V5 B 0 PULSE(0 5 0 1n 1n 20u 40u)
+XU2 A B Vout OR2
 
-.tran 0.1m 80m 0
+.tran 0.1u 120u 0
 .control
 run
 set color0 = white
 set color1 = black
 set color2 = red
+set color3 = red
+set color4 = red
 set xbrushwidth = 2
 print all > sim_out.txt
 set hcopydevtype = svg
-hardcopy plot_win1.svg v(1) title 'Graph Window 1'
+hardcopy plot_win1.svg v(A) title 'Graph Window 1'
+hardcopy plot_win2.svg v(B) title 'Graph Window 2'
+hardcopy plot_win3.svg v(Vout) title 'Graph Window 3'
 .endc
 .end
