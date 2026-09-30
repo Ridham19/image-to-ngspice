@@ -1941,6 +1941,22 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        // Save / Export JSON: Ctrl+S
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            if (isEditingInput) return;
+            e.preventDefault();
+            exportCircuitJSON();
+            return;
+        }
+
+        // Open / Import JSON: Ctrl+O
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+            if (isEditingInput) return;
+            e.preventDefault();
+            document.getElementById("jsonFileInput")?.click();
+            return;
+        }
+
         if (e.key === 'Delete') {
             if (isEditingInput) return;
             deleteSelectedItems();
@@ -6897,6 +6913,413 @@ document.addEventListener("DOMContentLoaded", () => {
             toggleConsole(true);
         }
     }
+
+    // ═══════════════════════════════════════════
+    // JSON CIRCUIT EXPORT & IMPORT MODULE
+    // ═══════════════════════════════════════════
+
+    /**
+     * Export the active circuit layout as a standardized cross-compatible JSON file.
+     */
+    async function exportCircuitJSON() {
+        if (components.length === 0 && wires.length === 0 && !isManualNetlist) {
+            document.getElementById("statusText").innerText = "Canvas is empty. Nothing to export.";
+            return;
+        }
+
+        const circuitData = {
+            version: 1,
+            generator: "WebSpice Studio",
+            timestamp: new Date().toISOString(),
+            components: components.map(c => ({
+                type: c.type,
+                name: c.name,
+                value: c.value || '',
+                x: Math.round(c.x),
+                y: Math.round(c.y),
+                rotation: c.rotation || 0,
+                params: Object.assign({}, c.params || {})
+            })),
+            wires: wires.map(w => [
+                { x: Math.round(w[0].x), y: Math.round(w[0].y) },
+                { x: Math.round(w[1].x), y: Math.round(w[1].y) }
+            ]),
+            nameCounts: Object.assign({}, nameCounts),
+            simConfig: JSON.parse(JSON.stringify(simConfig)),
+            isManualNetlist: Boolean(isManualNetlist),
+            custom_netlist: isManualNetlist ? (document.getElementById("netlistEditable")?.value || lastNetlistText) : null
+        };
+
+        const jsonStr = JSON.stringify(circuitData, null, 2);
+
+        // Try modern File System Access API for native Save As dialog
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: 'circuit.json',
+                    types: [{
+                        description: 'WebSpice Circuit JSON (*.json)',
+                        accept: { 'application/json': ['.json'] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(jsonStr);
+                await writable.close();
+                document.getElementById("statusText").innerText = "Circuit exported successfully.";
+                return;
+            } catch (err) {
+                if (err.name === 'AbortError') return; // User closed picker
+            }
+        }
+
+        // Fallback: programmatic anchor download
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'circuit.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        document.getElementById("statusText").innerText = "Circuit downloaded as circuit.json.";
+    }
+
+    /**
+     * Parses raw JSON data and normalizes component types, parameters, coordinates, and wires.
+     */
+    function parseAndNormalizeCircuitData(raw) {
+        if (!raw) return null;
+
+        let rawComps = [];
+        let rawWires = [];
+        let rawSimConfig = null;
+        let rawManual = false;
+        let rawCustomNet = null;
+        let rawCounts = {};
+        let generator = 'Custom Circuit';
+        let version = 1;
+
+        if (Array.isArray(raw)) {
+            rawComps = raw;
+        } else if (typeof raw === 'object') {
+            rawComps = Array.isArray(raw.components) ? raw.components : [];
+            rawWires = Array.isArray(raw.wires) ? raw.wires : [];
+            rawSimConfig = raw.simConfig || raw.sim_data || null;
+            rawManual = Boolean(raw.isManualNetlist);
+            rawCustomNet = raw.custom_netlist || null;
+            rawCounts = raw.nameCounts || {};
+            generator = raw.generator || 'Circuit JSON';
+            version = raw.version || 1;
+        } else {
+            return null;
+        }
+
+        // Cross-compatibility mappings (e.g. PySpice Studio -> WebSpice Studio)
+        const typeAliases = {
+            'gnd': 'ground',
+            'current': 'current_source',
+            'pulse': 'pulse_source',
+            'voltage': 'source'
+        };
+
+        const normalizedComps = rawComps.map(item => {
+            const rawType = item.type || 'resistor';
+            const type = typeAliases[rawType] || rawType;
+            const db = COMPONENT_DB[type];
+            const defaultParams = db ? Object.assign({}, db.params) : { value: '1k' };
+            const itemParams = (item.params && typeof item.params === 'object') ? Object.assign({}, item.params) : {};
+            const params = Object.assign({}, defaultParams, itemParams);
+
+            let value = item.value;
+            if (value === undefined || value === null || value === '') {
+                value = params.value || params.dc || params.mag || params.name || '';
+            }
+
+            const x = snap(Number(item.x ?? (Array.isArray(item.pos) ? item.pos[0] : 0)));
+            const y = snap(Number(item.y ?? (Array.isArray(item.pos) ? item.pos[1] : 0)));
+            let rotation = Number(item.rotation || 0) % 360;
+            if (rotation < 0) rotation += 360;
+            rotation = Math.round(rotation / 90) * 90 % 360;
+
+            const name = item.name || (db ? nextName(db.prefix) : 'U1');
+            if (type === 'label') {
+                params.name = item.params?.name || value || name;
+            }
+
+            return {
+                type,
+                name,
+                value: String(value),
+                x,
+                y,
+                rotation,
+                params
+            };
+        });
+
+        const normalizedWires = [];
+        for (const w of rawWires) {
+            if (!Array.isArray(w) || w.length !== 2) continue;
+            let p1 = null, p2 = null;
+            if (typeof w[0] === 'object' && w[0] !== null && 'x' in w[0] && 'y' in w[0]) {
+                p1 = { x: snap(Number(w[0].x)), y: snap(Number(w[0].y)) };
+            } else if (Array.isArray(w[0]) && w[0].length >= 2) {
+                p1 = { x: snap(Number(w[0][0])), y: snap(Number(w[0][1])) };
+            }
+
+            if (typeof w[1] === 'object' && w[1] !== null && 'x' in w[1] && 'y' in w[1]) {
+                p2 = { x: snap(Number(w[1].x)), y: snap(Number(w[1].y)) };
+            } else if (Array.isArray(w[1]) && w[1].length >= 2) {
+                p2 = { x: snap(Number(w[1][0])), y: snap(Number(w[1][1])) };
+            }
+
+            if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
+                normalizedWires.push([p1, p2]);
+            }
+        }
+
+        return {
+            components: normalizedComps,
+            wires: normalizedWires,
+            nameCounts: rawCounts,
+            simConfig: rawSimConfig,
+            isManualNetlist: rawManual,
+            custom_netlist: rawCustomNet,
+            generator,
+            version
+        };
+    }
+
+    /**
+     * Completely replaces current canvas elements with imported circuit data.
+     */
+    function replaceCircuitWithData(data) {
+        saveState();
+        components = data.components;
+        wires = data.wires;
+
+        // Restore & synchronize name counters
+        nameCounts = Object.assign({}, data.nameCounts || {});
+        components.forEach(c => {
+            const db = COMPONENT_DB[c.type];
+            const prefix = (db && db.prefix) || (c.name ? c.name.charAt(0) : 'U');
+            const match = c.name ? c.name.match(/\d+$/) : null;
+            if (match) {
+                const num = parseInt(match[0]);
+                nameCounts[prefix] = Math.max(nameCounts[prefix] || 0, num);
+            }
+        });
+
+        // Restore simulation configuration
+        if (data.simConfig) {
+            simConfig = Object.assign(simConfig, data.simConfig);
+        }
+
+        // Restore manual netlist state
+        if (data.isManualNetlist) {
+            lastNetlistText = data.custom_netlist || '';
+            toggleNetlistEditMode(true);
+        } else {
+            toggleNetlistEditMode(false);
+        }
+
+        selectedComponents = [];
+        selectedComp = null;
+        selectedWires = [];
+        selectedWirePts = [];
+        mode = 'select';
+
+        rerouteAllWires();
+        updateToolUI();
+        updatePropertiesPanel();
+        document.getElementById("statusText").innerText = `Loaded circuit: ${components.length} components, ${wires.length} wire segments.`;
+        render();
+    }
+
+    /**
+     * Appends imported circuit data via mouse cursor cluster placement with name deduplication.
+     */
+    function appendCircuitWithData(data) {
+        const existingNames = new Set(components.map(c => c.name));
+        const newComps = data.components.map(c => {
+            const db = COMPONENT_DB[c.type];
+            const prefix = (db && db.prefix) || (c.name ? c.name.charAt(0) : 'U');
+            let compName = c.name;
+            if (existingNames.has(compName)) {
+                let nextNum = (nameCounts[prefix] || 0) + 1;
+                let newName = `${prefix}${nextNum}`;
+                while (existingNames.has(newName)) {
+                    nextNum++;
+                    newName = `${prefix}${nextNum}`;
+                }
+                nameCounts[prefix] = nextNum;
+                compName = newName;
+            } else {
+                const match = compName ? compName.match(/\d+$/) : null;
+                if (match) {
+                    const num = parseInt(match[0]);
+                    nameCounts[prefix] = Math.max(nameCounts[prefix] || 0, num);
+                }
+            }
+            existingNames.add(compName);
+            const params = Object.assign({}, c.params || {});
+            if (c.type === 'label') {
+                params.name = compName;
+            }
+            return {
+                ...c,
+                name: compName,
+                params
+            };
+        });
+
+        // Compute centroid of imported elements
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        if (newComps.length > 0) {
+            newComps.forEach(c => {
+                minX = Math.min(minX, c.x);
+                maxX = Math.max(maxX, c.x);
+                minY = Math.min(minY, c.y);
+                maxY = Math.max(maxY, c.y);
+            });
+        } else if (data.wires.length > 0) {
+            data.wires.forEach(w => {
+                minX = Math.min(minX, w[0].x, w[1].x);
+                maxX = Math.max(maxX, w[0].x, w[1].x);
+                minY = Math.min(minY, w[0].y, w[1].y);
+                maxY = Math.max(maxY, w[0].y, w[1].y);
+            });
+        } else {
+            minX = maxX = 0; minY = maxY = 0;
+        }
+
+        const cx = snap((minX + maxX) / 2);
+        const cy = snap((minY + maxY) / 2);
+
+        pendingImportCluster = {
+            components: newComps,
+            wires: data.wires,
+            cx: cx,
+            cy: cy
+        };
+        mode = 'place_imported';
+        selectedComponents = [];
+        selectedComp = null;
+        selectedWires = [];
+        selectedWirePts = [];
+        updateToolUI();
+        document.getElementById("statusText").innerText = `Move mouse to position ${newComps.length} imported components. Left-click to place on grid (Right-click or Esc to cancel).`;
+        render();
+    }
+
+    // Wiring up JSON Import/Export UI
+    let pendingJsonData = null;
+    const jsonImportModal = document.getElementById("jsonImportModal");
+    const jsonFileInput = document.getElementById("jsonFileInput");
+    const btnImportJson = document.getElementById("btnImportJson");
+    const btnExportJson = document.getElementById("btnExportJson");
+
+    if (btnExportJson) {
+        btnExportJson.addEventListener("click", () => exportCircuitJSON());
+    }
+
+    if (btnImportJson && jsonFileInput) {
+        btnImportJson.addEventListener("click", () => jsonFileInput.click());
+    }
+
+    if (jsonFileInput) {
+        jsonFileInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const parsed = JSON.parse(event.target.result);
+                    const normalized = parseAndNormalizeCircuitData(parsed);
+                    if (!normalized || (normalized.components.length === 0 && normalized.wires.length === 0)) {
+                        alert("The selected JSON file does not contain valid circuit components or wires.");
+                        jsonFileInput.value = '';
+                        return;
+                    }
+
+                    pendingJsonData = normalized;
+
+                    // Populate modal stats
+                    const elName = document.getElementById("jsonSummaryFileName");
+                    if (elName) elName.innerText = file.name;
+                    const elComps = document.getElementById("jsonStatComps");
+                    if (elComps) elComps.innerText = normalized.components.length;
+                    const elWires = document.getElementById("jsonStatWires");
+                    if (elWires) elWires.innerText = normalized.wires.length;
+                    const elSource = document.getElementById("jsonStatSource");
+                    if (elSource) elSource.innerText = normalized.generator || 'Circuit File';
+
+                    // Reset radio to Replace Canvas
+                    const rReplace = document.getElementById("radioReplace");
+                    if (rReplace) rReplace.checked = true;
+                    document.getElementById("optReplaceCanvas")?.classList.add("active");
+                    document.getElementById("optAppendCanvas")?.classList.remove("active");
+
+                    if (jsonImportModal) jsonImportModal.style.display = "flex";
+                } catch (err) {
+                    console.error("JSON parse error:", err);
+                    alert("Failed to parse JSON file. Please ensure it is valid JSON.");
+                    jsonFileInput.value = '';
+                }
+            };
+            reader.readAsText(file);
+        });
+    }
+
+    // Modal option selection cards
+    const optReplaceCard = document.getElementById("optReplaceCanvas");
+    const optAppendCard = document.getElementById("optAppendCanvas");
+    const radioReplaceInput = document.getElementById("radioReplace");
+    const radioAppendInput = document.getElementById("radioAppend");
+
+    if (optReplaceCard && optAppendCard) {
+        optReplaceCard.addEventListener("click", () => {
+            if (radioReplaceInput) radioReplaceInput.checked = true;
+            optReplaceCard.classList.add("active");
+            optAppendCard.classList.remove("active");
+        });
+        optAppendCard.addEventListener("click", () => {
+            if (radioAppendInput) radioAppendInput.checked = true;
+            optAppendCard.classList.add("active");
+            optReplaceCard.classList.remove("active");
+        });
+    }
+
+    // Modal Confirm
+    const btnJsonConfirm = document.getElementById("btnJsonConfirm");
+    if (btnJsonConfirm) {
+        btnJsonConfirm.addEventListener("click", () => {
+            if (!pendingJsonData) return;
+            const isReplace = radioReplaceInput && radioReplaceInput.checked;
+            if (isReplace) {
+                replaceCircuitWithData(pendingJsonData);
+            } else {
+                appendCircuitWithData(pendingJsonData);
+            }
+            if (jsonImportModal) jsonImportModal.style.display = "none";
+            if (jsonFileInput) jsonFileInput.value = '';
+            pendingJsonData = null;
+        });
+    }
+
+    // Modal Cancel / Close
+    const closeJsonModal = () => {
+        if (jsonImportModal) jsonImportModal.style.display = "none";
+        if (jsonFileInput) jsonFileInput.value = '';
+        pendingJsonData = null;
+    };
+    document.getElementById("jsonModalClose")?.addEventListener("click", closeJsonModal);
+    document.getElementById("btnJsonCancel")?.addEventListener("click", closeJsonModal);
+    jsonImportModal?.addEventListener("click", (e) => {
+        if (e.target === jsonImportModal) closeJsonModal();
+    });
 
     // ═══════════════════════════════════════════
     // TEST PRESET CIRCUIT LOADER

@@ -15,84 +15,111 @@
 </head>
 <body>
     <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    <input type="file" id="jsonFileInput" accept=".json,application/json" style="display: none;">
 
-    <div class="toolbar">
-        <div class="toolbar-group">
-            <button id="btnLoadImage" class="btn-primary">Import Image</button>
-            <span id="statusText" class="status-text">Ready.</span>
-        </div>
-        
-        <div class="toolbar-group tools">
-            <button id="tool-select" class="btn-tool active">Select</button>
-            <button id="tool-wire" class="btn-tool">Wire</button>
-            <button id="btn-reroute" class="btn-action" title="Reroute all wires on canvas">Reroute</button>
-            <button id="btn-undo" class="btn-action" title="Undo (Ctrl+Z)" disabled>Undo</button>
-            <button id="btn-redo" class="btn-action" title="Redo (Ctrl+Y)" disabled>Redo</button>
-            <span class="tool-separator"></span>
+    <header class="studio-header">
+        <!-- Tier 1: Primary File Operations, History, Simulation & Theme -->
+        <div class="toolbar toolbar-main">
+            <div class="toolbar-group">
+                <div class="brand-title">
+                    <span class="brand-logo">&#9889;</span>
+                    <span class="brand-text">WebSpice</span>
+                </div>
+                <span class="tool-separator"></span>
+                <button id="btnLoadImage" class="btn-primary" title="Import circuit from image (AI Wire Detection)">Import Image</button>
+                <button id="btnImportJson" class="btn-action" title="Import Circuit JSON (Ctrl+O)">Import JSON</button>
+                <button id="btnExportJson" class="btn-action" title="Export Circuit JSON (Ctrl+S)">Export JSON</button>
+                <span class="tool-separator"></span>
+                <button id="btn-undo" class="btn-action" title="Undo (Ctrl+Z)" disabled>Undo</button>
+                <button id="btn-redo" class="btn-action" title="Redo (Ctrl+Y)" disabled>Redo</button>
+                <button id="btn-reroute" class="btn-action" title="Reroute all wires on canvas">Reroute</button>
+            </div>
             
-            <select id="tool-passives-select" class="toolbar-select">
-                <option value="" disabled selected>Passives</option>
-                <option value="resistor">Resistor</option>
-                <option value="capacitor">Capacitor</option>
-                <option value="capacitor_polarized">Polarized Cap</option>
-                <option value="inductor">Inductor</option>
-            </select>
-            
-            <select id="tool-semis-select" class="toolbar-select">
-                <option value="" disabled selected>Semis</option>
-                <option value="diode">Diode</option>
-                <option value="diode_zener">Zener Diode</option>
-                <option value="diode_led">LED</option>
-                <option value="bjt_npn">NPN Transistor</option>
-                <option value="bjt_pnp">PNP Transistor</option>
-                <option value="nmos">N-MOSFET</option>
-                <option value="pmos">P-MOSFET</option>
-            </select>
-            
-            <select id="tool-source-select" class="toolbar-select">
-                <option value="" disabled selected>Sources</option>
-                <option value="source">DC Source</option>
-                <option value="ac_source">AC Source</option>
-                <option value="vss">VSS Supply</option>
-                <option value="pulse_source">PULSE Source</option>
-                <option value="sine_source">SINE Source</option>
-                <option value="exp_source">EXP Source</option>
-                <option value="pwl_source">PWL Source</option>
-                <option value="sffm_source">SFFM Source</option>
-                <option value="am_source">AM Source</option>
-            </select>
-            
-            <select id="tool-advanced-select" class="toolbar-select">
-                <option value="" disabled selected>Advanced</option>
-                <option value="opamp">Op-Amp</option>
-                <option value="transformer">Transformer</option>
-                <option value="ic">Integrated Circuit</option>
-            </select>
-            
-            <select id="tool-logic-select" class="toolbar-select">
-                <option value="" disabled selected>Logic</option>
-                <option value="and_gate">AND Gate</option>
-                <option value="or_gate">OR Gate</option>
-                <option value="not_gate">NOT Gate</option>
-                <option value="nand_gate">NAND Gate</option>
-                <option value="nor_gate">NOR Gate</option>
-                <option value="xor_gate">XOR Gate</option>
-                <option value="xnor_gate">XNOR Gate</option>
-            </select>
-            
-            <select id="tool-terminals-select" class="toolbar-select">
-                <option value="" disabled selected>Terminals</option>
-                <option value="ground">Ground (GND)</option>
-                <option value="label">Node Label</option>
-            </select>
+            <div class="toolbar-group status-group">
+                <span id="statusText" class="status-text">Ready.</span>
+            </div>
+
+            <div class="toolbar-group">
+                <button id="btnThemeToggle" class="btn-action" title="Toggle Light/Dark Theme">Theme</button>
+                <button id="btnSimSetup" class="btn-sim-setup" title="Simulation Setup">Setup</button>
+                <button id="btnSimulate" class="btn-success" title="Run NGSPICE Simulation">Run</button>
+            </div>
         </div>
 
-        <div class="toolbar-group">
-            <button id="btnThemeToggle" class="btn-action" title="Toggle Light/Dark Theme">Theme</button>
-            <button id="btnSimSetup" class="btn-sim-setup" title="Simulation Setup">Setup</button>
-            <button id="btnSimulate" class="btn-success">Run</button>
+        <!-- Tier 2: Schematic Editing Tools & Component Library Ribbon -->
+        <div class="toolbar toolbar-ribbon">
+            <div class="toolbar-group tools">
+                <span class="ribbon-section-label">TOOLS</span>
+                <button id="tool-select" class="btn-tool active" title="Select / Move Tool (Escape)">Select</button>
+                <button id="tool-wire" class="btn-tool" title="Wire Drawing Tool (W)">Wire</button>
+                <span class="tool-separator"></span>
+                
+                <span class="ribbon-section-label">COMPONENTS</span>
+                <select id="tool-passives-select" class="toolbar-select">
+                    <option value="" disabled selected>Passives</option>
+                    <option value="resistor">Resistor</option>
+                    <option value="capacitor">Capacitor</option>
+                    <option value="capacitor_polarized">Polarized Cap</option>
+                    <option value="inductor">Inductor</option>
+                </select>
+                
+                <select id="tool-semis-select" class="toolbar-select">
+                    <option value="" disabled selected>Semis</option>
+                    <option value="diode">Diode</option>
+                    <option value="diode_zener">Zener Diode</option>
+                    <option value="diode_led">LED</option>
+                    <option value="bjt_npn">NPN Transistor</option>
+                    <option value="bjt_pnp">PNP Transistor</option>
+                    <option value="nmos">N-MOSFET</option>
+                    <option value="pmos">P-MOSFET</option>
+                </select>
+                
+                <select id="tool-source-select" class="toolbar-select">
+                    <option value="" disabled selected>Sources</option>
+                    <option value="source">DC Source</option>
+                    <option value="ac_source">AC Source</option>
+                    <option value="vss">VSS Supply</option>
+                    <option value="pulse_source">PULSE Source</option>
+                    <option value="sine_source">SINE Source</option>
+                    <option value="exp_source">EXP Source</option>
+                    <option value="pwl_source">PWL Source</option>
+                    <option value="sffm_source">SFFM Source</option>
+                    <option value="am_source">AM Source</option>
+                </select>
+                
+                <select id="tool-advanced-select" class="toolbar-select">
+                    <option value="" disabled selected>Advanced</option>
+                    <option value="opamp">Op-Amp</option>
+                    <option value="transformer">Transformer</option>
+                    <option value="ic">Integrated Circuit</option>
+                </select>
+                
+                <select id="tool-logic-select" class="toolbar-select">
+                    <option value="" disabled selected>Logic</option>
+                    <option value="and_gate">AND Gate</option>
+                    <option value="or_gate">OR Gate</option>
+                    <option value="not_gate">NOT Gate</option>
+                    <option value="nand_gate">NAND Gate</option>
+                    <option value="nor_gate">NOR Gate</option>
+                    <option value="xor_gate">XOR Gate</option>
+                    <option value="xnor_gate">XNOR Gate</option>
+                </select>
+                
+                <select id="tool-terminals-select" class="toolbar-select">
+                    <option value="" disabled selected>Terminals</option>
+                    <option value="ground">Ground (GND)</option>
+                    <option value="label">Node Label</option>
+                </select>
+            </div>
+
+            <div class="toolbar-group ribbon-hints">
+                <span class="ribbon-hint-badge">Grid: 20px</span>
+                <span class="ribbon-hint-item"><kbd>W</kbd> Wire</span>
+                <span class="ribbon-hint-item"><kbd>R</kbd> Rotate</span>
+                <span class="ribbon-hint-item"><kbd>Del</kbd> Delete</span>
+            </div>
         </div>
-    </div>
+    </header>
 
     <div class="main-container">
         <div class="canvas-container" id="canvasWrapper">
@@ -157,6 +184,74 @@
             <div class="sidebar-header">SIMULATION OUTPUT</div>
             <div id="simulationOutput" class="sidebar-content sim-output">
                 <p class="placeholder-text">No simulation data</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- JSON IMPORT MODAL                           -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="jsonImportModal" class="modal-overlay" style="display:none;">
+        <div class="modal-container json-modal-container">
+            <div class="modal-header">
+                <h2>Import Circuit (JSON)</h2>
+                <button id="jsonModalClose" class="modal-close-btn">&times;</button>
+            </div>
+            
+            <div class="json-modal-body">
+                <!-- File Stats Card -->
+                <div class="json-summary-card">
+                    <div class="json-summary-header">
+                        <div class="json-file-info">
+                            <span class="json-file-icon">📄</span>
+                            <span class="json-file-name" id="jsonSummaryFileName">circuit.json</span>
+                        </div>
+                        <span class="json-schema-badge" id="jsonSummaryBadge">Valid Circuit</span>
+                    </div>
+                    <div class="json-stats-grid">
+                        <div class="json-stat-box">
+                            <span class="json-stat-val" id="jsonStatComps">0</span>
+                            <span class="json-stat-label">Components</span>
+                        </div>
+                        <div class="json-stat-box">
+                            <span class="json-stat-val" id="jsonStatWires">0</span>
+                            <span class="json-stat-label">Wire Segments</span>
+                        </div>
+                        <div class="json-stat-box">
+                            <span class="json-stat-val" id="jsonStatSource">WebSpice</span>
+                            <span class="json-stat-label">Generator</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Import Mode Selector -->
+                <p class="json-options-title">Select Canvas Action</p>
+                <div class="json-options-group">
+                    <div class="json-option-card active" id="optReplaceCanvas">
+                        <div class="json-option-radio-wrap">
+                            <input type="radio" id="radioReplace" name="jsonImportOption" value="replace" checked>
+                        </div>
+                        <div class="json-option-text">
+                            <div class="json-option-title">Replace Canvas</div>
+                            <div class="json-option-desc">Clears current canvas and places the imported circuit at original coordinates. Previous canvas state is preserved in Undo (<kbd>Ctrl+Z</kbd>).</div>
+                        </div>
+                    </div>
+
+                    <div class="json-option-card" id="optAppendCanvas">
+                        <div class="json-option-radio-wrap">
+                            <input type="radio" id="radioAppend" name="jsonImportOption" value="append">
+                        </div>
+                        <div class="json-option-text">
+                            <div class="json-option-title">Append to Canvas</div>
+                            <div class="json-option-desc">Preserves existing circuit elements. Imported components enter mouse placement mode with automatic component deduplication (e.g. R1 &rarr; R2).</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btnJsonCancel" class="modal-btn-cancel">Cancel</button>
+                <button id="btnJsonConfirm" class="modal-btn-run">Import Circuit</button>
             </div>
         </div>
     </div>

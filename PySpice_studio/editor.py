@@ -515,6 +515,9 @@ class CircuitEditor:
         file_menu.add_command(label="📸 Import from Image (AI)...", command=self.import_from_image)
         file_menu.add_command(label="📄 Import AI JSON...", command=self.import_from_ai)
         file_menu.add_separator()
+        file_menu.add_command(label="📂 Import Circuit (JSON)...", command=self.import_circuit_json, accelerator="Ctrl+O")
+        file_menu.add_command(label="💾 Export Circuit (JSON)...", command=self.export_circuit_json, accelerator="Ctrl+S")
+        file_menu.add_separator()
         file_menu.add_command(label="🖼️ Export Image (PNG)...", command=self.export_schematic_image)
         file_menu.add_command(label="💾 Export Netlist (.cir)...", command=self.export_netlist_file)
         file_menu.add_separator()
@@ -549,7 +552,7 @@ class CircuitEditor:
         tk.Label(self.prop_frame, text=text, bg="#333", fg=COLOR_TEXT_LIGHT, font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(10, 0))
 
     def _add_sidebar_footer_shortcuts(self):
-        info = "SHORTCUTS:\n[W] Wire [P] Probe [G] GND\n[J] Jxn  [R] Res   [C] Cap\n[L] Ind  [D] Diode [F] Fit\n[Ctrl+Z/Y] Undo/Redo\n[Ctrl+A/D] All/Dup\n[Ctrl+C/V] Copy/Paste\n[Del] Delete  [F1] Help"
+        info = "SHORTCUTS:\n[W] Wire [P] Probe [G] GND\n[J] Jxn  [R] Res   [C] Cap\n[L] Ind  [D] Diode [F] Fit\n[Ctrl+Z/Y] Undo/Redo\n[Ctrl+S/O] Save/Open\n[Ctrl+A/D] All/Dup\n[Ctrl+C/V] Copy/Paste\n[Del] Delete  [F1] Help"
         tk.Label(self.prop_frame, text=info, bg=COLOR_SIDEBAR_BG, fg="#888", justify="left", font=("Consolas", 8)).pack(side="bottom", pady=15)
 
     def _setup_shortcuts(self):
@@ -563,6 +566,10 @@ class CircuitEditor:
         self.root.bind('<Control-z>', self.undo)
         self.root.bind('<Control-y>', self.redo)
         self.root.bind('<Control-Z>', self.redo)
+        self.root.bind('<Control-s>', lambda e: self.export_circuit_json())
+        self.root.bind('<Control-S>', lambda e: self.export_circuit_json())
+        self.root.bind('<Control-o>', lambda e: self.import_circuit_json())
+        self.root.bind('<Control-O>', lambda e: self.import_circuit_json())
         self.root.bind('<Control-a>', self.select_all)
         self.root.bind('<Control-d>', self.duplicate_selection)
         self.root.bind('<Escape>', self.cancel_current_action)
@@ -1923,6 +1930,193 @@ class CircuitEditor:
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to save netlist file:\n{e}")
 
+    def export_circuit_json(self):
+        """Export the complete circuit schematic to a cross-compatible JSON file."""
+        if not self.components and not self.wires and not getattr(self, 'manual_netlist_mode', False):
+            messagebox.showinfo("Export Circuit", "Canvas is empty. Nothing to export.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            title="Export Circuit (JSON)",
+            defaultextension=".json",
+            filetypes=[("Circuit JSON", "*.json"), ("All Files", "*.*")]
+        )
+        if not filepath:
+            return
+
+        try:
+            from datetime import datetime
+            circuit_data = {
+                "version": 1,
+                "generator": "PySpice Studio",
+                "timestamp": datetime.now().isoformat(),
+                "components": [
+                    {
+                        "type": c.type,
+                        "name": c.name,
+                        "value": str(c.value or ''),
+                        "x": int(c.x),
+                        "y": int(c.y),
+                        "rotation": int(c.rotation or 0),
+                        "params": copy.deepcopy(c.params or {})
+                    }
+                    for c in self.components
+                ],
+                "wires": [
+                    [
+                        {"x": int(w[0][0]), "y": int(w[0][1])},
+                        {"x": int(w[1][0]), "y": int(w[1][1])}
+                    ]
+                    for w in self.wires
+                ],
+                "nameCounts": copy.deepcopy(self.counts),
+                "simConfig": copy.deepcopy(self.sim_data),
+                "isManualNetlist": bool(getattr(self, 'manual_netlist_mode', False)),
+                "custom_netlist": getattr(self, 'manual_netlist_code', '') if getattr(self, 'manual_netlist_mode', False) else None
+            }
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(circuit_data, f, indent=2)
+
+            self.status.config(text=f"Exported circuit to {os.path.basename(filepath)}")
+            messagebox.showinfo("Export Complete", f"Circuit exported successfully to:\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export circuit to JSON:\n{e}")
+
+    def import_circuit_json(self):
+        """Import a cross-compatible circuit JSON file with Replace or Append options."""
+        filepath = filedialog.askopenfilename(
+            title="Import Circuit (JSON)",
+            filetypes=[("Circuit JSON", "*.json"), ("All Files", "*.*")]
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                raw_comps = data
+                raw_wires = []
+                sim_config = None
+                is_manual = False
+                custom_net = None
+                name_counts = {}
+            elif isinstance(data, dict):
+                raw_comps = data.get('components', [])
+                raw_wires = data.get('wires', [])
+                sim_config = data.get('simConfig', data.get('sim_data', None))
+                is_manual = data.get('isManualNetlist', False)
+                custom_net = data.get('custom_netlist', None)
+                name_counts = data.get('nameCounts', {})
+            else:
+                messagebox.showerror("Import Error", "Invalid JSON format: Expected a JSON object or array.")
+                return
+
+            if not raw_comps and not raw_wires:
+                messagebox.showwarning("Import Warning", "Selected JSON file contains no circuit components or wires.")
+                return
+
+            # Determine whether to replace or append if canvas has content
+            replace_mode = True
+            if self.components or self.wires:
+                resp = messagebox.askyesnocancel(
+                    "Import Circuit",
+                    "Do you want to REPLACE the current canvas with this circuit?\n\n"
+                    "• Yes: Replace current canvas (saves undo history)\n"
+                    "• No: Append to canvas (preserves existing elements & deduplicates names)\n"
+                    "• Cancel: Abort import"
+                )
+                if resp is None:
+                    return
+                replace_mode = resp
+
+            self.save_state()
+
+            type_mapping = {
+                'ground': 'gnd',
+                'voltage_source': 'source',
+                'current_source': 'current',
+                'pulse_source': 'pulse'
+            }
+
+            imported_comps = []
+            existing_names = {c.name for c in self.components} if not replace_mode else set()
+
+            for item in raw_comps:
+                raw_type = item.get('type', 'resistor')
+                c_type = type_mapping.get(raw_type, raw_type)
+                
+                prefix = DB.get(c_type, {}).get('prefix', 'U')
+                name = item.get('name', '')
+                
+                if not replace_mode and (not name or name in existing_names):
+                    self.counts[prefix] = self.counts.get(prefix, 0) + 1
+                    name = f"{prefix}{self.counts[prefix]}"
+                    while name in existing_names:
+                        self.counts[prefix] += 1
+                        name = f"{prefix}{self.counts[prefix]}"
+                elif replace_mode and name:
+                    m = re.search(r'\d+$', name)
+                    if m:
+                        self.counts[prefix] = max(self.counts.get(prefix, 0), int(m.group(0)))
+
+                existing_names.add(name)
+
+                x = int(item.get('x', 0))
+                y = int(item.get('y', 0))
+                rot = int(item.get('rotation', 0))
+                
+                comp = Component(c_type, x, y, name)
+                comp.rotation = rot
+                if 'params' in item and isinstance(item['params'], dict):
+                    comp.params.update(item['params'])
+                if 'value' in item and item['value']:
+                    comp.value = str(item['value'])
+                    
+                imported_comps.append(comp)
+
+            imported_wires = []
+            for w in raw_wires:
+                p1, p2 = None, None
+                if len(w) == 2:
+                    if isinstance(w[0], dict) and isinstance(w[1], dict):
+                        p1 = (int(w[0].get('x', 0)), int(w[0].get('y', 0)))
+                        p2 = (int(w[1].get('x', 0)), int(w[1].get('y', 0)))
+                    elif isinstance(w[0], (list, tuple)) and isinstance(w[1], (list, tuple)):
+                        p1 = (int(w[0][0]), int(w[0][1]))
+                        p2 = (int(w[1][0]), int(w[1][1]))
+                if p1 and p2 and p1 != p2:
+                    imported_wires.append((p1, p2))
+
+            if replace_mode:
+                self.components = imported_comps
+                self.wires = imported_wires
+                if isinstance(name_counts, dict) and name_counts:
+                    for pfx, cnt in name_counts.items():
+                        self.counts[pfx] = max(self.counts.get(pfx, 0), int(cnt))
+                if sim_config and isinstance(sim_config, dict):
+                    self.sim_data.update(sim_config)
+                if is_manual:
+                    self.manual_netlist_mode = True
+                    self.manual_netlist_code = custom_net or ""
+                else:
+                    self.manual_netlist_mode = False
+                    self.manual_netlist_code = ""
+            else:
+                self.components.extend(imported_comps)
+                self.wires.extend(imported_wires)
+
+            self.selected_comps = []
+            self.selected_wires = []
+            self.redraw_all()
+            self.update_sidebar()
+            self.status.config(text=f"Imported {len(imported_comps)} comps, {len(imported_wires)} wires.")
+            messagebox.showinfo("Import Complete", f"Successfully loaded {len(imported_comps)} components and {len(imported_wires)} wire segments.")
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import circuit JSON:\n{e}")
+
     def show_shortcuts_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("⌨️ PySpice Studio Keyboard Shortcuts")
@@ -1945,6 +2139,8 @@ class CircuitEditor:
             ("Editing & Canvas Controls", ""),
             ("  Ctrl + Z", "Undo action"),
             ("  Ctrl + Y / Ctrl+Shift+Z", "Redo action"),
+            ("  Ctrl + S", "Export Circuit to JSON file"),
+            ("  Ctrl + O", "Import Circuit from JSON file"),
             ("  Ctrl + A", "Select All"),
             ("  Ctrl + C / Ctrl + V", "Copy / Paste selection"),
             ("  Ctrl + D", "Duplicate selection"),

@@ -67,29 +67,137 @@ body, html {
     background-color: var(--bg-base);
     color: var(--text-primary);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
-/* --- TOOLBAR --- */
-.toolbar {
-    height: 54px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--glass-border);
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 0 14px;
-    gap: 8px;
+/* --- HEADER & TWO-TIER TOOLBAR --- */
+.studio-header {
+    display: flex;
+    flex-direction: column;
     z-index: 20;
     position: relative;
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25);
+    border-bottom: 1px solid var(--glass-border);
 }
-[data-theme="light"] .toolbar {
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.03);
+
+.toolbar {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    position: relative;
 }
-.toolbar-group { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.status-text { color: var(--text-secondary); font-size: 12px; margin-left: 8px; font-weight: 500; white-space: nowrap; }
+
+.toolbar-main {
+    height: 44px;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.toolbar-ribbon {
+    height: 38px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+[data-theme="light"] .toolbar-ribbon {
+    background: rgba(241, 245, 249, 0.85);
+}
+
+.brand-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    font-size: 13.5px;
+    letter-spacing: 0.5px;
+    color: var(--text-primary);
+    user-select: none;
+    margin-right: 4px;
+}
+.brand-logo {
+    font-size: 15px;
+    color: var(--accent-purple);
+}
+.brand-text {
+    background: linear-gradient(135deg, #a855f7 0%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+}
+
+.ribbon-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    user-select: none;
+    margin-right: 3px;
+    opacity: 0.8;
+}
+
+.ribbon-hints {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    user-select: none;
+}
+.ribbon-hint-badge {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--glass-border);
+    font-family: 'Consolas', monospace;
+    font-size: 10.5px;
+    color: var(--accent-cyan);
+}
+.ribbon-hint-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+}
+.ribbon-hint-item kbd {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10px;
+    font-family: 'Consolas', monospace;
+    color: var(--text-primary);
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+.status-group {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+.status-text {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
 .tool-separator {
-    width: 1px; height: 20px; background-color: var(--glass-border);
+    width: 1px;
+    height: 20px;
+    background-color: var(--glass-border);
     margin: 0 4px;
     flex-shrink: 0;
 }
@@ -125,7 +233,9 @@ button {
 
 /* --- MAIN LAYOUT --- */
 .main-container {
-    display: flex; height: calc(100vh - 54px);
+    display: flex;
+    flex: 1;
+    min-height: 0;
     position: relative;
 }
 
@@ -1823,6 +1933,182 @@ canvas {
 }
 
 /* ═══════════════════════════════════════════ */
+/* JSON IMPORT MODAL STYLES                     */
+/* ═══════════════════════════════════════════ */
+.json-modal-container {
+    max-width: 520px;
+    width: 90%;
+    border-radius: 12px;
+}
+
+.json-modal-body {
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.json-summary-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.json-summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.json-file-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+.json-file-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.json-file-name {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: 'Consolas', monospace;
+    font-size: 12.5px;
+}
+
+.json-schema-badge {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #10b981;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+}
+
+.json-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 6px;
+}
+
+.json-stat-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.json-stat-val {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--accent-cyan);
+    font-family: 'Inter', sans-serif;
+}
+
+.json-stat-label {
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+.json-options-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 4px 0 0 0;
+}
+
+.json-options-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.json-option-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.json-option-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.json-option-card.active {
+    background: rgba(124, 58, 237, 0.12);
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 16px rgba(124, 58, 237, 0.15);
+}
+
+.json-option-radio-wrap {
+    padding-top: 2px;
+    flex-shrink: 0;
+}
+
+.json-option-radio-wrap input[type="radio"] {
+    accent-color: var(--accent-purple);
+    cursor: pointer;
+    width: 15px;
+    height: 15px;
+}
+
+.json-option-text {
+    flex: 1;
+}
+
+.json-option-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+}
+
+.json-option-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.json-option-desc kbd {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10px;
+    font-family: 'Consolas', monospace;
+    color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════ */
 /* RESPONSIVE TOOLBAR BREAKPOINTS               */
 /* ═══════════════════════════════════════════ */
 @media (max-width: 1400px) {
@@ -1843,17 +2129,15 @@ canvas {
     }
 }
 
-@media (max-width: 1150px) {
-    .toolbar {
-        height: auto;
-        min-height: 50px;
-        padding: 4px 8px;
-        flex-wrap: wrap;
+@media (max-width: 1200px) {
+    .ribbon-hints {
+        display: none;
     }
-    .main-container {
-        height: calc(100vh - 50px);
-    }
-    .tools {
+}
+
+@media (max-width: 950px) {
+    .toolbar-ribbon .tools {
         overflow-x: auto;
+        padding-bottom: 2px;
     }
 }
