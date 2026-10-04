@@ -1962,6 +1962,14 @@ document.addEventListener("DOMContentLoaded", () => {
             deleteSelectedItems();
         }
         if (e.key === 'Escape') {
+            const jModal = document.getElementById("jsonImportModal");
+            if (jModal && jModal.style.display === "flex") {
+                jModal.style.display = "none";
+                const jInput = document.getElementById("jsonFileInput");
+                if (jInput) jInput.value = '';
+                pendingJsonData = null;
+                return;
+            }
             if (mode === 'place_imported') {
                 pendingImportCluster = null;
                 document.getElementById("statusText").innerText = "Import placement cancelled.";
@@ -7020,7 +7028,13 @@ document.addEventListener("DOMContentLoaded", () => {
             'gnd': 'ground',
             'current': 'current_source',
             'pulse': 'pulse_source',
-            'voltage': 'source'
+            'voltage': 'source',
+            'ac': 'ac_source',
+            'sine': 'sine_source',
+            'exp': 'exp_source',
+            'pwl': 'pwl_source',
+            'sffm': 'sffm_source',
+            'am': 'am_source'
         };
 
         const normalizedComps = rawComps.map(item => {
@@ -7130,7 +7144,10 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedWirePts = [];
         mode = 'select';
 
-        rerouteAllWires();
+        // Only auto-reroute if no explicit wire connections were saved in the file
+        if (!wires || wires.length === 0) {
+            rerouteAllWires();
+        }
         updateToolUI();
         updatePropertiesPanel();
         document.getElementById("statusText").innerText = `Loaded circuit: ${components.length} components, ${wires.length} wire segments.`;
