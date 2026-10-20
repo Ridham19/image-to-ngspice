@@ -300,20 +300,25 @@ async def detect_circuit(
     file: UploadFile = File(...),
     canny_low: int = Form(50),
     canny_high: int = Form(150),
+    split_big_image: bool = Form(False),
+    tile_overlap: float = Form(0.20),
+    grid_cols: int = Form(2),
+    grid_rows: int = Form(2),
 ):
     """
-    Upload a circuit image, run YOLO + OCR component detection, then execute
-    the full wire-tracing vision pipeline to yield a connectivity matrix.
+    Upload a circuit image, run YOLO + OCR component detection (either standard or
+    tiled splitting with overlap for high-res images), then execute the full
+    wire-tracing vision pipeline to yield a connectivity matrix.
 
     Pipeline
     --------
     1. Sanitize filename and save upload to workspace/uploads/
     2. Confirm OpenCV can read the saved file
-    3. Run YOLO + EasyOCR detection on the preloaded image matrix
+    3. Run YOLO + EasyOCR detection (or tiled split-and-detect with NMS deduplication)
     4. Preprocess image with dual-path binarization (adaptive + Canny)
     5. Separate wire layer by BBOX collision masking
     6. DFS pixel-graph traversal -> node connectivity list
-    7. Return JSON with components + connections (null on tracing failure)
+    7. Return JSON with components + connections + tile metadata
     """
     try:
         # Step 1 -- Sanitize filename and resolve cross-platform save path
@@ -341,12 +346,25 @@ async def detect_circuit(
                 },
             )
 
-        print(f"🖼️  Image decoded: {bgr_image.shape[1]}x{bgr_image.shape[0]} px (Canny thresholds: low={canny_low}, high={canny_high})")
+        print(f"🖼️  Image decoded: {bgr_image.shape[1]}x{bgr_image.shape[0]} px (Canny thresholds: low={canny_low}, high={canny_high}, split_big_image={split_big_image})")
 
         # Step 3 -- YOLO + OCR detection
-        # Pass the preloaded BGR matrix to avoid a second disk read inside detect()
-        json_output_path = os.path.join(WORKSPACE_DIR, "latest_detection.json")
-        detected_comps = detector.detect(bgr_image, output_file=json_output_path)
+        tile_metadata = None
+        if split_big_image:
+            from core.tiled_detector import split_and_detect_circuit
+            detected_comps, tile_metadata = split_and_detect_circuit(
+                detector=detector,
+                bgr_image=bgr_image,
+                grid_cols=grid_cols,
+                grid_rows=grid_rows,
+                overlap_ratio=tile_overlap,
+                canny_low=canny_low,
+                canny_high=canny_high,
+            )
+        else:
+            json_output_path = os.path.join(WORKSPACE_DIR, "latest_detection.json")
+            detected_comps = detector.detect(bgr_image, output_file=json_output_path)
+            
         print(f"🔍 Detected {len(detected_comps)} component(s)")
 
         # Steps 4-6 -- Wire Tracing Pipeline
@@ -363,78 +381,155 @@ async def detect_circuit(
             # for high-quality rotation calibration (this preprocessor is
             # validated on hand-drawn circuit images).
             from core.processing import preprocess_image as core_preprocess
+            from collections import defaultdict
+            import numpy as np
             _, _, core_binary = core_preprocess(bgr_image, canny_low=canny_low, canny_high=canny_high)
             pin_anchors = compute_pin_anchors(detected_comps, wire_mask=core_binary)
-            
-            # Step 4b: Transform detected_comps to wire_tracer format
-            wt_components = []
-            for idx, comp in enumerate(detected_comps):
-                ctype = comp.get("type", "")
-                if ctype in TRANSPARENT_TYPES:
-                    continue
+
+            if split_big_image and tile_metadata and tile_metadata.get("tiles"):
+                # ============================================================
+                # TILED WIRE TRACING WITH OVERLAP SEAM ANCHORS
+                # ============================================================
+                from core.tiled_detector import trace_wires_tiled
+
+                tracer_cfg = WireTracerConfig(canny_low=canny_low, canny_high=canny_high)
+                (
+                    connections,
+                    pin_anchors,
+                    netlist,
+                    debug_info,
+                    seam_anchors
+                ) = trace_wires_tiled(
+                    bgr_image=bgr_image,
+                    tiles=tile_metadata["tiles"],
+                    overlap_bands=tile_metadata.get("overlap_bands", {}),
+                    detected_comps=detected_comps,
+                    pin_anchors=pin_anchors,
+                    canny_low=canny_low,
+                    canny_high=canny_high,
+                    tracer_cfg=tracer_cfg
+                )
+                tile_metadata["seam_wire_anchors"] = seam_anchors
+
+                # Assign nodes to detected_comps for frontend state
+                for comp_idx, det in enumerate(detected_comps):
+                    ctype = det.get("type", "")
+                    if ctype in TRANSPARENT_TYPES:
+                        continue
+                    pin_list = [p for p in pin_anchors if p.get("comp_idx") == comp_idx]
+                    nodes_list = []
+                    for p in sorted(pin_list, key=lambda k: k["pin_id"]):
+                        pin_id_str = f"{comp_idx}_{p['pin_id']}"
+                        net_label = debug_info.get("pin_net_map", {}).get(pin_id_str)
+                        nodes_list.append(str(net_label) if net_label is not None else "NC")
+                    det["nodes"] = nodes_list
+
+                # Generate Debug Image overlay
+                if debug_info.get("label_map") is not None:
+                    from wire_tracer.utils import draw_debug_overlay
+                    comp_pins_map = defaultdict(list)
+                    for p in pin_anchors:
+                        if p.get("comp_idx", -1) >= 0:
+                            comp_pins_map[p["comp_idx"]].append(p)
+
+                    overlay_comps = []
+                    for idx, comp in enumerate(detected_comps):
+                        ctype = comp.get("type", "")
+                        if ctype in TRANSPARENT_TYPES:
+                            continue
+                        overlay_comps.append({
+                            "id": f"comp_{idx}",
+                            "label": ctype,
+                            "bbox": comp.get("box", [0, 0, 0, 0]),
+                            "pins": [{"id": f"{idx}_{p['pin_id']}", "loc": [p["x"], p["y"]]} for p in comp_pins_map[idx]]
+                        })
+
+                    debug_overlay_bgr = draw_debug_overlay(
+                        bgr_image,
+                        overlay_comps,
+                        debug_info["label_map"],
+                        debug_info.get("pin_net_map", {})
+                    )
+
+                    success, encoded_img = cv2.imencode('.jpg', debug_overlay_bgr)
+                    if success:
+                        debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(encoded_img).decode('utf-8')
+
+                print(f"✅ Tiled wire tracing complete: {len(connections)} connection(s)")
+
+            else:
+                # ============================================================
+                # STANDARD SINGLE-IMAGE WIRE TRACING
+                # ============================================================
+                # Step 4b: Transform detected_comps to wire_tracer format
+                wt_components = []
+                for idx, comp in enumerate(detected_comps):
+                    ctype = comp.get("type", "")
+                    if ctype in TRANSPARENT_TYPES:
+                        continue
+                    
+                    wt_comp = {
+                        "id": f"comp_{idx}",
+                        "label": ctype,
+                        "bbox": comp.get("box", [0,0,0,0]),
+                        "pins": []
+                    }
+                    
+                    for anchor in pin_anchors:
+                        if anchor["comp_idx"] == idx:
+                            wt_comp["pins"].append({
+                                "id": f"{idx}_{anchor['pin_id']}",
+                                "loc": [anchor["x"], anchor["y"]]
+                            })
+                    
+                    wt_components.append(wt_comp)
+                    
+                # Step 5: Run the wire_tracer pipeline (has its own preprocessing with custom Canny parameters)
+                tracer_cfg = WireTracerConfig(canny_low=canny_low, canny_high=canny_high)
+                netlist, debug_info = trace_wires(
+                    bgr_image, 
+                    wt_components, 
+                    config=tracer_cfg,
+                    method="connected_components", 
+                    debug=True
+                )
                 
-                wt_comp = {
-                    "id": f"comp_{idx}",
-                    "label": ctype,
-                    "bbox": comp.get("box", [0,0,0,0]),
-                    "pins": []
-                }
-                
-                for anchor in pin_anchors:
-                    if anchor["comp_idx"] == idx:
-                        wt_comp["pins"].append({
-                            "id": f"{idx}_{anchor['pin_id']}",
-                            "loc": [anchor["x"], anchor["y"]]
+                # Assign nodes to detected_comps for frontend state
+                for comp_idx, det in enumerate(detected_comps):
+                    ctype = det.get("type", "")
+                    if ctype in TRANSPARENT_TYPES:
+                        continue
+                    pin_list = [p for p in pin_anchors if p["comp_idx"] == comp_idx]
+                    nodes_list = []
+                    for p in sorted(pin_list, key=lambda k: k["pin_id"]):
+                        pin_id_str = f"{comp_idx}_{p['pin_id']}"
+                        net_label = debug_info["pin_net_map"].get(pin_id_str)
+                        nodes_list.append(str(net_label) if net_label is not None else "NC")
+                    det["nodes"] = nodes_list
+
+                # Build sequential connections for the frontend A* router
+                for net_pins in netlist:
+                    for i in range(len(net_pins) - 1):
+                        p1_idx, p1_pid = map(int, net_pins[i].split("_"))
+                        p2_idx, p2_pid = map(int, net_pins[i+1].split("_"))
+                        connections.append({
+                            "pin1": {"comp_idx": p1_idx, "pin_id": p1_pid},
+                            "pin2": {"comp_idx": p2_idx, "pin_id": p2_pid}
                         })
                 
-                wt_components.append(wt_comp)
-                
-            # Step 5: Run the wire_tracer pipeline (has its own preprocessing with custom Canny parameters)
-            tracer_cfg = WireTracerConfig(canny_low=canny_low, canny_high=canny_high)
-            netlist, debug_info = trace_wires(
-                bgr_image, 
-                wt_components, 
-                config=tracer_cfg,
-                method="connected_components", 
-                debug=True
-            )
-            
-            # Assign nodes to detected_comps for frontend state
-            for comp_idx, det in enumerate(detected_comps):
-                ctype = det.get("type", "")
-                if ctype in TRANSPARENT_TYPES:
-                    continue
-                pin_list = [p for p in pin_anchors if p["comp_idx"] == comp_idx]
-                nodes_list = []
-                for p in sorted(pin_list, key=lambda k: k["pin_id"]):
-                    pin_id_str = f"{comp_idx}_{p['pin_id']}"
-                    net_label = debug_info["pin_net_map"].get(pin_id_str)
-                    nodes_list.append(str(net_label) if net_label is not None else "NC")
-                det["nodes"] = nodes_list
+                # Generate Debug Image
+                from wire_tracer.utils import draw_debug_overlay
+                debug_overlay_bgr = draw_debug_overlay(
+                    bgr_image, 
+                    wt_components, 
+                    debug_info["label_map"], 
+                    debug_info["pin_net_map"]
+                )
+                success, encoded_img = cv2.imencode('.jpg', debug_overlay_bgr)
+                if success:
+                    debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(encoded_img).decode('utf-8')
 
-            # Build sequential connections for the frontend A* router
-            for net_pins in netlist:
-                for i in range(len(net_pins) - 1):
-                    p1_idx, p1_pid = map(int, net_pins[i].split("_"))
-                    p2_idx, p2_pid = map(int, net_pins[i+1].split("_"))
-                    connections.append({
-                        "pin1": {"comp_idx": p1_idx, "pin_id": p1_pid},
-                        "pin2": {"comp_idx": p2_idx, "pin_id": p2_pid}
-                    })
-            
-            # Generate Debug Image
-            from wire_tracer.utils import draw_debug_overlay
-            debug_overlay_bgr = draw_debug_overlay(
-                bgr_image, 
-                wt_components, 
-                debug_info["label_map"], 
-                debug_info["pin_net_map"]
-            )
-            success, encoded_img = cv2.imencode('.jpg', debug_overlay_bgr)
-            if success:
-                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(encoded_img).decode('utf-8')
-
-            print(f"✅ Wire tracing complete: {len(connections)} logical wire segment(s) found across {debug_info.get('num_nets', 0)} nets")
+                print(f"✅ Wire tracing complete: {len(connections)} logical wire segment(s) found across {debug_info.get('num_nets', 0)} nets")
 
         except Exception as wire_err:
             import traceback
@@ -449,13 +544,16 @@ async def detect_circuit(
         safe_components = jsonable_encoder(detected_comps)
         safe_connections = jsonable_encoder(connections)
         safe_pin_anchors = jsonable_encoder(pin_anchors)
+        safe_ocr_texts = jsonable_encoder(getattr(detector, 'latest_ocr_texts', []))
 
         return JSONResponse(content={
             "status": "success",
             "components": safe_components,
             "connections": safe_connections,
             "pin_anchors": safe_pin_anchors,
+            "ocr_texts": safe_ocr_texts,
             "debug_image": debug_image_b64,
+            "tile_metadata": tile_metadata,
         })
 
     except Exception as e:
@@ -465,6 +563,29 @@ async def detect_circuit(
             status_code=500,
             content={"status": "error", "message": str(e)},
         )
+
+
+@app.post("/api/detect_tiled")
+async def detect_circuit_tiled(
+    file: UploadFile = File(...),
+    canny_low: int = Form(50),
+    canny_high: int = Form(150),
+    tile_overlap: float = Form(0.20),
+    grid_cols: int = Form(2),
+    grid_rows: int = Form(2),
+):
+    """
+    Dedicated endpoint for tiled circuit detection with overlapping sub-images.
+    """
+    return await detect_circuit(
+        file=file,
+        canny_low=canny_low,
+        canny_high=canny_high,
+        split_big_image=True,
+        tile_overlap=tile_overlap,
+        grid_cols=grid_cols,
+        grid_rows=grid_rows,
+    )
 
 
 @app.post("/api/simulate")

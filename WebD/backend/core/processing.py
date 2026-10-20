@@ -77,6 +77,54 @@ PIN_OFFSET_RULES: Dict[str, List[Tuple[float, float]]] = {
     "pmos":               [(-1.0, 0.0), (0.6, -1.0), (0.6, 1.0)],
 }
 
+# Semantic pin terminal names for human-readable pin identifiers
+PIN_TERMINAL_NAMES: Dict[str, List[str]] = {
+    # 2-terminal passives
+    "resistor":           ["1", "2"],
+    "resistor_photo":     ["1", "2"],
+    "capacitor":          ["1", "2"],
+    "capacitor_polarized":["+", "-"],
+    "inductor":           ["1", "2"],
+    "transformer":        ["1", "2", "3", "4"],
+    "diode":              ["A", "K"],
+    "diode_led":          ["A", "K"],
+    "diode_zener":        ["A", "K"],
+    # Sources
+    "source":             ["+", "-"],
+    "voltage_source":     ["+", "-"],
+    "current_source":     ["+", "-"],
+    "ac_source":          ["+", "-"],
+    "sine_source":        ["+", "-"],
+    "pulse_source":       ["+", "-"],
+    "exp_source":         ["+", "-"],
+    "pwl_source":         ["+", "-"],
+    "sffm_source":        ["+", "-"],
+    "am_source":          ["+", "-"],
+    "vss":                ["+", "-"],
+    # Ground
+    "ground":             ["GND"],
+    # Transistors
+    "bjt_npn":            ["B", "C", "E"],
+    "bjt_pnp":            ["B", "C", "E"],
+    "bjt":                ["B", "C", "E"],
+    "transistor":         ["B", "C", "E"],
+    "phototransistor":    ["B", "C", "E"],
+    "mosfet":             ["G", "D", "S"],
+    "nmos":               ["G", "D", "S"],
+    "pmos":               ["G", "D", "S"],
+    # IC / Opamp
+    "opamp":              ["IN+", "IN-", "OUT", "V+", "V-"],
+    "ic":                 ["1", "2", "3", "4", "5", "6", "7", "8"],
+    # Logic Gates
+    "and_gate":           ["A", "B", "Y"],
+    "or_gate":            ["A", "B", "Y"],
+    "not_gate":           ["A", "Y"],
+    "nand_gate":          ["A", "B", "Y"],
+    "nor_gate":           ["A", "B", "Y"],
+    "xor_gate":           ["A", "B", "Y"],
+    "xnor_gate":          ["A", "B", "Y"],
+}
+
 # Component types whose rotation should stay fixed at 0 degrees
 FIXED_ZERO_ROTATION_TYPES = {
     # Sources
@@ -478,15 +526,21 @@ def compute_pin_anchors(
 
         # Emit pin anchors
         rotated_offsets = get_rotated_offsets(offsets, best_rot)
+        comp_name = det.get("name", f"U{idx}")
+        term_list = PIN_TERMINAL_NAMES.get(comp_type, [])
         for pin_id, (fx, fy) in enumerate(rotated_offsets):
             pin_x = int(round(cx + fx * half_w))
             pin_y = int(round(cy + fy * half_h))
+            term = term_list[pin_id] if pin_id < len(term_list) else str(pin_id + 1)
+            pin_name = f"{comp_name}.{term}"
 
             anchors.append({
                 "comp_idx":  idx,
-                "comp_name": det.get("name", f"U{idx}"),
+                "comp_name": comp_name,
                 "comp_type": comp_type,
                 "pin_id":    pin_id,
+                "terminal":  term,
+                "pin_name":  pin_name,
                 "x":         pin_x,
                 "y":         pin_y,
             })

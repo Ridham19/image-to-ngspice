@@ -110,8 +110,8 @@ def fix_handwriting_digits(numeric_str: str) -> str:
 
 
 def expand_european_notation(text: str) -> str:
-    """Convert European schematic notation (e.g. 4k7 -> 4.7k, 0r1 -> 0.1, 2m2 -> 2.2m)."""
-    match = re.match(r'^(\d+)([krmgupn])(\d+)$', text, re.IGNORECASE)
+    """Convert European schematic notation (e.g. 4k7 -> 4.7k, 0r1 -> 0.1, 2m2 -> 2.2m, 3v3 -> 3.3v)."""
+    match = re.match(r'^(\d+)([krmgupnv])(\d+)$', text, re.IGNORECASE)
     if match:
         num1, unit, num2 = match.groups()
         unit_lower = unit.lower()

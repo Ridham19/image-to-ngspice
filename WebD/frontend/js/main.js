@@ -5309,9 +5309,15 @@ document.addEventListener("DOMContentLoaded", () => {
         components: [],      // raw from API (all types)
         connections: [],      // editable copy: [{pin1:{comp_idx,pin_id}, pin2:{comp_idx,pin_id}}, ...]
         pinAnchors: [],       // [{comp_idx, pin_id, x, y}, ...] — pixel coords from backend
+        ocrTexts: [],         // [{id, box, text, clean, conf, associated_comp}, ...]
         imageElement: null,   // loaded Image for canvas background
         imageW: 0,
         imageH: 0,
+        activeTab: 'wires',   // 'wires' | 'values'
+        selectedCompIdx: null, // index into aiPreview.components
+        valuesFilter: 'all',  // 'all' | 'passives' | 'active' | 'unset'
+        valuesSearch: '',
+        showTextBoxes: true,
     };
 
     const aiEditor = {
@@ -5320,6 +5326,8 @@ document.addEventListener("DOMContentLoaded", () => {
         hoveredPin: null,      // {comp_idx, pin_id, x, y} or null
         hoveredConnIdx: null,  // index into aiPreview.connections or null
         hoveredJunction: null, // hovered virtual junction pin in delete mode
+        hoveredComp: null,     // hovered component in preview
+        hoveredOcrText: null,  // hovered OCR text item
         pan: { x: 0, y: 0 },
         zoom: 1,
         isMouseDown: false,
@@ -5339,6 +5347,224 @@ document.addEventListener("DOMContentLoaded", () => {
     const aiCanvasWrap = document.getElementById('aiDebugCanvasWrap');
     const aiInfoEl = document.getElementById('aiDebugInfo');
     const aiStatsEl = document.getElementById('aiDebugStats');
+
+    // Dual tab refs
+    const aiTabWires = document.getElementById('aiTabWires');
+    const aiTabValues = document.getElementById('aiTabValues');
+    const aiWiresToolbar = document.getElementById('aiWiresToolbar');
+    const aiValuesToolbar = document.getElementById('aiValuesToolbar');
+    const aiValuesSidebar = document.getElementById('aiValuesSidebar');
+    const aiValuesList = document.getElementById('aiValuesList');
+    const aiValuesSearchInput = document.getElementById('aiValuesSearchInput');
+    const aiValuesCountBadge = document.getElementById('aiValuesCountBadge');
+    const aiValuesInfo = document.getElementById('aiValuesInfo');
+
+    // Floating popover refs
+    const aiFloatingValuePopover = document.getElementById('aiFloatingValuePopover');
+    const popoverCompTitle = document.getElementById('popoverCompTitle');
+    const popoverClose = document.getElementById('popoverClose');
+    const popoverValueInput = document.getElementById('popoverValueInput');
+    const popoverSaveBtn = document.getElementById('popoverSaveBtn');
+    const popoverOcrHint = document.getElementById('popoverOcrHint');
+    const popoverPresets = document.getElementById('popoverPresets');
+
+    // Common component presets for quick 1-click value entry
+    const COMPONENT_PRESETS = {
+        'resistor': ['100', '1k', '2.2k', '4.7k', '10k', '47k', '100k', '1meg'],
+        'resistor_photo': ['10k', '100k', '1meg'],
+        'capacitor': ['10p', '100p', '1n', '10n', '100n', '1u', '10u', '100u'],
+        'capacitor_polarized': ['1u', '10u', '47u', '100u', '470u', '1000u'],
+        'inductor': ['1u', '10u', '100u', '1m', '10m', '100m'],
+        'source': ['1', '3.3', '5', '9', '12', '15', '24'],
+        'voltage_source': ['1', '3.3', '5', '9', '12', '15', '24'],
+        'ac_source': ['1', '5', '10', '120', '230'],
+        'current_source': ['1m', '10m', '100m', '1'],
+        'vss': ['-5', '-12', '-15'],
+        'diode': ['Dx', '1N4148', '1N4007'],
+        'diode_led': ['Dx', 'RED', 'GREEN', 'BLUE'],
+        'diode_zener': ['Dx', '3.3V', '5.1V', '12V'],
+        'bjt': ['Tx', '2N2222', '2N3904', 'BC547'],
+        'bjt_npn': ['Tx', '2N2222', '2N3904', 'BC547'],
+        'bjt_pnp': ['Tx_pnp', '2N3906', 'BC557'],
+        'mosfet': ['nmos', '2N7000', 'IRF540'],
+        'nmos': ['nmos', '2N7000', 'IRF540'],
+        'pmos': ['pmos', 'BS250', 'IRF9540'],
+        'opamp': ['LM741', 'TL072', 'NE5532'],
+    };
+
+    // Standard SPICE fallback values
+    const STANDARD_DEFAULT_VALUES = {
+        'resistor': '1k',
+        'resistor_photo': '10k',
+        'capacitor': '1u',
+        'capacitor_polarized': '10u',
+        'inductor': '1m',
+        'source': '5',
+        'voltage_source': '5',
+        'ac_source': '1',
+        'current_source': '1m',
+        'vss': '-5',
+        'diode': 'Dx',
+        'diode_led': 'Dx',
+        'diode_zener': 'Dx',
+        'bjt': 'Tx',
+        'bjt_npn': 'Tx',
+        'bjt_pnp': 'Tx_pnp',
+        'mosfet': 'nmos',
+        'nmos': 'nmos',
+        'pmos': 'pmos',
+        'opamp': 'LM741',
+    };
+
+    // Client-side OCR validator & auto-correction matching backend ocr_validator.py
+    // Client-side OCR validator & auto-correction matching backend ocr_validator.py
+    function sanitizeClientOcrValue(inputVal, compType) {
+        if (!inputVal) return { value: '', status: 'unset', note: 'Empty' };
+        let str = String(inputVal).trim();
+        if (!str) return { value: '', status: 'unset', note: 'Empty' };
+
+        // Normalize Greek mu and omega, decimal commas, and delimiter spaces
+        str = str.replace(/[\u03bc\u00b5]/g, 'u').replace(/,/g, '.');
+        str = str.replace(/\b(ohms?|omega|\u03a9|\u2126)\b/gi, '');
+        str = str.replace(/[\s:=~]+/g, ' ').trim();
+
+        // Check if string contains composite prefix: e.g. "R1 10k", "R1=10k", "C3: 100n"
+        const compPrefixMatch = str.match(/^([a-zA-Z]{1,3}\d{0,4})\s+([\d\.\/]+[a-zA-Z_]*)$/);
+        if (compPrefixMatch) {
+            str = compPrefixMatch[2];
+        } else {
+            // Check reverse composite: e.g. "10k R1"
+            const revPrefixMatch = str.match(/^([\d\.\/]+[a-zA-Z_]*)\s+([a-zA-Z]{1,3}\d{0,4})$/);
+            if (revPrefixMatch) {
+                str = revPrefixMatch[1];
+            }
+        }
+
+        // Reject pure component labels (e.g. "R1", "C2", "D1", "VIN", "VOUT", "GND") that do not contain component values
+        if (/^[a-zA-Z]{1,3}\d{1,4}$/i.test(str) || /^(vcc|gnd|vin|vout|in|out|rst|clk)$/i.test(str)) {
+            return { value: '', status: 'label_only', note: 'Component designator' };
+        }
+
+        // Expand European notation (e.g. 4k7 -> 4.7k, 3v3 -> 3.3v, 2u2 -> 2.2u, 0r1 -> 0.1)
+        const euroMatch = str.match(/^(\d+)([krmgupnv])(\d+)$/i);
+        if (euroMatch) {
+            const num1 = euroMatch[1];
+            const unit = euroMatch[2].toLowerCase();
+            const num2 = euroMatch[3];
+            if (unit === 'r') str = `${num1}.${num2}`;
+            else str = `${num1}.${num2}${unit}`;
+            return { value: str, status: 'autocorrected', note: `European notation -> ${str}` };
+        }
+
+        // Split numeric and unit
+        const numUnitMatch = str.match(/^([\+\-]?[\d\.\sA-Za-z]+?)([a-zA-Z_]*)$/);
+        if (numUnitMatch) {
+            let digits = numUnitMatch[1].replace(/\s+/g, '');
+            let unit = numUnitMatch[2].toLowerCase();
+            
+            // Fix handwriting digits in numeric portion
+            digits = digits.replace(/[il|!]/gi, '1')
+                           .replace(/[sz]/gi, '5')
+                           .replace(/[o]/gi, '0');
+
+            // Strip leading zero on integers (e.g. 045k -> 45k)
+            if (/^0\d+/.test(digits)) {
+                digits = digits.replace(/^0+/, '');
+            }
+
+            // Suffix corrections
+            if (compType && compType.includes('resistor')) {
+                if (['xe', 'x', 'q', 'ke', 'ko', 'kohm', 'kohms'].includes(unit)) unit = 'k';
+                else if (['ohm', 'ohms', 'r'].includes(unit)) unit = '';
+                else if (['m', 'mg', 'me', 'megohm'].includes(unit)) unit = 'meg';
+            } else if (compType && compType.includes('capacitor')) {
+                if (['uu', 'uf', 'micro', 'x', 'xe'].includes(unit)) unit = 'u';
+                else if (['f'].includes(unit)) unit = 'u';
+            } else if (compType && compType.includes('inductor')) {
+                if (['uh', 'x', 'xe'].includes(unit)) unit = 'u';
+                else if (['mh'].includes(unit)) unit = 'm';
+            }
+
+            const finalVal = `${digits}${unit}`;
+            if (finalVal !== inputVal) {
+                return { value: finalVal, status: 'autocorrected', note: `Autocorrected -> ${finalVal}` };
+            }
+            return { value: finalVal, status: 'valid', note: 'Valid SPICE literal' };
+        }
+
+        return { value: str, status: 'valid', note: 'Custom value' };
+    }
+
+    function boxEdgeDistance(box1, box2) {
+        if (!box1 || !box2 || box1.length < 4 || box2.length < 4) return 999999;
+        const r1_x1 = box1[0], r1_y1 = box1[1], r1_x2 = box1[0] + box1[2], r1_y2 = box1[1] + box1[3];
+        const r2_x1 = box2[0], r2_y1 = box2[1], r2_x2 = box2[0] + box2[2], r2_y2 = box2[1] + box2[3];
+        const dx = Math.max(0, Math.max(r1_x1 - r2_x2, r2_x1 - r1_x2));
+        const dy = Math.max(0, Math.max(r1_y1 - r2_y2, r2_y1 - r1_y2));
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function autoAssociateOcrTextsToComponents(components, ocrTexts, isManualTrigger = false) {
+        if (!components || !ocrTexts || ocrTexts.length === 0) return 0;
+        const NON_VALUE_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+        let autoFilledCount = 0;
+
+        components.forEach((comp) => {
+            if (NON_VALUE_TYPES.includes(comp.type)) return;
+            const hasValidValue = comp.value && comp.value !== 'TEXT_FOUND' && String(comp.value).trim() !== '';
+            if (hasValidValue && !isManualTrigger) return;
+
+            const compBox = comp.box;
+            if (!compBox || compBox.length < 4) return;
+            const cw = compBox[2], ch = compBox[3];
+            const maxAllowedDist = Math.max(260, Math.max(cw, ch) * 2.2);
+
+            const candidates = [];
+            ocrTexts.forEach(ot => {
+                const otBox = ot.box;
+                if (!otBox || otBox.length < 4) return;
+                const edgeDist = boxEdgeDistance(compBox, otBox);
+                if (edgeDist > maxAllowedDist) return;
+
+                const rawStr = ot.clean || ot.text || '';
+                const sanitized = sanitizeClientOcrValue(rawStr, comp.type);
+                if (sanitized.status === 'label_only' || !sanitized.value) return;
+
+                let closerToOther = false;
+                for (const other of components) {
+                    if (other === comp || NON_VALUE_TYPES.includes(other.type) || !other.box) continue;
+                    const otherDist = boxEdgeDistance(other.box, otBox);
+                    if (otherDist < edgeDist * 0.75) {
+                        closerToOther = true;
+                        break;
+                    }
+                }
+                if (closerToOther) return;
+
+                candidates.push({
+                    value: sanitized.value,
+                    status: sanitized.status,
+                    raw: rawStr,
+                    dist: edgeDist,
+                    box: otBox,
+                    ot: ot
+                });
+            });
+
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => a.dist - b.dist);
+                const best = candidates[0];
+                comp.value = best.value;
+                comp.raw_ocr = best.raw;
+                comp.ocr_status = (best.status === 'autocorrected') ? 'autocorrected' : 'detected';
+                comp.text_box = best.box;
+                best.ot.associated_comp = comp.name;
+                autoFilledCount++;
+            }
+        });
+
+        return autoFilledCount;
+    }
 
     // --- Color generation (HSV-based, matching backend) ---
     function hsvToRgb(h, s, v) {
@@ -5454,6 +5680,34 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
     }
 
+    function projectPointToSegment(px, py, ax, ay, bx, by) {
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return { x: Math.round(ax), y: Math.round(ay), t: 0, dist: Math.sqrt((px - ax) ** 2 + (py - ay) ** 2) };
+        let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        const projX = ax + t * dx, projY = ay + t * dy;
+        return {
+            x: Math.round(projX),
+            y: Math.round(projY),
+            t,
+            dist: Math.sqrt((px - projX) ** 2 + (py - projY) ** 2)
+        };
+    }
+
+    function getPinDisplayName(pinRef) {
+        if (!pinRef) return '';
+        if (pinRef.comp_idx === -1) {
+            const a = aiPreview.pinAnchors.find(p => p.comp_idx === -1 && p.pin_id === pinRef.pin_id);
+            return a?.pin_name || `J${pinRef.pin_id}`;
+        }
+        const a = aiPreview.pinAnchors.find(p => p.comp_idx === pinRef.comp_idx && p.pin_id === pinRef.pin_id);
+        if (a?.pin_name) return a.pin_name;
+        const c = aiPreview.components[pinRef.comp_idx];
+        if (c?.name) return `${c.name}.${a?.terminal || pinRef.pin_id + 1}`;
+        return `${pinRef.comp_idx}_${pinRef.pin_id}`;
+    }
+
     function aiHitTestConnection(imgX, imgY) {
         let bestIdx = null, bestDist = AI_CONN_HIT_DIST;
         aiPreview.connections.forEach((conn, idx) => {
@@ -5469,14 +5723,380 @@ document.addEventListener("DOMContentLoaded", () => {
         return bestIdx;
     }
 
+    function aiImageToScreen(ix, iy) {
+        return {
+            x: ix * aiEditor.zoom + aiEditor.pan.x,
+            y: iy * aiEditor.zoom + aiEditor.pan.y
+        };
+    }
+
+    function hideFloatingPopover() {
+        if (aiFloatingValuePopover) {
+            aiFloatingValuePopover.style.display = 'none';
+        }
+    }
+
+    function updateFloatingPopoverPosition(compIdx) {
+        if (!aiFloatingValuePopover || aiFloatingValuePopover.style.display === 'none') return;
+        const comp = aiPreview.components[compIdx];
+        if (!comp || !comp.box) return;
+
+        const box = comp.box;
+        const b0 = Number(box[0]) || 0;
+        const b1 = Number(box[1]) || 0;
+        const b2 = Number(box[2]) || 0;
+        const screenTopRight = aiImageToScreen(b0 + b2 + 12, b1);
+        const wrapW = aiCanvasWrap ? aiCanvasWrap.clientWidth : 800;
+        const wrapH = aiCanvasWrap ? aiCanvasWrap.clientHeight : 600;
+        const popoverW = 260;
+        const popoverH = 190;
+        const posX = Math.max(10, Math.min(wrapW - popoverW - 10, screenTopRight.x));
+        const posY = Math.max(10, Math.min(wrapH - popoverH - 10, screenTopRight.y));
+
+        aiFloatingValuePopover.style.left = `${Math.round(posX)}px`;
+        aiFloatingValuePopover.style.top = `${Math.round(posY)}px`;
+    }
+
+    function showFloatingPopover(compIdx, shouldFocus = false) {
+        const comp = aiPreview.components[compIdx];
+        if (!comp || !comp.box || !aiFloatingValuePopover) return;
+
+        aiFloatingValuePopover.style.display = 'flex';
+        updateFloatingPopoverPosition(compIdx);
+
+        popoverCompTitle.textContent = `${comp.name} (${comp.type})`;
+        popoverValueInput.value = (comp.value === 'TEXT_FOUND') ? '' : (comp.value || '');
+
+        if (comp.raw_ocr) {
+            popoverOcrHint.textContent = `Raw OCR detected: "${comp.raw_ocr}"`;
+        } else if (comp.ocr_status === 'default') {
+            popoverOcrHint.textContent = `Default SPICE value: ${comp.value}`;
+        } else {
+            popoverOcrHint.textContent = 'Type value and press Enter or Set';
+        }
+
+        popoverPresets.innerHTML = '';
+        const presets = COMPONENT_PRESETS[comp.type] || COMPONENT_PRESETS['resistor'];
+        presets.slice(0, 5).forEach(preset => {
+            const chip = document.createElement('span');
+            chip.className = 'preset-chip';
+            chip.textContent = preset;
+            chip.addEventListener('click', () => {
+                popoverValueInput.value = preset;
+                setComponentValue(compIdx, preset, 'manual');
+            });
+            popoverPresets.appendChild(chip);
+        });
+
+        if (shouldFocus && popoverValueInput) {
+            try {
+                popoverValueInput.focus({ preventScroll: true });
+                popoverValueInput.select();
+            } catch (err) {
+                // Ignore focus errors
+            }
+        }
+    }
+
+    function setComponentValue(compIdx, newValue, status = 'manual') {
+        const comp = aiPreview.components[compIdx];
+        if (!comp) return;
+
+        comp.value = newValue;
+        comp.ocr_status = status;
+
+        if (aiValuesInfo) {
+            aiValuesInfo.textContent = `Updated ${comp.name} value to ${newValue}`;
+            aiValuesInfo.style.color = '#10B981';
+        }
+
+        renderValuesSidebar();
+        renderAiPreview();
+        updateAiStats();
+
+        if (aiPreview.selectedCompIdx === compIdx && popoverValueInput) {
+            popoverValueInput.value = newValue;
+        }
+    }
+
+    function selectAndLocateComponent(compIdx, shouldFocus = false) {
+        aiPreview.selectedCompIdx = compIdx;
+        const comp = aiPreview.components[compIdx];
+        if (!comp || !comp.box) return;
+
+        const box = comp.box;
+        const b0 = Number(box[0]) || 0;
+        const b1 = Number(box[1]) || 0;
+        const b2 = Number(box[2]) || 0;
+        const b3 = Number(box[3]) || 0;
+        const boxCx = b0 + b2 / 2;
+        const boxCy = b1 + b3 / 2;
+
+        const cw = aiCanvas._displayWidth || (aiCanvasWrap ? aiCanvasWrap.clientWidth : 800);
+        const ch = aiCanvas._displayHeight || (aiCanvasWrap ? aiCanvasWrap.clientHeight : 600);
+
+        if (!isFinite(aiEditor.zoom) || aiEditor.zoom <= 0) aiEditor.zoom = 1;
+
+        // Ensure clear visibility when locating
+        if (aiEditor.zoom < 0.8) {
+            aiEditor.zoom = 1.0;
+        }
+
+        aiEditor.pan.x = Math.round((cw / 2) - boxCx * aiEditor.zoom);
+        aiEditor.pan.y = Math.round((ch / 2) - boxCy * aiEditor.zoom);
+
+        // Keep preview container scroll locked at origin to prevent glitchy viewport shifts
+        if (aiPreviewBody) {
+            aiPreviewBody.scrollLeft = 0;
+            aiPreviewBody.scrollTop = 0;
+        }
+
+        showFloatingPopover(compIdx, shouldFocus);
+
+        const card = document.getElementById(`aiValueCard_${compIdx}`);
+        if (card && aiValuesList) {
+            document.querySelectorAll('.ai-value-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+
+            // Scroll ONLY the sidebar container directly — NEVER call scrollIntoView which causes layout shifts!
+            const listRect = aiValuesList.getBoundingClientRect();
+            const cardRect = card.getBoundingClientRect();
+            const offsetDiff = cardRect.top - listRect.top;
+            const targetScroll = aiValuesList.scrollTop + offsetDiff - (aiValuesList.clientHeight / 2) + (card.clientHeight / 2);
+            aiValuesList.scrollTo({
+                top: Math.max(0, targetScroll),
+                behavior: 'smooth'
+            });
+        }
+
+        renderAiPreview();
+    }
+
+    function renderValuesSidebar() {
+        if (!aiValuesList) return;
+        aiValuesList.innerHTML = '';
+
+        const NON_VALUE_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+        const comps = aiPreview.components.filter(c => !NON_VALUE_TYPES.includes(c.type));
+
+        let setValuesCount = 0;
+        comps.forEach(c => {
+            if (c.value && c.value !== 'TEXT_FOUND' && String(c.value).trim() !== '') {
+                setValuesCount++;
+            }
+        });
+        if (aiValuesCountBadge) {
+            aiValuesCountBadge.textContent = `${setValuesCount} / ${comps.length}`;
+            aiValuesCountBadge.style.color = setValuesCount === comps.length ? '#10b981' : 'var(--accent-cyan)';
+        }
+
+        const filter = aiPreview.valuesFilter;
+        const search = (aiPreview.valuesSearch || '').toLowerCase().trim();
+
+        const filteredComps = comps.filter(comp => {
+            const ctype = comp.type || '';
+            const cname = (comp.name || '').toLowerCase();
+            const cval = (comp.value || '').toLowerCase();
+
+            if (filter === 'passives') {
+                if (!['resistor', 'resistor_photo', 'capacitor', 'capacitor_polarized', 'inductor'].includes(ctype)) return false;
+            } else if (filter === 'active') {
+                if (!['source', 'voltage_source', 'ac_source', 'current_source', 'diode', 'diode_led', 'diode_zener', 'bjt', 'bjt_npn', 'bjt_pnp', 'mosfet', 'nmos', 'pmos', 'opamp', 'ic'].includes(ctype)) return false;
+            } else if (filter === 'unset') {
+                if (comp.value && comp.value !== 'TEXT_FOUND' && String(comp.value).trim() !== '') return false;
+            }
+
+            if (search) {
+                const matches = cname.includes(search) || ctype.toLowerCase().includes(search) || cval.includes(search);
+                if (!matches) return false;
+            }
+
+            return true;
+        });
+
+        if (filteredComps.length === 0) {
+            aiValuesList.innerHTML = `
+                <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 12px;">
+                    No components match the filter.
+                </div>
+            `;
+            return;
+        }
+
+        filteredComps.forEach(comp => {
+            const compIdx = aiPreview.components.indexOf(comp);
+            const isSelected = aiPreview.selectedCompIdx === compIdx;
+
+            const card = document.createElement('div');
+            card.className = `ai-value-card${isSelected ? ' selected' : ''}`;
+            card.id = `aiValueCard_${compIdx}`;
+
+            let typeCategory = 'other';
+            let typeLetter = comp.name ? comp.name.charAt(0) : 'C';
+            if (comp.type.includes('resistor')) { typeCategory = 'resistor'; typeLetter = 'R'; }
+            else if (comp.type.includes('capacitor')) { typeCategory = 'capacitor'; typeLetter = 'C'; }
+            else if (comp.type.includes('inductor')) { typeCategory = 'inductor'; typeLetter = 'L'; }
+            else if (comp.type.includes('source') || comp.type === 'vss') { typeCategory = 'source'; typeLetter = 'V'; }
+            else if (comp.type.includes('diode')) { typeCategory = 'diode'; typeLetter = 'D'; }
+            else if (comp.type.includes('bjt') || comp.type.includes('mosfet') || comp.type.includes('transistor')) { typeCategory = 'transistor'; typeLetter = 'Q'; }
+
+            let statusTagClass = 'status-unset';
+            let statusTagText = 'Unset';
+            if (comp.ocr_status === 'detected') {
+                statusTagClass = 'status-detected';
+                statusTagText = 'Auto OCR';
+            } else if (comp.ocr_status === 'autocorrected') {
+                statusTagClass = 'status-autocorrected';
+                statusTagText = 'Corrected';
+            } else if (comp.ocr_status === 'default') {
+                statusTagClass = 'status-default';
+                statusTagText = 'Default';
+            } else if (comp.ocr_status === 'manual') {
+                statusTagClass = 'status-manual';
+                statusTagText = 'Manual';
+            } else if (comp.value === 'TEXT_FOUND') {
+                statusTagClass = 'status-autocorrected';
+                statusTagText = 'Text Found';
+            } else if (comp.value && String(comp.value).trim() !== '') {
+                statusTagClass = 'status-detected';
+                statusTagText = 'Set';
+            }
+
+            const currentVal = (comp.value === 'TEXT_FOUND') ? '' : (comp.value || '');
+
+            card.innerHTML = `
+                <div class="ai-value-card-header">
+                    <div class="ai-comp-badge">
+                        <span class="ai-comp-type-icon type-${typeCategory}">${typeLetter}</span>
+                        <span class="ai-comp-name">${comp.name}</span>
+                        <span class="ai-comp-type-label">(${comp.type})</span>
+                    </div>
+                    <span class="ai-ocr-status-tag ${statusTagClass}">${statusTagText}</span>
+                </div>
+                <div class="ai-value-input-row">
+                    <input type="text" class="ai-value-input" id="inputVal_${compIdx}" value="${currentVal}" placeholder="e.g. 10k, 100n, 5V">
+                    <button type="button" class="ai-value-locate-btn" title="Focus and center on canvas">Locate</button>
+                </div>
+                <div class="ai-presets-row" id="presetsRow_${compIdx}"></div>
+            `;
+
+            const presetsContainer = card.querySelector(`#presetsRow_${compIdx}`);
+            const presets = COMPONENT_PRESETS[comp.type] || COMPONENT_PRESETS['resistor'];
+            presets.slice(0, 6).forEach(preset => {
+                const chip = document.createElement('span');
+                chip.className = 'preset-chip';
+                chip.textContent = preset;
+                chip.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    setComponentValue(compIdx, preset, 'manual');
+                });
+                presetsContainer.appendChild(chip);
+            });
+
+            const valInput = card.querySelector(`#inputVal_${compIdx}`);
+            valInput.addEventListener('click', (e) => e.stopPropagation());
+            valInput.addEventListener('input', (e) => {
+                const sanitized = sanitizeClientOcrValue(e.target.value, comp.type);
+                if (sanitized.status === 'autocorrected') {
+                    valInput.classList.add('autocorrected');
+                    valInput.classList.remove('valid');
+                } else if (sanitized.status === 'valid') {
+                    valInput.classList.add('valid');
+                    valInput.classList.remove('autocorrected');
+                } else {
+                    valInput.classList.remove('valid', 'autocorrected');
+                }
+            });
+            valInput.addEventListener('change', (e) => {
+                const sanitized = sanitizeClientOcrValue(e.target.value, comp.type);
+                setComponentValue(compIdx, sanitized.value || e.target.value, 'manual');
+            });
+            valInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') valInput.blur();
+            });
+
+            const locateBtn = card.querySelector('.ai-value-locate-btn');
+            locateBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectAndLocateComponent(compIdx, false);
+            });
+
+            card.addEventListener('click', () => {
+                selectAndLocateComponent(compIdx, false);
+            });
+
+            aiValuesList.appendChild(card);
+        });
+    }
+
+    function switchAiPreviewTab(tab) {
+        aiPreview.activeTab = tab;
+        hideFloatingPopover();
+
+        if (tab === 'wires') {
+            if (aiTabWires) {
+                aiTabWires.classList.add('active');
+                aiTabWires.setAttribute('aria-selected', 'true');
+            }
+            if (aiTabValues) {
+                aiTabValues.classList.remove('active');
+                aiTabValues.setAttribute('aria-selected', 'false');
+            }
+            if (aiWiresToolbar) aiWiresToolbar.style.display = 'flex';
+            if (aiValuesToolbar) aiValuesToolbar.style.display = 'none';
+            if (aiValuesSidebar) aiValuesSidebar.style.display = 'none';
+
+            aiCanvasWrap.className = 'ai-debug-canvas-wrap tool-' + aiEditor.tool;
+        } else {
+            if (aiTabValues) {
+                aiTabValues.classList.add('active');
+                aiTabValues.setAttribute('aria-selected', 'true');
+            }
+            if (aiTabWires) {
+                aiTabWires.classList.remove('active');
+                aiTabWires.setAttribute('aria-selected', 'false');
+            }
+            if (aiWiresToolbar) aiWiresToolbar.style.display = 'none';
+            if (aiValuesToolbar) aiValuesToolbar.style.display = 'flex';
+            if (aiValuesSidebar) aiValuesSidebar.style.display = 'flex';
+
+            aiCanvasWrap.className = 'ai-debug-canvas-wrap tool-values';
+            renderValuesSidebar();
+        }
+
+        requestAnimationFrame(() => {
+            resizeAiCanvas();
+            fitAiPreview();
+            renderAiPreview();
+            updateAiStats();
+        });
+    }
+
     // --- Update stats badge ---
     function updateAiStats() {
+        if (aiPreview.activeTab === 'values') {
+            const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+            const valComps = aiPreview.components.filter(c => !NON_VAL.includes(c.type));
+            const setComps = valComps.filter(c => c.value && c.value !== 'TEXT_FOUND' && String(c.value).trim() !== '');
+            const unassignedCount = valComps.length - setComps.length;
+            aiStatsEl.innerHTML = `
+                <span class="stat-item">${valComps.length} components</span>
+                <span class="stat-item" style="color:#10b981;border-color:rgba(16,185,129,0.3)">${setComps.length} values set</span>
+                <span class="stat-item" style="color:${unassignedCount > 0 ? '#f59e0b' : '#38bdf8'}">${unassignedCount} unassigned</span>
+                <span class="stat-item">${aiPreview.ocrTexts.length} OCR text boxes</span>
+            `;
+            return;
+        }
+
         const nets = computeNets(aiPreview.connections, aiPreview.pinAnchors);
+        const seamCount = aiPreview.pinAnchors.filter(p => p.isSeamAnchor).length;
+        const seamBadge = seamCount > 0 ? `<span class="stat-item" style="color:#22d3ee;border-color:rgba(34,211,238,0.4)">⚓ ${seamCount} seam anchors</span>` : '';
         aiStatsEl.innerHTML = `
             <span class="stat-item">${aiPreview.components.length} components</span>
             <span class="stat-item">${aiPreview.connections.length} connections</span>
             <span class="stat-item">${nets.connectedNets} nets</span>
             <span class="stat-item">${aiPreview.pinAnchors.length} pins</span>
+            ${seamBadge}
         `;
     }
 
@@ -5490,15 +6110,240 @@ document.addEventListener("DOMContentLoaded", () => {
         aiCtx.fillStyle = '#080a10';
         aiCtx.fillRect(0, 0, cw, ch);
 
+        if (aiFloatingValuePopover && aiFloatingValuePopover.style.display !== 'none' && aiPreview.selectedCompIdx !== null) {
+            updateFloatingPopoverPosition(aiPreview.selectedCompIdx);
+        }
+
         aiCtx.save();
-        aiCtx.translate(aiEditor.pan.x, aiEditor.pan.y);
-        aiCtx.scale(aiEditor.zoom, aiEditor.zoom);
+        try {
+            aiCtx.translate(aiEditor.pan.x, aiEditor.pan.y);
+            aiCtx.scale(aiEditor.zoom, aiEditor.zoom);
 
         // 1) Draw the background image
         if (aiPreview.imageElement) {
             aiCtx.drawImage(aiPreview.imageElement, 0, 0);
         }
 
+        // ==========================================
+        // TAB 2: COMPONENT VALUES (OCR) RENDER PASS
+        // ==========================================
+        if (aiPreview.activeTab === 'values') {
+            // Draw subtle wire routes in the background
+            aiCtx.lineWidth = 1.5 / aiEditor.zoom;
+            aiCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            aiPreview.connections.forEach(conn => {
+                const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
+                const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
+                if (!p1 || !p2) return;
+                aiCtx.beginPath();
+                aiCtx.moveTo(p1.x, p1.y);
+                aiCtx.lineTo(p2.x, p2.y);
+                aiCtx.stroke();
+            });
+
+            // Draw OCR text box overlays if enabled
+            if (aiPreview.showTextBoxes && aiPreview.ocrTexts.length > 0) {
+                aiPreview.ocrTexts.forEach(ot => {
+                    const b = ot.box;
+                    if (!b || b.length < 4) return;
+                    const isHoveredText = aiEditor.hoveredOcrText && aiEditor.hoveredOcrText.box === b;
+
+                    aiCtx.save();
+                    aiCtx.strokeStyle = isHoveredText ? '#F59E0B' : 'rgba(245, 158, 11, 0.65)';
+                    aiCtx.fillStyle = isHoveredText ? 'rgba(245, 158, 11, 0.22)' : 'rgba(245, 158, 11, 0.08)';
+                    aiCtx.lineWidth = (isHoveredText ? 2 : 1.2) / aiEditor.zoom;
+                    aiCtx.setLineDash([4 / aiEditor.zoom, 3 / aiEditor.zoom]);
+                    aiCtx.strokeRect(b[0], b[1], b[2], b[3]);
+                    aiCtx.fillRect(b[0], b[1], b[2], b[3]);
+                    aiCtx.setLineDash([]);
+
+                    const txt = ot.clean || ot.text || '';
+                    if (txt) {
+                        const fontSize = Math.max(9, 11 / aiEditor.zoom);
+                        aiCtx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
+                        const textMetrics = aiCtx.measureText(txt);
+                        const padX = 4 / aiEditor.zoom;
+                        const padY = 2 / aiEditor.zoom;
+                        const badgeW = textMetrics.width + padX * 2;
+                        const badgeH = fontSize + padY * 2;
+                        const badgeX = b[0];
+                        const badgeY = b[1] - badgeH - 2 / aiEditor.zoom;
+
+                        aiCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+                        aiCtx.fillRect(badgeX, badgeY, badgeW, badgeH);
+                        aiCtx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                        aiCtx.lineWidth = 1 / aiEditor.zoom;
+                        aiCtx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+
+                        aiCtx.fillStyle = '#F59E0B';
+                        aiCtx.textBaseline = 'top';
+                        aiCtx.fillText(txt, badgeX + padX, badgeY + padY);
+                    }
+                    aiCtx.restore();
+                });
+            }
+
+            // Draw component bounding boxes & value capsules
+            const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+            aiPreview.components.forEach((comp, idx) => {
+                const box = comp.box;
+                if (!box || box.length < 4) return;
+                const isNonVal = NON_VAL.includes(comp.type);
+
+                const isSelected = aiPreview.selectedCompIdx === idx;
+                const isHovered = aiEditor.hoveredComp && aiEditor.hoveredComp.name === comp.name;
+                const hasValue = comp.value && comp.value !== 'TEXT_FOUND' && String(comp.value).trim() !== '';
+
+                aiCtx.save();
+                if (isNonVal) {
+                    aiCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                    aiCtx.lineWidth = 1 / aiEditor.zoom;
+                    aiCtx.strokeRect(box[0], box[1], box[2], box[3]);
+                    aiCtx.restore();
+                    return;
+                }
+
+                let strokeColor = 'rgba(255, 255, 255, 0.4)';
+                let fillColor = 'rgba(255, 255, 255, 0.03)';
+                let strokeWidth = 2 / aiEditor.zoom;
+                let statusColor = '#38bdf8';
+
+                if (isSelected) {
+                    strokeColor = '#00E5FF';
+                    fillColor = 'rgba(0, 229, 255, 0.14)';
+                    strokeWidth = 3 / aiEditor.zoom;
+                    statusColor = '#00E5FF';
+                } else if (isHovered) {
+                    strokeColor = '#10B981';
+                    fillColor = 'rgba(16, 185, 129, 0.14)';
+                    strokeWidth = 2.5 / aiEditor.zoom;
+                    statusColor = '#10B981';
+                } else if (hasValue) {
+                    if (comp.ocr_status === 'autocorrected') {
+                        strokeColor = '#F59E0B';
+                        fillColor = 'rgba(245, 158, 11, 0.06)';
+                        statusColor = '#F59E0B';
+                    } else {
+                        strokeColor = '#10B981';
+                        fillColor = 'rgba(16, 185, 129, 0.06)';
+                        statusColor = '#10B981';
+                    }
+                } else {
+                    strokeColor = '#F59E0B';
+                    fillColor = 'rgba(245, 158, 11, 0.04)';
+                    statusColor = '#F59E0B';
+                }
+
+                if (!hasValue && !isSelected && !isHovered) {
+                    aiCtx.setLineDash([5 / aiEditor.zoom, 3 / aiEditor.zoom]);
+                }
+
+                aiCtx.strokeStyle = strokeColor;
+                aiCtx.fillStyle = fillColor;
+                aiCtx.lineWidth = strokeWidth;
+
+                if (isSelected) {
+                    aiCtx.shadowColor = '#00E5FF';
+                    aiCtx.shadowBlur = 10;
+                }
+
+                aiCtx.strokeRect(box[0], box[1], box[2], box[3]);
+                aiCtx.fillRect(box[0], box[1], box[2], box[3]);
+                aiCtx.setLineDash([]);
+                aiCtx.shadowBlur = 0;
+
+                // Draw corner accent brackets for selected component
+                if (isSelected) {
+                    const cornerLen = Math.min(10, Math.min(box[2], box[3]) * 0.3);
+                    aiCtx.lineWidth = 3.5 / aiEditor.zoom;
+                    aiCtx.strokeStyle = '#FFFFFF';
+                    // Top-Left
+                    aiCtx.beginPath();
+                    aiCtx.moveTo(box[0], box[1] + cornerLen);
+                    aiCtx.lineTo(box[0], box[1]);
+                    aiCtx.lineTo(box[0] + cornerLen, box[1]);
+                    aiCtx.stroke();
+                    // Top-Right
+                    aiCtx.beginPath();
+                    aiCtx.moveTo(box[0] + box[2] - cornerLen, box[1]);
+                    aiCtx.lineTo(box[0] + box[2]);
+                    aiCtx.lineTo(box[0] + box[2], box[1] + cornerLen);
+                    aiCtx.stroke();
+                    // Bottom-Right
+                    aiCtx.beginPath();
+                    aiCtx.moveTo(box[0] + box[2], box[1] + box[3] - cornerLen);
+                    aiCtx.lineTo(box[0] + box[2], box[1] + box[3]);
+                    aiCtx.lineTo(box[0] + box[2] - cornerLen, box[1] + box[3]);
+                    aiCtx.stroke();
+                    // Bottom-Left
+                    aiCtx.beginPath();
+                    aiCtx.moveTo(box[0] + cornerLen, box[1] + box[3]);
+                    aiCtx.lineTo(box[0], box[1] + box[3]);
+                    aiCtx.lineTo(box[0], box[1] + box[3] - cornerLen);
+                    aiCtx.stroke();
+                }
+
+                // Draw Capsule Badge above box: [ Name · Value ]
+                const fontSize = Math.max(10, 13 / aiEditor.zoom);
+                aiCtx.font = `bold ${fontSize}px Inter, sans-serif`;
+                const nameText = comp.name || comp.type;
+                const valueText = (comp.value && comp.value !== 'TEXT_FOUND') ? comp.value : '?';
+                const pillText = `${nameText}  ·  ${valueText}`;
+                const textWidth = aiCtx.measureText(pillText).width;
+                const pillPaddingX = 8 / aiEditor.zoom;
+                const pillPaddingY = 4 / aiEditor.zoom;
+                const pillW = textWidth + pillPaddingX * 2 + (10 / aiEditor.zoom);
+                const pillH = fontSize + pillPaddingY * 2;
+                const pillX = box[0] + 2;
+                const pillY = Math.max(0, box[1] - pillH - 4 / aiEditor.zoom);
+
+                // Capsule background
+                aiCtx.fillStyle = isSelected ? 'rgba(8, 10, 16, 0.95)' : 'rgba(15, 23, 42, 0.88)';
+                aiCtx.beginPath();
+                const radius = Math.max(0, Math.min(4 / (aiEditor.zoom || 1), pillH / 2, pillW / 2));
+                if (typeof aiCtx.roundRect === 'function') {
+                    aiCtx.roundRect(pillX, pillY, pillW, pillH, radius);
+                } else {
+                    aiCtx.rect(pillX, pillY, pillW, pillH);
+                }
+                aiCtx.fill();
+                aiCtx.strokeStyle = strokeColor;
+                aiCtx.lineWidth = (isSelected ? 1.8 : 1) / aiEditor.zoom;
+                aiCtx.stroke();
+
+                // Status Dot
+                const dotR = 3.5 / aiEditor.zoom;
+                const dotX = pillX + pillPaddingX + dotR;
+                const dotY = pillY + pillH / 2;
+                aiCtx.beginPath();
+                aiCtx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+                aiCtx.fillStyle = statusColor;
+                aiCtx.fill();
+
+                // Capsule text
+                aiCtx.textBaseline = 'middle';
+                const textStartX = dotX + dotR + (6 / aiEditor.zoom);
+                aiCtx.fillStyle = '#FFFFFF';
+                aiCtx.fillText(nameText, textStartX, dotY);
+                const nameWidth = aiCtx.measureText(nameText).width;
+
+                aiCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                aiCtx.fillText(' · ', textStartX + nameWidth, dotY);
+                const sepWidth = aiCtx.measureText(' · ').width;
+
+                aiCtx.fillStyle = statusColor;
+                aiCtx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+                aiCtx.fillText(valueText, textStartX + nameWidth + sepWidth, dotY);
+
+                aiCtx.restore();
+            });
+
+            return;
+        }
+
+        // ==========================================
+        // TAB 1: WIRES & CONNECTIVITY RENDER PASS
+        // ==========================================
         // Compute nets for coloring
         const nets = computeNets(aiPreview.connections, aiPreview.pinAnchors);
 
@@ -5547,7 +6392,7 @@ document.addEventListener("DOMContentLoaded", () => {
             aiCtx.moveTo(p1.x, p1.y);
             aiCtx.lineTo(p2.x, p2.y);
             aiCtx.lineWidth = isHovered ? connLineWidth * 2 : connLineWidth;
-            aiCtx.strokeStyle = isHovered ? '#EF4444' : color;
+            aiCtx.strokeStyle = isHovered ? (aiEditor.tool === 'delete' ? '#EF4444' : '#38BDF8') : color;
             if (isHovered) {
                 aiCtx.setLineDash([6 / aiEditor.zoom, 4 / aiEditor.zoom]);
             }
@@ -5573,6 +6418,43 @@ document.addEventListener("DOMContentLoaded", () => {
                 aiCtx.strokeStyle = 'white';
                 aiCtx.lineWidth = 2 / aiEditor.zoom;
                 aiCtx.stroke();
+            }
+
+            // Connection anchor insertion marker when hovered (junction mode or connect mode with pendingPin)
+            if (isHovered && (aiEditor.tool === 'junction' || (aiEditor.tool === 'connect' && aiEditor.pendingPin))) {
+                const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                const proj = projectPointToSegment(cursorImg.x, cursorImg.y, p1.x, p1.y, p2.x, p2.y);
+                const jr = 9 / aiEditor.zoom;
+                aiCtx.beginPath();
+                aiCtx.moveTo(proj.x, proj.y - jr);
+                aiCtx.lineTo(proj.x + jr, proj.y);
+                aiCtx.lineTo(proj.x, proj.y + jr);
+                aiCtx.lineTo(proj.x - jr, proj.y);
+                aiCtx.closePath();
+                aiCtx.fillStyle = 'rgba(245, 158, 11, 0.95)';
+                aiCtx.fill();
+                aiCtx.strokeStyle = '#FFFFFF';
+                aiCtx.lineWidth = 1.8 / aiEditor.zoom;
+                aiCtx.stroke();
+
+                const cjr = jr * 0.45;
+                aiCtx.beginPath();
+                aiCtx.moveTo(proj.x - cjr, proj.y); aiCtx.lineTo(proj.x + cjr, proj.y);
+                aiCtx.moveTo(proj.x, proj.y - cjr); aiCtx.lineTo(proj.x, proj.y + cjr);
+                aiCtx.strokeStyle = '#FFFFFF';
+                aiCtx.lineWidth = 1.8 / aiEditor.zoom;
+                aiCtx.stroke();
+
+                const pFontSize = Math.max(9, 11 / aiEditor.zoom);
+                aiCtx.font = `bold ${pFontSize}px Inter, sans-serif`;
+                aiCtx.fillStyle = '#F59E0B';
+                aiCtx.textBaseline = 'middle';
+                const labelX = proj.x + jr + 4 / aiEditor.zoom;
+                aiCtx.strokeStyle = 'rgba(0,0,0,0.8)';
+                aiCtx.lineWidth = 3 / aiEditor.zoom;
+                const labelText = `+J${aiJunctionCounter}`;
+                aiCtx.strokeText(labelText, labelX, proj.y);
+                aiCtx.fillText(labelText, labelX, proj.y);
             }
         });
 
@@ -5611,8 +6493,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (isJunction) {
-                // Junction: draw as a diamond ◇
-                const r = pinRadius * 1.2;
+                // Junction: draw as a diamond ◇ (cyan highlight for seam anchors)
+                const isSeam = !!pin.isSeamAnchor;
+                const r = pinRadius * (isSeam ? 1.4 : 1.2);
                 aiCtx.beginPath();
                 aiCtx.moveTo(pin.x, pin.y - r);
                 aiCtx.lineTo(pin.x + r, pin.y);
@@ -5623,6 +6506,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (isHoveredJunc) {
                     aiCtx.fillStyle = 'rgba(239, 68, 68, 0.9)'; // Red delete highlight
                     aiCtx.strokeStyle = '#EF4444';
+                } else if (isSeam) {
+                    aiCtx.fillStyle = isPending ? '#00E5FF' : (isConnected ? '#06b6d4' : 'rgba(6, 182, 212, 0.7)');
+                    aiCtx.strokeStyle = isHovered ? '#FFF' : '#22d3ee';
                 } else {
                     aiCtx.fillStyle = isPending ? '#00E5FF' : (isConnected ? fillColor : 'rgba(255, 200, 50, 0.7)');
                     aiCtx.strokeStyle = isHovered ? '#FFF' : 'rgba(255,255,255,0.8)';
@@ -5636,19 +6522,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 aiCtx.beginPath();
                 aiCtx.moveTo(pin.x - cr, pin.y); aiCtx.lineTo(pin.x + cr, pin.y);
                 aiCtx.moveTo(pin.x, pin.y - cr); aiCtx.lineTo(pin.x, pin.y + cr);
-                aiCtx.strokeStyle = 'rgba(255,255,255,0.9)';
+                aiCtx.strokeStyle = isSeam ? '#cffafe' : 'rgba(255,255,255,0.9)';
                 aiCtx.lineWidth = 2 / aiEditor.zoom;
                 aiCtx.stroke();
 
-                // Label: J#
+                // Label: J# or custom pin_name with anchor symbol
                 aiCtx.font = `bold ${pinFontSize}px Inter, sans-serif`;
-                aiCtx.fillStyle = 'rgba(255,200,50,0.95)';
+                aiCtx.fillStyle = isSeam ? '#67e8f9' : 'rgba(255,200,50,0.95)';
                 aiCtx.textBaseline = 'middle';
                 const labelX = pin.x + r + 4 / aiEditor.zoom;
                 aiCtx.strokeStyle = 'rgba(0,0,0,0.7)';
                 aiCtx.lineWidth = 3 / aiEditor.zoom;
-                aiCtx.strokeText(`J${pin.pin_id}`, labelX, pin.y);
-                aiCtx.fillText(`J${pin.pin_id}`, labelX, pin.y);
+                const jText = isSeam ? `⚓ ${pin.pin_name || ('J' + pin.pin_id)}` : (pin.pin_name || `J${pin.pin_id}`);
+                aiCtx.strokeText(jText, labelX, pin.y);
+                aiCtx.fillText(jText, labelX, pin.y);
             } else {
                 // Regular pin: circle
                 aiCtx.beginPath();
@@ -5659,7 +6546,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 aiCtx.lineWidth = (isHovered ? 2.5 : 1.5) / aiEditor.zoom;
                 aiCtx.stroke();
 
-                // Pin label
+                // Pin label (semantic name, e.g. R1.1, Q1.B, V1.+)
                 aiCtx.font = `bold ${pinFontSize}px Inter, sans-serif`;
                 aiCtx.fillStyle = 'rgba(255,255,255,0.95)';
                 aiCtx.textBaseline = 'middle';
@@ -5667,29 +6554,48 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Shadow for readability
                 aiCtx.strokeStyle = 'rgba(0,0,0,0.7)';
                 aiCtx.lineWidth = 3 / aiEditor.zoom;
-                aiCtx.strokeText(`${pin.comp_idx}_${pin.pin_id}`, labelX, pin.y);
-                aiCtx.fillText(`${pin.comp_idx}_${pin.pin_id}`, labelX, pin.y);
+                const pText = pin.pin_name || (pin.comp_name ? `${pin.comp_name}.${pin.terminal || pin.pin_id + 1}` : `${pin.comp_idx}_${pin.pin_id}`);
+                aiCtx.strokeText(pText, labelX, pin.y);
+                aiCtx.fillText(pText, labelX, pin.y);
             }
         });
 
-        // 5) Draw pending wire (from pendingPin to cursor)
+        // 5) Draw pending wire (from pendingPin to cursor or snapped wire anchor)
         if (aiEditor.pendingPin && aiEditor.tool === 'connect') {
             const srcPin = findPinAnchor(aiEditor.pendingPin.comp_idx, aiEditor.pendingPin.pin_id);
             if (srcPin) {
-                const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                let targetX, targetY;
+                if (aiEditor.hoveredConnIdx !== null) {
+                    const hConn = aiPreview.connections[aiEditor.hoveredConnIdx];
+                    if (hConn) {
+                        const hp1 = findPinAnchor(hConn.pin1.comp_idx, hConn.pin1.pin_id);
+                        const hp2 = findPinAnchor(hConn.pin2.comp_idx, hConn.pin2.pin_id);
+                        if (hp1 && hp2) {
+                            const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                            const proj = projectPointToSegment(cursorImg.x, cursorImg.y, hp1.x, hp1.y, hp2.x, hp2.y);
+                            targetX = proj.x;
+                            targetY = proj.y;
+                        }
+                    }
+                }
+                if (targetX === undefined) {
+                    const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                    targetX = cursorImg.x;
+                    targetY = cursorImg.y;
+                }
                 aiCtx.beginPath();
                 aiCtx.moveTo(srcPin.x, srcPin.y);
-                aiCtx.lineTo(cursorImg.x, cursorImg.y);
+                aiCtx.lineTo(targetX, targetY);
                 aiCtx.strokeStyle = 'rgba(0, 229, 255, 0.7)';
                 aiCtx.lineWidth = 2.5 / aiEditor.zoom;
                 aiCtx.setLineDash([8 / aiEditor.zoom, 4 / aiEditor.zoom]);
                 aiCtx.stroke();
-                aiCtx.setLineDash([]);
             }
         }
-
+    } finally {
         aiCtx.restore();
     }
+}
 
     // --- Resize the preview canvas ---
     function resizeAiCanvas() {
@@ -5759,6 +6665,129 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('aiToolDelete').addEventListener('click', () => setAiTool('delete'));
     document.getElementById('aiToolJunction').addEventListener('click', () => setAiTool('junction'));
 
+    // --- Tab switcher listeners ---
+    if (aiTabWires) aiTabWires.addEventListener('click', () => switchAiPreviewTab('wires'));
+    if (aiTabValues) aiTabValues.addEventListener('click', () => switchAiPreviewTab('values'));
+
+    // --- Values tab filter buttons ---
+    const filterButtons = [
+        { id: 'aiValuesFilterAll', filter: 'all' },
+        { id: 'aiValuesFilterPassives', filter: 'passives' },
+        { id: 'aiValuesFilterActive', filter: 'active' },
+        { id: 'aiValuesFilterUnset', filter: 'unset' }
+    ];
+    filterButtons.forEach(fb => {
+        const btn = document.getElementById(fb.id);
+        if (btn) {
+            btn.addEventListener('click', () => {
+                filterButtons.forEach(f => {
+                    const el = document.getElementById(f.id);
+                    if (el) el.classList.remove('active');
+                });
+                btn.classList.add('active');
+                aiPreview.valuesFilter = fb.filter;
+                renderValuesSidebar();
+            });
+        }
+    });
+
+    // --- Toggle OCR text boxes ---
+    const toggleBoxesBtn = document.getElementById('aiValuesToggleTextBoxes');
+    if (toggleBoxesBtn) {
+        toggleBoxesBtn.addEventListener('click', () => {
+            aiPreview.showTextBoxes = !aiPreview.showTextBoxes;
+            toggleBoxesBtn.textContent = aiPreview.showTextBoxes ? 'OCR Boxes: ON' : 'OCR Boxes: OFF';
+            toggleBoxesBtn.style.color = aiPreview.showTextBoxes ? '#10b981' : 'var(--text-secondary)';
+            renderAiPreview();
+        });
+    }
+
+    // --- Auto-Fill from OCR text boxes ---
+    const autoFillBtn = document.getElementById('aiValuesAutoFill');
+    if (autoFillBtn) {
+        autoFillBtn.addEventListener('click', () => {
+            const count = autoAssociateOcrTextsToComponents(aiPreview.components, aiPreview.ocrTexts, true);
+            if (aiValuesInfo) {
+                aiValuesInfo.textContent = count > 0 
+                    ? `Auto-filled ${count} component value${count === 1 ? '' : 's'} from OCR boxes.`
+                    : 'All components already assigned or no matching OCR text boxes found.';
+                aiValuesInfo.style.color = count > 0 ? '#10B981' : '#38bdf8';
+            }
+            renderValuesSidebar();
+            renderAiPreview();
+            updateAiStats();
+        });
+    }
+
+    // --- Fill Standard Defaults ---
+    const fillDefaultsBtn = document.getElementById('aiValuesFillDefaults');
+    if (fillDefaultsBtn) {
+        fillDefaultsBtn.addEventListener('click', () => {
+            const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+            let filledCount = 0;
+            aiPreview.components.forEach((comp, idx) => {
+                if (NON_VAL.includes(comp.type)) return;
+                if (!comp.value || comp.value === 'TEXT_FOUND' || String(comp.value).trim() === '') {
+                    const defVal = STANDARD_DEFAULT_VALUES[comp.type] || '1k';
+                    comp.value = defVal;
+                    comp.ocr_status = 'default';
+                    filledCount++;
+                }
+            });
+            if (aiValuesInfo) {
+                aiValuesInfo.textContent = `Applied SPICE defaults to ${filledCount} component${filledCount === 1 ? '' : 's'}.`;
+                aiValuesInfo.style.color = '#38bdf8';
+            }
+            renderValuesSidebar();
+            renderAiPreview();
+            updateAiStats();
+        });
+    }
+
+    // --- Search input ---
+    if (aiValuesSearchInput) {
+        aiValuesSearchInput.addEventListener('input', (e) => {
+            aiPreview.valuesSearch = e.target.value;
+            renderValuesSidebar();
+        });
+    }
+
+    // --- Floating popover controls ---
+    if (popoverClose) {
+        popoverClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hideFloatingPopover();
+        });
+    }
+
+    if (popoverSaveBtn) {
+        popoverSaveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (aiPreview.selectedCompIdx !== null && popoverValueInput) {
+                const comp = aiPreview.components[aiPreview.selectedCompIdx];
+                const sanitized = sanitizeClientOcrValue(popoverValueInput.value, comp ? comp.type : null);
+                setComponentValue(aiPreview.selectedCompIdx, sanitized.value || popoverValueInput.value, 'manual');
+            }
+            hideFloatingPopover();
+        });
+    }
+
+    if (popoverValueInput) {
+        popoverValueInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (aiPreview.selectedCompIdx !== null) {
+                    const comp = aiPreview.components[aiPreview.selectedCompIdx];
+                    const sanitized = sanitizeClientOcrValue(popoverValueInput.value, comp ? comp.type : null);
+                    setComponentValue(aiPreview.selectedCompIdx, sanitized.value || popoverValueInput.value, 'manual');
+                }
+                hideFloatingPopover();
+            } else if (e.key === 'Escape') {
+                hideFloatingPopover();
+            }
+        });
+    }
+
     // --- Canvas mouse events ---
     aiCanvas.addEventListener('mousedown', (e) => {
         const rect = aiCanvas.getBoundingClientRect();
@@ -5819,7 +6848,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!aiEditor.pendingPin) {
                         // First pin
                         aiEditor.pendingPin = { comp_idx: pin.comp_idx, pin_id: pin.pin_id };
-                        aiInfoEl.textContent = `Pin ${pin.comp_idx}_${pin.pin_id} selected — click another pin to connect`;
+                        aiInfoEl.textContent = `Pin ${getPinDisplayName(pin)} selected — click another pin or wire to connect`;
                         aiInfoEl.style.color = '#00E5FF';
                     } else {
                         // Second pin — create connection
@@ -5844,7 +6873,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                 aiInfoEl.style.color = '#EF4444';
                             } else {
                                 aiPreview.connections.push({ pin1: p1, pin2: p2 });
-                                aiInfoEl.textContent = `Connected ${p1.comp_idx}_${p1.pin_id} → ${p2.comp_idx}_${p2.pin_id}`;
+                                aiInfoEl.textContent = `Connected ${getPinDisplayName(p1)} → ${getPinDisplayName(p2)}`;
                                 aiInfoEl.style.color = '#10B981';
                                 updateAiStats();
                             }
@@ -5852,11 +6881,50 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }
                     renderAiPreview();
+                } else if (aiEditor.pendingPin) {
+                    // Clicked on a wire connection while a pin is pending — tap into wire via intermediate junction anchor!
+                    const connIdx = aiHitTestConnection(img.x, img.y);
+                    if (connIdx !== null) {
+                        const oldConn = aiPreview.connections[connIdx];
+                        const p1Anchor = findPinAnchor(oldConn.pin1.comp_idx, oldConn.pin1.pin_id);
+                        const p2Anchor = findPinAnchor(oldConn.pin2.comp_idx, oldConn.pin2.pin_id);
+                        if (p1Anchor && p2Anchor) {
+                            const proj = projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
+                            const juncId = aiJunctionCounter++;
+                            const juncAnchor = {
+                                comp_idx: -1,
+                                pin_id: juncId,
+                                x: proj.x,
+                                y: proj.y,
+                                isJunction: true,
+                                pin_name: `J${juncId}`
+                            };
+                            aiPreview.pinAnchors.push(juncAnchor);
+                            const juncRef = { comp_idx: -1, pin_id: juncId };
+
+                            // Split old connection into 2 segments through the anchor
+                            aiPreview.connections.splice(connIdx, 1,
+                                { pin1: oldConn.pin1, pin2: juncRef },
+                                { pin1: juncRef, pin2: oldConn.pin2 }
+                            );
+
+                            // Connect pending pin to the new anchor
+                            const srcPin = aiEditor.pendingPin;
+                            aiPreview.connections.push({ pin1: srcPin, pin2: juncRef });
+
+                            aiInfoEl.textContent = `Tapped ${getPinDisplayName(srcPin)} into wire via anchor J${juncId}`;
+                            aiInfoEl.style.color = '#10B981';
+                            aiEditor.pendingPin = null;
+                            aiEditor.hoveredConnIdx = null;
+                            updateAiStats();
+                            renderAiPreview();
+                        }
+                    }
                 }
             } else if (aiEditor.tool === 'delete') {
                 if (aiEditor.hoveredConnIdx !== null) {
                     const removed = aiPreview.connections.splice(aiEditor.hoveredConnIdx, 1)[0];
-                    aiInfoEl.textContent = `Removed connection ${removed.pin1.comp_idx}_${removed.pin1.pin_id} — ${removed.pin2.comp_idx}_${removed.pin2.pin_id}`;
+                    aiInfoEl.textContent = `Removed connection ${getPinDisplayName(removed.pin1)} — ${getPinDisplayName(removed.pin2)}`;
                     aiInfoEl.style.color = '#EF4444';
                     aiEditor.hoveredConnIdx = null;
                     updateAiStats();
@@ -5878,7 +6946,48 @@ document.addEventListener("DOMContentLoaded", () => {
         const img = aiScreenToImage(sx, sy);
 
         if (!aiEditor.isMouseDown) {
-            if (aiEditor.tool === 'select') {
+            if (aiPreview.activeTab === 'values') {
+                let hoveredOcr = null;
+                if (aiPreview.showTextBoxes && aiPreview.ocrTexts.length > 0) {
+                    hoveredOcr = aiPreview.ocrTexts.find(ot => {
+                        const b = ot.box;
+                        if (!b || b.length < 4) return false;
+                        return img.x >= b[0] && img.x <= b[0] + b[2] &&
+                               img.y >= b[1] && img.y <= b[1] + b[3];
+                    });
+                }
+                const ocrChanged = (hoveredOcr !== aiEditor.hoveredOcrText);
+                const compChanged = (hoveredComp !== aiEditor.hoveredComp);
+
+                if (ocrChanged || compChanged) {
+                    aiEditor.hoveredOcrText = hoveredOcr;
+                    aiEditor.hoveredComp = hoveredComp;
+
+                    if (hoveredOcr) {
+                        aiCanvas.style.cursor = 'copy';
+                        if (aiValuesInfo) {
+                            const valText = hoveredOcr.clean || hoveredOcr.text;
+                            aiValuesInfo.textContent = `OCR Text: "${valText}" — click to assign to component`;
+                            aiValuesInfo.style.color = '#F59E0B';
+                        }
+                    } else if (hoveredComp) {
+                        aiCanvas.style.cursor = 'pointer';
+                        if (aiValuesInfo) {
+                            const curVal = hoveredComp.value ? ` = ${hoveredComp.value}` : ' (unset)';
+                            aiValuesInfo.textContent = `${hoveredComp.name} (${hoveredComp.type})${curVal} — click to edit value`;
+                            aiValuesInfo.style.color = '#00E5FF';
+                        }
+                    } else {
+                        aiCanvas.style.cursor = '';
+                        if (aiValuesInfo) {
+                            aiValuesInfo.textContent = 'Click any component to edit value, or click an OCR box to assign it.';
+                            aiValuesInfo.style.color = '';
+                        }
+                    }
+                    renderAiPreview();
+                }
+                return;
+            } else if (aiEditor.tool === 'select') {
                 const hoveredComp = aiPreview.components.find(comp => {
                     const box = comp.box;
                     if (!box || box.length < 4) return false;
@@ -5929,13 +7038,43 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Highlight junctions when hovering over them in select/junction modes (to indicate draggable)
-        if (aiEditor.tool === 'select' || aiEditor.tool === 'junction') {
+        // Tool-specific hover interactions & feedback
+        if (aiEditor.tool === 'select') {
+            const pin = aiHitTestPin(img.x, img.y);
+            aiEditor.hoveredPin = pin;
+            aiEditor.hoveredConnIdx = null;
+            if (pin) {
+                if (pin.comp_idx === -1) {
+                    aiInfoEl.textContent = `Junction ${getPinDisplayName(pin)} — switch to Junction tool to drag`;
+                } else {
+                    aiInfoEl.textContent = `Pin ${getPinDisplayName(pin)}`;
+                }
+            } else if (aiEditor.hoveredComp) {
+                aiInfoEl.textContent = `Component ${aiEditor.hoveredComp.name} (${aiEditor.hoveredComp.type}) — click to edit value`;
+            }
+            renderAiPreview();
+        } else if (aiEditor.tool === 'junction') {
             const pin = aiHitTestPin(img.x, img.y);
             if (pin && pin.comp_idx === -1) {
                 aiEditor.hoveredPin = pin;
+                aiEditor.hoveredConnIdx = null;
+                aiCanvas.style.cursor = 'grab';
+                aiInfoEl.textContent = `Junction anchor ${getPinDisplayName(pin)} — drag to move`;
+                aiInfoEl.style.color = '#F59E0B';
             } else {
                 aiEditor.hoveredPin = null;
+                const connIdx = aiHitTestConnection(img.x, img.y);
+                aiEditor.hoveredConnIdx = connIdx;
+                if (connIdx !== null) {
+                    aiCanvas.style.cursor = 'pointer';
+                    const conn = aiPreview.connections[connIdx];
+                    aiInfoEl.textContent = `Click wire (${getPinDisplayName(conn.pin1)} ↔ ${getPinDisplayName(conn.pin2)}) to insert anchor J${aiJunctionCounter} and split wire`;
+                    aiInfoEl.style.color = '#38BDF8';
+                } else {
+                    aiCanvas.style.cursor = 'crosshair';
+                    aiInfoEl.textContent = `Click anywhere to place junction anchor J${aiJunctionCounter}`;
+                    aiInfoEl.style.color = '';
+                }
             }
             renderAiPreview();
         } else if (aiEditor.tool === 'connect') {
@@ -5943,8 +7082,32 @@ document.addEventListener("DOMContentLoaded", () => {
             aiEditor.hoveredPin = pin;
             if (pin) {
                 aiCanvasWrap.classList.add('pin-hover');
+                aiEditor.hoveredConnIdx = null;
+                if (aiEditor.pendingPin) {
+                    aiInfoEl.textContent = `Connect ${getPinDisplayName(aiEditor.pendingPin)} → ${getPinDisplayName(pin)}`;
+                    aiInfoEl.style.color = '#00E5FF';
+                } else {
+                    aiInfoEl.textContent = `Click pin ${getPinDisplayName(pin)} to start connection`;
+                    aiInfoEl.style.color = '';
+                }
             } else {
                 aiCanvasWrap.classList.remove('pin-hover');
+                if (aiEditor.pendingPin) {
+                    const connIdx = aiHitTestConnection(img.x, img.y);
+                    aiEditor.hoveredConnIdx = connIdx;
+                    if (connIdx !== null) {
+                        const conn = aiPreview.connections[connIdx];
+                        aiInfoEl.textContent = `Click wire (${getPinDisplayName(conn.pin1)} ↔ ${getPinDisplayName(conn.pin2)}) to tap ${getPinDisplayName(aiEditor.pendingPin)} via anchor J${aiJunctionCounter}`;
+                        aiInfoEl.style.color = '#F59E0B';
+                    } else {
+                        aiInfoEl.textContent = `Click another pin or wire to connect from ${getPinDisplayName(aiEditor.pendingPin)}`;
+                        aiInfoEl.style.color = '#00E5FF';
+                    }
+                } else {
+                    aiEditor.hoveredConnIdx = null;
+                    aiInfoEl.textContent = 'Click a pin to start a connection';
+                    aiInfoEl.style.color = '';
+                }
             }
             renderAiPreview();
         } else if (aiEditor.tool === 'delete') {
@@ -5952,9 +7115,20 @@ document.addEventListener("DOMContentLoaded", () => {
             if (pin && pin.comp_idx === -1) {
                 aiEditor.hoveredJunction = pin;
                 aiEditor.hoveredConnIdx = null;
+                aiInfoEl.textContent = `Click to remove junction anchor ${getPinDisplayName(pin)} and its connections`;
+                aiInfoEl.style.color = '#EF4444';
             } else {
                 aiEditor.hoveredJunction = null;
-                aiEditor.hoveredConnIdx = aiHitTestConnection(img.x, img.y);
+                const connIdx = aiHitTestConnection(img.x, img.y);
+                aiEditor.hoveredConnIdx = connIdx;
+                if (connIdx !== null) {
+                    const conn = aiPreview.connections[connIdx];
+                    aiInfoEl.textContent = `Click to remove wire ${getPinDisplayName(conn.pin1)} — ${getPinDisplayName(conn.pin2)}`;
+                    aiInfoEl.style.color = '#EF4444';
+                } else {
+                    aiInfoEl.textContent = 'Click a junction anchor or wire to delete it';
+                    aiInfoEl.style.color = '';
+                }
             }
             renderAiPreview();
         }
@@ -5976,6 +7150,72 @@ document.addEventListener("DOMContentLoaded", () => {
         aiCanvasWrap.classList.remove('dragging');
 
         if (e.button === 0 && !wasDragging && !wasDraggingJunc && aiEditor.dragDistance < 5) {
+            if (aiPreview.activeTab === 'values') {
+                // Check if clicked an OCR text box
+                if (aiPreview.showTextBoxes && aiPreview.ocrTexts.length > 0) {
+                    const clickedOcr = aiPreview.ocrTexts.find(ot => {
+                        const b = ot.box;
+                        if (!b || b.length < 4) return false;
+                        return img.x >= b[0] && img.x <= b[0] + b[2] &&
+                               img.y >= b[1] && img.y <= b[1] + b[3];
+                    });
+                    if (clickedOcr) {
+                        const assignVal = clickedOcr.clean || clickedOcr.text;
+                        let targetCompIdx = aiPreview.selectedCompIdx;
+                        if (targetCompIdx === null || targetCompIdx === undefined || targetCompIdx < 0) {
+                            const ocx = clickedOcr.box[0] + clickedOcr.box[2] / 2;
+                            const ocy = clickedOcr.box[1] + clickedOcr.box[3] / 2;
+                            let bestDist = Infinity;
+                            const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+                            aiPreview.components.forEach((c, idx) => {
+                                if (NON_VAL.includes(c.type) || !c.box) return;
+                                const ccx = c.box[0] + c.box[2] / 2;
+                                const ccy = c.box[1] + c.box[3] / 2;
+                                const d = Math.hypot(ocx - ccx, ocy - ccy);
+                                if (d < bestDist) {
+                                    bestDist = d;
+                                    targetCompIdx = idx;
+                                }
+                            });
+                        }
+                        if (targetCompIdx !== null && targetCompIdx !== undefined && targetCompIdx >= 0) {
+                            const comp = aiPreview.components[targetCompIdx];
+                            const sanitized = sanitizeClientOcrValue(assignVal, comp ? comp.type : null);
+                            const finalVal = sanitized.value || assignVal;
+                            selectAndLocateComponent(targetCompIdx);
+                            setComponentValue(targetCompIdx, finalVal, (sanitized.status === 'autocorrected') ? 'autocorrected' : 'detected');
+                            if (aiValuesInfo) {
+                                aiValuesInfo.textContent = `Assigned "${finalVal}" to ${comp.name}`;
+                                aiValuesInfo.style.color = '#10B981';
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                // Check if clicked a component
+                const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+                const clickedCompIdx = aiPreview.components.findIndex(comp => {
+                    if (NON_VAL.includes(comp.type)) return false;
+                    const box = comp.box;
+                    if (!box || box.length < 4) return false;
+                    return img.x >= box[0] && img.x <= box[0] + box[2] &&
+                           img.y >= box[1] && img.y <= box[1] + box[3];
+                });
+
+                if (clickedCompIdx !== -1) {
+                    selectAndLocateComponent(clickedCompIdx);
+                    return;
+                } else {
+                    // Clicked background in values tab: deselect
+                    aiPreview.selectedCompIdx = null;
+                    hideFloatingPopover();
+                    document.querySelectorAll('.ai-value-card').forEach(c => c.classList.remove('selected'));
+                    renderAiPreview();
+                    return;
+                }
+            }
+
             if (aiEditor.tool === 'select') {
                 const clickedComp = aiPreview.components.find(comp => {
                     const box = comp.box;
@@ -5984,17 +7224,47 @@ document.addEventListener("DOMContentLoaded", () => {
                            img.y >= box[1] && img.y <= box[1] + box[3];
                 });
                 if (clickedComp) {
-                    const oldValue = clickedComp.value === "TEXT_FOUND" ? "" : (clickedComp.value || "");
-                    const newValue = prompt(`Edit value for component ${clickedComp.name} (${clickedComp.type}):`, oldValue);
-                    if (newValue !== null) {
-                        clickedComp.value = newValue;
-                        aiInfoEl.textContent = `✍️ Updated ${clickedComp.name} value to ${newValue}`;
-                        aiInfoEl.style.color = '#10B981';
-                        renderAiPreview();
+                    const compIdx = aiPreview.components.indexOf(clickedComp);
+                    const NON_VAL = ['wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'];
+                    if (!NON_VAL.includes(clickedComp.type)) {
+                        switchAiPreviewTab('values');
+                        selectAndLocateComponent(compIdx);
+                        return;
                     }
-                    return;
                 }
             } else if (aiEditor.tool === 'junction') {
+                const connIdx = aiHitTestConnection(img.x, img.y);
+                if (connIdx !== null) {
+                    const oldConn = aiPreview.connections[connIdx];
+                    const p1Anchor = findPinAnchor(oldConn.pin1.comp_idx, oldConn.pin1.pin_id);
+                    const p2Anchor = findPinAnchor(oldConn.pin2.comp_idx, oldConn.pin2.pin_id);
+                    if (p1Anchor && p2Anchor) {
+                        const proj = projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
+                        const juncId = aiJunctionCounter++;
+                        const juncAnchor = {
+                            comp_idx: -1,
+                            pin_id: juncId,
+                            x: proj.x,
+                            y: proj.y,
+                            isJunction: true,
+                            pin_name: `J${juncId}`
+                        };
+                        aiPreview.pinAnchors.push(juncAnchor);
+                        const juncRef = { comp_idx: -1, pin_id: juncId };
+
+                        aiPreview.connections.splice(connIdx, 1,
+                            { pin1: oldConn.pin1, pin2: juncRef },
+                            { pin1: juncRef, pin2: oldConn.pin2 }
+                        );
+
+                        aiInfoEl.textContent = `⊕ Inserted junction anchor J${juncId} on wire — split into 2 segments`;
+                        aiInfoEl.style.color = '#10B981';
+                        updateAiStats();
+                        renderAiPreview();
+                        return;
+                    }
+                }
+
                 const juncId = aiJunctionCounter++;
                 const juncCompIdx = -1; // virtual junction component
                 const juncPinId = juncId;
@@ -6003,7 +7273,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     pin_id: juncPinId,
                     x: Math.round(img.x),
                     y: Math.round(img.y),
-                    isJunction: true
+                    isJunction: true,
+                    pin_name: `J${juncId}`
                 });
                 aiInfoEl.textContent = `⊕ Placed junction J${juncId} — use Connect to wire it`;
                 aiInfoEl.style.color = '#10B981';
@@ -6011,7 +7282,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderAiPreview();
             } else if (aiEditor.tool === 'connect') {
                 const pin = aiHitTestPin(img.x, img.y);
-                if (!pin && aiEditor.pendingPin) {
+                const connIdx = aiHitTestConnection(img.x, img.y);
+                if (!pin && connIdx === null && aiEditor.pendingPin) {
                     aiEditor.pendingPin = null;
                     aiInfoEl.textContent = 'Cancelled. Click a pin to start a connection.';
                     aiInfoEl.style.color = '';
@@ -6064,17 +7336,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Initialize the preview editor with API data ---
     function initAiPreviewEditor(data) {
-        // Reset junction counter
-        aiJunctionCounter = 0;
+        // Reset junction counter based on highest existing junction ID
+        let maxJuncId = -1;
+        (data.pin_anchors || []).forEach(p => {
+            if (p.comp_idx === -1 && typeof p.pin_id === 'number') {
+                maxJuncId = Math.max(maxJuncId, p.pin_id);
+            }
+        });
+        aiJunctionCounter = maxJuncId + 1;
 
-        // Store data
-        aiPreview.components = data.components || [];
+        // Store OCR text boxes discovered by backend
+        aiPreview.ocrTexts = data.ocr_texts || [];
+
+        // Store components with OCR status metadata
+        aiPreview.components = (data.components || []).map(c => {
+            const copy = Object.assign({}, c);
+            if (!copy.ocr_status) {
+                copy.ocr_status = (copy.value && copy.value !== 'TEXT_FOUND') ? 'detected' : 'unset';
+            }
+            return copy;
+        });
+
+        // Automatically associate OCR text boxes to components if any are unassigned
+        autoAssociateOcrTextsToComponents(aiPreview.components, aiPreview.ocrTexts, false);
+
         aiPreview.connections = JSON.parse(JSON.stringify(data.connections || [])); // deep copy for editing
         aiPreview.pinAnchors = (data.pin_anchors || []).map(p => ({
             comp_idx: p.comp_idx,
             pin_id: p.pin_id,
             x: p.x,
-            y: p.y
+            y: p.y,
+            isJunction: p.isJunction || p.comp_idx === -1,
+            isSeamAnchor: !!p.isSeamAnchor,
+            pin_name: p.pin_name || (p.comp_idx === -1 ? `J${p.pin_id}` : null),
+            terminal: p.terminal || null,
+            comp_name: p.comp_name || null,
+            comp_type: p.comp_type || null
         }));
 
         // Reset editor state
@@ -6083,8 +7380,19 @@ document.addEventListener("DOMContentLoaded", () => {
         aiEditor.hoveredPin = null;
         aiEditor.hoveredConnIdx = null;
         aiEditor.hoveredComp = null;
+        aiEditor.hoveredOcrText = null;
         aiCanvas.style.cursor = '';
         aiEditor.isDragging = false;
+
+        // Reset values tab state
+        aiPreview.selectedCompIdx = null;
+        aiPreview.valuesFilter = 'all';
+        aiPreview.valuesSearch = '';
+        if (aiValuesSearchInput) aiValuesSearchInput.value = '';
+        document.querySelectorAll('.ai-values-filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'aiValuesFilterAll');
+        });
+        hideFloatingPopover();
 
         // Load original image from debug_image or uploaded file
         const img = new Image();
@@ -6096,6 +7404,7 @@ document.addEventListener("DOMContentLoaded", () => {
             resizeAiCanvas();
             fitAiPreview();
             setAiTool('select');
+            switchAiPreviewTab('wires');
             updateAiStats();
             renderAiPreview();
         };
@@ -6255,24 +7564,496 @@ document.addEventListener("DOMContentLoaded", () => {
         tgtCtx.putImageData(outData, 0, 0);
     }
 
-    function renderCannyThresholdPreview() {
+    // ═══════════════════════════════════════════
+    // TILED SPLIT & CANNY VISION ENGINE STATE
+    // ═══════════════════════════════════════════
+    let isBigImageMode = true;
+    let currentLoadedImage = null;
+    let originalImageNaturalW = 0;
+    let originalImageNaturalH = 0;
+    let tileGridCols = 2;
+    let tileGridRows = 2;
+    let tileOverlapRatio = 0.20;
+    let currentPreviewView = "split"; // "split" | "canny"
+
+    function computeClientTiles(width, height, cols, rows, overlapRatio) {
+        cols = Math.max(1, parseInt(cols, 10) || 1);
+        rows = Math.max(1, parseInt(rows, 10) || 1);
+        overlapRatio = Math.max(0.0, Math.min(0.50, parseFloat(overlapRatio) || 0.0));
+
+        if (cols === 1 && rows === 1) {
+            return [{
+                tile_id: 0, row: 0, col: 0,
+                x1: 0, y1: 0, x2: width, y2: height,
+                width: width, height: height,
+                offset: [0, 0]
+            }];
+        }
+
+        const denomX = cols > 1 ? 1.0 + (cols - 1) * (1.0 - overlapRatio) : 1.0;
+        const tw = width / denomX;
+        const dx = cols > 1 ? tw * (1.0 - overlapRatio) : width;
+
+        const denomY = rows > 1 ? 1.0 + (rows - 1) * (1.0 - overlapRatio) : 1.0;
+        const th = height / denomY;
+        const dy = rows > 1 ? th * (1.0 - overlapRatio) : height;
+
+        const tiles = [];
+        let tileId = 0;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                let x1 = Math.round(c * dx);
+                let y1 = Math.round(r * dy);
+                let x2 = (c === cols - 1) ? width : Math.min(width, Math.round(x1 + tw));
+                let y2 = (r === rows - 1) ? height : Math.min(height, Math.round(y1 + th));
+                x1 = Math.max(0, x1);
+                y1 = Math.max(0, y1);
+                x2 = Math.min(width, Math.max(x1 + 1, x2));
+                y2 = Math.min(height, Math.max(y1 + 1, y2));
+
+                tiles.push({
+                    tile_id: tileId++,
+                    row: r,
+                    col: c,
+                    x1: x1,
+                    y1: y1,
+                    x2: x2,
+                    y2: y2,
+                    width: x2 - x1,
+                    height: y2 - y1,
+                    offset: [x1, y1]
+                });
+            }
+        }
+        return tiles;
+    }
+
+    function computeClientOverlapBands(tiles, cols, rows, width, height) {
+        const verticalBands = [];
+        const horizontalBands = [];
+        const intersections = [];
+        const tileMap = {};
+        tiles.forEach(t => { tileMap[`${t.row}_${t.col}`] = t; });
+
+        for (let c = 0; c < cols - 1; c++) {
+            const leftT = tileMap[`0_${c}`];
+            const rightT = tileMap[`0_${c + 1}`];
+            if (leftT && rightT && rightT.x1 < leftT.x2) {
+                verticalBands.push({
+                    x1: rightT.x1,
+                    x2: leftT.x2,
+                    y1: 0,
+                    y2: height,
+                    width: leftT.x2 - rightT.x1
+                });
+            }
+        }
+
+        for (let r = 0; r < rows - 1; r++) {
+            const topT = tileMap[`${r}_0`];
+            const bottomT = tileMap[`${r + 1}_0`];
+            if (topT && bottomT && bottomT.y1 < topT.y2) {
+                horizontalBands.push({
+                    x1: 0,
+                    x2: width,
+                    y1: bottomT.y1,
+                    y2: topT.y2,
+                    height: topT.y2 - bottomT.y1
+                });
+            }
+        }
+
+        verticalBands.forEach(vb => {
+            horizontalBands.forEach(hb => {
+                intersections.push({
+                    x1: vb.x1,
+                    y1: hb.y1,
+                    x2: vb.x2,
+                    y2: hb.y2,
+                    width: vb.width,
+                    height: hb.height
+                });
+            });
+        });
+
+        return { verticalBands, horizontalBands, intersections };
+    }
+
+    function computeClientAlignmentPoints(tiles, cols, rows, width, height) {
+        const { verticalBands, horizontalBands, intersections } = computeClientOverlapBands(tiles, cols, rows, width, height);
+        const points = [];
+        let ptId = 1;
+
+        intersections.forEach(inter => {
+            points.push({
+                id: `AP${ptId++}`,
+                type: 'intersection',
+                x: Math.round((inter.x1 + inter.x2) / 2),
+                y: Math.round((inter.y1 + inter.y2) / 2)
+            });
+        });
+
+        verticalBands.forEach(vb => {
+            const cx = Math.round((vb.x1 + vb.x2) / 2);
+            [0.2, 0.5, 0.8].forEach(frac => {
+                const cy = Math.round(height * frac);
+                if (!points.some(p => Math.abs(p.x - cx) < 25 && Math.abs(p.y - cy) < 25)) {
+                    points.push({
+                        id: `AP${ptId++}`,
+                        type: 'vertical_seam',
+                        x: cx,
+                        y: cy
+                    });
+                }
+            });
+        });
+
+        horizontalBands.forEach(hb => {
+            const cy = Math.round((hb.y1 + hb.y2) / 2);
+            [0.2, 0.5, 0.8].forEach(frac => {
+                const cx = Math.round(width * frac);
+                if (!points.some(p => Math.abs(p.x - cx) < 25 && Math.abs(p.y - cy) < 25)) {
+                    points.push({
+                        id: `AP${ptId++}`,
+                        type: 'horizontal_seam',
+                        x: cx,
+                        y: cy
+                    });
+                }
+            });
+        });
+
+        return points;
+    }
+
+    function getEffectiveGrid(w, h, gridOption) {
+        if (gridOption !== 'auto') {
+            const parts = gridOption.split('x').map(Number);
+            return { cols: parts[0] || 2, rows: parts[1] || 2 };
+        }
+        let cols = Math.max(1, Math.round(w / 700));
+        let rows = Math.max(1, Math.round(h / 700));
+        cols = Math.min(4, Math.max(1, cols));
+        rows = Math.min(4, Math.max(1, rows));
+        if (cols === 1 && rows === 1 && (w > 800 || h > 800)) {
+            if (w >= h) cols = 2;
+            else rows = 2;
+        }
+        return { cols, rows };
+    }
+
+    function renderImportModalPreview() {
+        const targetCanvas = document.getElementById("cannyPreviewCanvas");
+        if (!targetCanvas || !currentLoadedImage) return;
+
         const lowVal = parseInt(document.getElementById("cannyLowSlider").value, 10);
         const highVal = parseInt(document.getElementById("cannyHighSlider").value, 10);
-
         document.getElementById("cannyLowVal").textContent = lowVal;
         document.getElementById("cannyHighVal").textContent = highVal;
 
-        const targetCanvas = document.getElementById("cannyPreviewCanvas");
-        runClientCannyEdgeDetection(cannySourceCanvas, targetCanvas, lowVal, highVal);
+        const gridSel = document.getElementById("splitGridSelect")?.value || "2x2";
+        const { cols, rows } = getEffectiveGrid(originalImageNaturalW, originalImageNaturalH, gridSel);
+        tileGridCols = cols;
+        tileGridRows = rows;
+        const gridBadge = document.getElementById("splitGridValBadge");
+        if (gridBadge) gridBadge.textContent = `${cols} \u00d7 ${rows}`;
+
+        const overlapSlider = document.getElementById("splitOverlapSlider");
+        const overlapPct = overlapSlider ? parseInt(overlapSlider.value, 10) : 20;
+        tileOverlapRatio = overlapPct / 100.0;
+        const overlapBadge = document.getElementById("splitOverlapValBadge");
+        if (overlapBadge) overlapBadge.textContent = `${overlapPct}%`;
+
+        const showBands = document.getElementById("chkShowOverlapBands")?.checked ?? true;
+        const showAnchors = document.getElementById("chkShowAlignmentPoints")?.checked ?? true;
+        const showLabels = document.getElementById("chkShowTileLabels")?.checked ?? true;
+
+        const dispW = cannySourceCanvas.width;
+        const dispH = cannySourceCanvas.height;
+        targetCanvas.width = dispW;
+        targetCanvas.height = dispH;
+        const ctx = targetCanvas.getContext("2d");
+
+        const previewTag = document.getElementById("previewModeTag");
+
+        if (currentPreviewView === "canny") {
+            runClientCannyEdgeDetection(cannySourceCanvas, targetCanvas, lowVal, highVal);
+            if (previewTag) previewTag.textContent = "Canny Edge";
+        } else {
+            ctx.drawImage(cannySourceCanvas, 0, 0, dispW, dispH);
+            if (previewTag) previewTag.textContent = isBigImageMode ? "Tiled Overlap" : "Standard";
+        }
+
+        const tiles = computeClientTiles(originalImageNaturalW, originalImageNaturalH, cols, rows, tileOverlapRatio);
+        const { verticalBands, horizontalBands, intersections } = computeClientOverlapBands(tiles, cols, rows, originalImageNaturalW, originalImageNaturalH);
+        const alignPoints = computeClientAlignmentPoints(tiles, cols, rows, originalImageNaturalW, originalImageNaturalH);
+
+        const sx = dispW / (originalImageNaturalW || 1);
+        const sy = dispH / (originalImageNaturalH || 1);
+
+        if (isBigImageMode) {
+            // 1. Draw Overlap Zones
+            if (showBands) {
+                // Vertical strips
+                ctx.fillStyle = "rgba(99, 102, 241, 0.28)";
+                verticalBands.forEach(vb => {
+                    const vx = vb.x1 * sx;
+                    const vy = vb.y1 * sy;
+                    const vw = (vb.x2 - vb.x1) * sx;
+                    const vh = (vb.y2 - vb.y1) * sy;
+                    ctx.fillRect(vx, vy, vw, vh);
+
+                    ctx.save();
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = "rgba(129, 140, 248, 0.85)";
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(vx, vy, vw, vh);
+                    ctx.restore();
+                });
+
+                // Horizontal strips
+                horizontalBands.forEach(hb => {
+                    const hx = hb.x1 * sx;
+                    const hy = hb.y1 * sy;
+                    const hw = (hb.x2 - hb.x1) * sx;
+                    const hh = (hb.y2 - hb.y1) * sy;
+                    ctx.fillRect(hx, hy, hw, hh);
+
+                    ctx.save();
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = "rgba(129, 140, 248, 0.85)";
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(hx, hy, hw, hh);
+                    ctx.restore();
+                });
+
+                // 4-way intersections
+                ctx.fillStyle = "rgba(168, 85, 247, 0.42)";
+                intersections.forEach(inter => {
+                    const ix = inter.x1 * sx;
+                    const iy = inter.y1 * sy;
+                    const iw = (inter.x2 - inter.x1) * sx;
+                    const ih = (inter.y2 - inter.y1) * sy;
+                    ctx.fillRect(ix, iy, iw, ih);
+
+                    ctx.save();
+                    ctx.strokeStyle = "rgba(192, 132, 252, 0.9)";
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(ix, iy, iw, ih);
+                    ctx.restore();
+                });
+            }
+
+            // 2. Draw Tile Outlines and Labels
+            if (showLabels) {
+                tiles.forEach(t => {
+                    const tx = t.x1 * sx;
+                    const ty = t.y1 * sy;
+                    const tw = t.width * sx;
+                    const th = t.height * sy;
+
+                    ctx.save();
+                    ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(tx, ty, tw, th);
+
+                    const bracketLen = Math.min(18, tw * 0.15, th * 0.15);
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = "#38bdf8";
+
+                    // Top-Left corner
+                    ctx.beginPath();
+                    ctx.moveTo(tx, ty + bracketLen);
+                    ctx.lineTo(tx, ty);
+                    ctx.lineTo(tx + bracketLen, ty);
+                    ctx.stroke();
+
+                    // Top-Right corner
+                    ctx.beginPath();
+                    ctx.moveTo(tx + tw - bracketLen, ty);
+                    ctx.lineTo(tx + tw, ty);
+                    ctx.lineTo(tx + tw, ty + bracketLen);
+                    ctx.stroke();
+
+                    // Bottom-Left corner
+                    ctx.beginPath();
+                    ctx.moveTo(tx, ty + th - bracketLen);
+                    ctx.lineTo(tx, ty + th);
+                    ctx.lineTo(tx + bracketLen, ty + th);
+                    ctx.stroke();
+
+                    // Bottom-Right corner
+                    ctx.beginPath();
+                    ctx.moveTo(tx + tw - bracketLen, ty + th);
+                    ctx.lineTo(tx + tw, ty + th);
+                    ctx.lineTo(tx + tw, ty + th - bracketLen);
+                    ctx.stroke();
+
+                    // Label badge
+                    const tagText = `Tile ${t.tile_id + 1} [${t.col},${t.row}]`;
+                    ctx.font = "bold 11px Inter, sans-serif";
+                    const textWidth = ctx.measureText(tagText).width;
+                    const padX = 8;
+                    const badgeX = tx + 8;
+                    const badgeY = ty + 8;
+
+                    ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, textWidth + padX * 2, 20, 4);
+                    ctx.fill();
+                    ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    ctx.fillStyle = "#38bdf8";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(tagText, badgeX + padX, badgeY + 10);
+                    ctx.restore();
+                });
+            }
+
+            // 3. Draw Alignment Points
+            if (showAnchors) {
+                alignPoints.forEach(p => {
+                    const px = p.x * sx;
+                    const py = p.y * sy;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(px, py, 7, 0, Math.PI * 2);
+                    ctx.strokeStyle = "#f59e0b";
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(px - 11, py);
+                    ctx.lineTo(px + 11, py);
+                    ctx.moveTo(px, py - 11);
+                    ctx.lineTo(px, py + 11);
+                    ctx.strokeStyle = "#fbbf24";
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fill();
+
+                    ctx.font = "bold 9.5px monospace";
+                    const labelW = ctx.measureText(p.id).width;
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+                    ctx.beginPath();
+                    ctx.roundRect(px + 8, py - 14, labelW + 6, 14, 3);
+                    ctx.fill();
+                    ctx.strokeStyle = "#f59e0b";
+                    ctx.lineWidth = 0.8;
+                    ctx.stroke();
+
+                    ctx.fillStyle = "#fef08a";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(p.id, px + 11, py - 7);
+                    ctx.restore();
+                });
+            }
+        }
+
+        const tileW = tiles.length > 0 ? tiles[0].width : originalImageNaturalW;
+        const tileH = tiles.length > 0 ? tiles[0].height : originalImageNaturalH;
+        const ovPx = Math.round(tileW * tileOverlapRatio);
+
+        const statDims = document.getElementById("statImgDims");
+        if (statDims) statDims.textContent = `${originalImageNaturalW} \u00d7 ${originalImageNaturalH} px`;
+
+        const statTiles = document.getElementById("statTileCount");
+        if (statTiles) statTiles.textContent = isBigImageMode ? `${tiles.length} (${cols}\u00d7${rows})` : `1 (Single)`;
+
+        const statTDims = document.getElementById("statTileDims");
+        if (statTDims) statTDims.textContent = isBigImageMode ? `${tileW} \u00d7 ${tileH} px` : `${originalImageNaturalW} \u00d7 ${originalImageNaturalH} px`;
+
+        const statOv = document.getElementById("statOverlapPx");
+        if (statOv) statOv.textContent = isBigImageMode ? `${ovPx} px (${overlapPct}%)` : `None (0%)`;
+
+        const statAnchors = document.getElementById("statAnchorCount");
+        if (statAnchors) statAnchors.textContent = isBigImageMode ? `${alignPoints.length} pts` : `0 pts`;
+    }
+
+    function setImportMode(isBigImage) {
+        isBigImageMode = isBigImage;
+        const btnStd = document.getElementById("btnModeStandard");
+        const btnBig = document.getElementById("btnModeBigImage");
+        const secTiled = document.getElementById("tiledSettingsSection");
+        const title = document.getElementById("previewPanelTitle");
+        const btnRun = document.getElementById("btnCannyRun");
+        const runText = document.getElementById("btnCannyRunText");
+        const runIcon = document.getElementById("btnCannyRunIcon");
+        const footerInfo = document.getElementById("modalFooterInfo");
+
+        if (isBigImageMode) {
+            btnBig?.classList.add("active");
+            btnStd?.classList.remove("active");
+            if (secTiled) secTiled.style.display = "flex";
+            if (title) title.textContent = "Live Split & Overlap View";
+            if (runText) runText.textContent = "Import Bigger Image";
+            else if (btnRun) btnRun.textContent = "Import Bigger Image";
+            if (runIcon) runIcon.innerHTML = "&#x229e;";
+            if (footerInfo) footerInfo.textContent = "Tiled mode: slices into overlapping sub-images and merges with IoU NMS.";
+        } else {
+            btnStd?.classList.add("active");
+            btnBig?.classList.remove("active");
+            if (secTiled) secTiled.style.display = "none";
+            if (title) title.textContent = "Standard Import Preview";
+            if (runText) runText.textContent = "Import Image";
+            else if (btnRun) btnRun.textContent = "Import Image";
+            if (runIcon) runIcon.innerHTML = "&#x26a1;";
+            if (footerInfo) footerInfo.textContent = "Standard mode: runs YOLO detection on entire image.";
+        }
+
+        renderImportModalPreview();
     }
 
     // ═══════════════════════════════════════════
-    // AI IMPORT LOGIC
+    // AI IMPORT EVENT LISTENERS & MODAL BINDINGS
     // ═══════════════════════════════════════════
     const fileInput = document.getElementById("fileInput");
-    document.getElementById("btnLoadImage").addEventListener("click", () => fileInput.click());
 
-    fileInput.addEventListener("change", (event) => {
+    document.getElementById("btnPanelImportBig")?.addEventListener("click", () => {
+        document.getElementById("btnCannyRun")?.click();
+    });
+
+    document.getElementById("btnLoadImage")?.addEventListener("click", () => {
+        isBigImageMode = false;
+        fileInput.click();
+    });
+
+    document.getElementById("btnLoadBigImage")?.addEventListener("click", () => {
+        isBigImageMode = true;
+        fileInput.click();
+    });
+
+    document.getElementById("btnModeStandard")?.addEventListener("click", () => setImportMode(false));
+    document.getElementById("btnModeBigImage")?.addEventListener("click", () => setImportMode(true));
+
+    document.getElementById("splitGridSelect")?.addEventListener("change", renderImportModalPreview);
+    document.getElementById("splitOverlapSlider")?.addEventListener("input", renderImportModalPreview);
+    document.getElementById("chkShowOverlapBands")?.addEventListener("change", renderImportModalPreview);
+    document.getElementById("chkShowAlignmentPoints")?.addEventListener("change", renderImportModalPreview);
+    document.getElementById("chkShowTileLabels")?.addEventListener("change", renderImportModalPreview);
+
+    document.getElementById("btnViewSplit")?.addEventListener("click", () => {
+        currentPreviewView = "split";
+        document.getElementById("btnViewSplit")?.classList.add("active");
+        document.getElementById("btnViewCanny")?.classList.remove("active");
+        renderImportModalPreview();
+    });
+
+    document.getElementById("btnViewCanny")?.addEventListener("click", () => {
+        currentPreviewView = "canny";
+        document.getElementById("btnViewCanny")?.classList.add("active");
+        document.getElementById("btnViewSplit")?.classList.remove("active");
+        renderImportModalPreview();
+    });
+
+    fileInput?.addEventListener("change", (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
@@ -6282,7 +8063,10 @@ document.addEventListener("DOMContentLoaded", () => {
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
-                // Scale down max dimension to 800px for ultra-fast frontend Canny rendering
+                currentLoadedImage = img;
+                originalImageNaturalW = img.naturalWidth;
+                originalImageNaturalH = img.naturalHeight;
+
                 const maxDim = 800;
                 let w = img.naturalWidth;
                 let h = img.naturalHeight;
@@ -6301,44 +8085,52 @@ document.addEventListener("DOMContentLoaded", () => {
                 const ctx = cannySourceCanvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, w, h);
 
-                // Reset sliders to defaults (Low=50, High=150)
                 document.getElementById("cannyLowSlider").value = 50;
                 document.getElementById("cannyHighSlider").value = 150;
+                document.getElementById("splitOverlapSlider").value = 20;
 
-                // Show modal & render client-side Canny edge preview
+                const isLarge = img.naturalWidth > 900 || img.naturalHeight > 900;
+                const banner = document.getElementById("bigImageDetectionBanner");
+                const bannerDims = document.getElementById("bannerImgDims");
+                if (banner && bannerDims) {
+                    if (isLarge) {
+                        banner.style.display = "flex";
+                        bannerDims.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight} px`;
+                        isBigImageMode = true;
+                    } else {
+                        banner.style.display = "none";
+                    }
+                }
+
                 document.getElementById("cannyThresholdModal").style.display = "flex";
-                renderCannyThresholdPreview();
+                setImportMode(isBigImageMode);
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     });
 
-    // Slider Input Event Listeners
-    document.getElementById("cannyLowSlider").addEventListener("input", renderCannyThresholdPreview);
-    document.getElementById("cannyHighSlider").addEventListener("input", renderCannyThresholdPreview);
+    document.getElementById("cannyLowSlider")?.addEventListener("input", renderImportModalPreview);
+    document.getElementById("cannyHighSlider")?.addEventListener("input", renderImportModalPreview);
 
-    // Reset Defaults Button
-    document.getElementById("btnCannyReset").addEventListener("click", () => {
+    document.getElementById("btnCannyReset")?.addEventListener("click", () => {
         document.getElementById("cannyLowSlider").value = 50;
         document.getElementById("cannyHighSlider").value = 150;
-        renderCannyThresholdPreview();
+        document.getElementById("splitOverlapSlider").value = 20;
+        renderImportModalPreview();
     });
 
-    // Close Modal Handler
     const closeCannyModal = () => {
         document.getElementById("cannyThresholdModal").style.display = "none";
         fileInput.value = "";
     };
-    document.getElementById("cannyModalClose").addEventListener("click", closeCannyModal);
-    document.getElementById("btnCannyCancel").addEventListener("click", closeCannyModal);
+    document.getElementById("cannyModalClose")?.addEventListener("click", closeCannyModal);
+    document.getElementById("btnCannyCancel")?.addEventListener("click", closeCannyModal);
 
-    // Run Detection & Wire Tracing Handler
-    document.getElementById("btnCannyRun").addEventListener("click", async () => {
+    document.getElementById("btnCannyRun")?.addEventListener("click", async () => {
         if (!currentCannyFile) return;
 
         document.getElementById("cannyThresholdModal").style.display = "none";
-        document.getElementById("statusText").innerText = "Processing Image & Tracing Wires...";
 
         const lowVal = document.getElementById("cannyLowSlider").value;
         const highVal = document.getElementById("cannyHighSlider").value;
@@ -6348,18 +8140,27 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("canny_low", lowVal);
         formData.append("canny_high", highVal);
 
+        if (isBigImageMode) {
+            formData.append("split_big_image", "true");
+            formData.append("tile_overlap", tileOverlapRatio.toString());
+            formData.append("grid_cols", tileGridCols.toString());
+            formData.append("grid_rows", tileGridRows.toString());
+            document.getElementById("statusText").innerText = `Processing Big Image in Tiled Mode (${tileGridCols}\u00d7${tileGridRows} tiles, ${Math.round(tileOverlapRatio * 100)}% overlap)...`;
+        } else {
+            document.getElementById("statusText").innerText = "Processing Image & Tracing Wires...";
+        }
+
         try {
             const response = await fetch("http://127.0.0.1:8000/api/detect", { method: "POST", body: formData });
             const data = await response.json();
 
             if (data.status === "success") {
-                document.getElementById("statusText").innerText = `Loaded ${data.components.length} components (Canny: low=${lowVal}, high=${highVal}). Review & edit connections.`;
+                const tilesMsg = data.tile_metadata ? ` across ${data.tile_metadata.num_tiles} overlapping tiles` : "";
+                document.getElementById("statusText").innerText = `Loaded ${data.components.length} components${tilesMsg}. Review & edit connections.`;
 
-                // Show modal and initialize the interactive preview editor
                 const modal = document.getElementById("aiDebugModal");
                 modal.style.display = "flex";
 
-                // Initialize the interactive editor with the API data
                 requestAnimationFrame(() => {
                     initAiPreviewEditor(data);
                 });
@@ -6390,58 +8191,139 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     const NON_COMPONENT_TYPES = ['wire', 'junction', 'crossover', 'terminal', 'text'];
 
+                    // Step 1: Spatial deduplication pass on raw components
+                    const compIdxRemap = {}; // maps raw component index -> canonical index
+                    const dedupedIndices = [];
+
+                    const isSpatialDuplicate = (c1, c2) => {
+                        if (!c1.center || !c2.center) return false;
+                        const dx = Math.abs(c1.center[0] - c2.center[0]);
+                        const dy = Math.abs(c1.center[1] - c2.center[1]);
+                        const dist = Math.hypot(dx, dy);
+
+                        // If centers are within 35px in original image space
+                        if (dist < 35) return true;
+
+                        // Check bounding box intersection over min area (IoS)
+                        if (c1.box && c2.box) {
+                            const [x1, y1, w1, h1] = c1.box;
+                            const [x2, y2, w2, h2] = c2.box;
+                            const ix1 = Math.max(x1, x2), iy1 = Math.max(y1, y2);
+                            const ix2 = Math.min(x1 + w1, x2 + w2), iy2 = Math.min(y1 + h1, y2 + h2);
+                            const iw = Math.max(0, ix2 - ix1), ih = Math.max(0, iy2 - iy1);
+                            const interArea = iw * ih;
+                            const minArea = Math.min(Math.max(1, w1 * h1), Math.max(1, w2 * h2));
+                            if (minArea > 0 && (interArea / minArea) >= 0.35) return true;
+                        }
+                        return false;
+                    };
+
+                    const sourceComps = (aiPreview.components && aiPreview.components.length > 0) ? aiPreview.components : data.components;
+
+                    sourceComps.forEach((c, idx) => {
+                        if (NON_COMPONENT_TYPES.includes(c.type)) {
+                            compIdxRemap[idx] = -1;
+                            return;
+                        }
+                        let canonicalIdx = -1;
+                        for (const prevIdx of dedupedIndices) {
+                            const prevComp = sourceComps[prevIdx];
+                            if (isSpatialDuplicate(c, prevComp)) {
+                                canonicalIdx = prevIdx;
+                                // Merge OCR value if current has value and previous doesn't
+                                if (c.value && c.value !== "TEXT_FOUND" && (!prevComp.value || prevComp.value === "TEXT_FOUND")) {
+                                    prevComp.value = c.value;
+                                }
+                                break;
+                            }
+                        }
+                        if (canonicalIdx !== -1) {
+                            compIdxRemap[idx] = canonicalIdx;
+                        } else {
+                            dedupedIndices.push(idx);
+                            compIdxRemap[idx] = idx;
+                        }
+                    });
+
                     // Build non-destructive deduplicated components
                     const existingNames = new Set(components.map(c => c.name));
-                    const newComponents = data.components
-                        .filter(c => !NON_COMPONENT_TYPES.includes(c.type))
-                        .map(c => {
-                            const type = c.type === 'mosfet' ? 'nmos' : c.type;
-                            const db = COMPONENT_DB[type];
-                            const prefix = db ? db.prefix : (type.charAt(0).toUpperCase());
-                            const params = db ? Object.assign({}, db.params) : { value: '1k' };
+                    const newComponents = dedupedIndices.map(origIdx => {
+                        const c = sourceComps[origIdx];
+                        const type = c.type === 'mosfet' ? 'nmos' : c.type;
+                        const db = COMPONENT_DB[type];
+                        const prefix = db ? db.prefix : (type.charAt(0).toUpperCase());
+                        const params = db ? Object.assign({}, db.params) : { value: '1k' };
 
-                            // Override value from OCR if available
-                            if (c.value && c.value !== "TEXT_FOUND") {
-                                if (params.value !== undefined) params.value = c.value;
-                                else if (params.dc !== undefined) params.dc = c.value;
+                        // Override value from OCR if available
+                        if (c.value && c.value !== "TEXT_FOUND") {
+                            if (params.value !== undefined) params.value = c.value;
+                            else if (params.dc !== undefined) params.dc = c.value;
+                        }
+
+                        let compName = c.name;
+                        if (existingNames.has(compName)) {
+                            let nextNum = (nameCounts[prefix] || 0) + 1;
+                            let newName = `${prefix}${nextNum}`;
+                            while (existingNames.has(newName)) {
+                                nextNum++;
+                                newName = `${prefix}${nextNum}`;
                             }
-
-                            let compName = c.name;
-                            if (existingNames.has(compName)) {
-                                let nextNum = (nameCounts[prefix] || 0) + 1;
-                                let newName = `${prefix}${nextNum}`;
-                                while (existingNames.has(newName)) {
-                                    nextNum++;
-                                    newName = `${prefix}${nextNum}`;
-                                }
-                                nameCounts[prefix] = nextNum;
-                                compName = newName;
-                            } else {
-                                const match = compName.match(/\d+$/);
-                                if (match) {
-                                    const num = parseInt(match[0]);
-                                    nameCounts[prefix] = Math.max(nameCounts[prefix] || 0, num);
-                                }
+                            nameCounts[prefix] = nextNum;
+                            compName = newName;
+                        } else {
+                            const match = compName ? compName.match(/\d+$/) : null;
+                            if (match) {
+                                const num = parseInt(match[0]);
+                                nameCounts[prefix] = Math.max(nameCounts[prefix] || 0, num);
                             }
-                            existingNames.add(compName);
+                        }
+                        existingNames.add(compName);
 
-                            if (type === 'label') {
-                                params.name = compName;
-                            }
+                        if (type === 'label') {
+                            params.name = compName;
+                        }
 
-                            return {
-                                type,
-                                name: compName,
-                                value: c.value === "TEXT_FOUND" ? (params.value || '') : (c.value || ''),
-                                x: snap(c.center[0] * SCALE_FACTOR),
-                                y: snap(c.center[1] * SCALE_FACTOR),
-                                params,
-                                nodes: c.nodes || [],
-                                rotation: c.rotation || 0
-                            };
+                        return {
+                            type,
+                            name: compName,
+                            value: c.value === "TEXT_FOUND" ? (params.value || '') : (c.value || ''),
+                            x: snap(c.center[0] * SCALE_FACTOR),
+                            y: snap(c.center[1] * SCALE_FACTOR),
+                            params,
+                            nodes: c.nodes || [],
+                            rotation: c.rotation || 0
+                        };
+                    });
+
+                    // Register all junction anchors referenced in editedConnections as genuine canvas junction components
+                    const juncCompMap = {};
+                    if (editedConnections && editedConnections.length > 0) {
+                        const usedJuncIds = new Set();
+                        editedConnections.forEach(conn => {
+                            if (conn.pin1 && conn.pin1.comp_idx === -1) usedJuncIds.add(conn.pin1.pin_id);
+                            if (conn.pin2 && conn.pin2.comp_idx === -1) usedJuncIds.add(conn.pin2.pin_id);
                         });
 
-                    // Calculate centroid (cx, cy) of the imported cluster
+                        usedJuncIds.forEach(juncId => {
+                            const anchor = aiPreview.pinAnchors.find(a => a.comp_idx === -1 && a.pin_id === juncId);
+                            if (anchor) {
+                                const jIdx = newComponents.length;
+                                juncCompMap[juncId] = jIdx;
+                                newComponents.push({
+                                    type: 'junction',
+                                    name: anchor.pin_name || `J${juncId}`,
+                                    value: '',
+                                    x: snap(anchor.x * SCALE_FACTOR),
+                                    y: snap(anchor.y * SCALE_FACTOR),
+                                    params: {},
+                                    nodes: [],
+                                    rotation: 0
+                                });
+                            }
+                        });
+                    }
+
+                    // Calculate centroid (cx, cy) of the imported cluster (including junction components)
                     let minX = Infinity, maxX = -Infinity;
                     let minY = Infinity, maxY = -Infinity;
                     newComponents.forEach(c => {
@@ -6453,13 +8335,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     const cx = newComponents.length > 0 ? snap((minX + maxX) / 2) : 0;
                     const cy = newComponents.length > 0 ? snap((minY + maxY) / 2) : 0;
 
-                    // Map original component index to filtered components index
+                    // Map original component index to filtered & deduplicated components index
                     const compIdxMap = {};
-                    let filteredIdx = 0;
-                    data.components.forEach((c, idx) => {
-                        if (!NON_COMPONENT_TYPES.includes(c.type)) {
-                            compIdxMap[idx] = filteredIdx++;
-                        } else {
+                    dedupedIndices.forEach((origIdx, fIdx) => {
+                        compIdxMap[origIdx] = fIdx;
+                    });
+                    sourceComps.forEach((c, idx) => {
+                        const canon = compIdxRemap[idx];
+                        if (canon !== undefined && canon !== -1) {
+                            compIdxMap[idx] = compIdxMap[canon];
+                        } else if (!dedupedIndices.includes(idx)) {
                             compIdxMap[idx] = -1;
                         }
                     });
@@ -6470,6 +8355,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         editedConnections.forEach(conn => {
                             const getPinCoords = (pinRef) => {
                                 if (pinRef.comp_idx === -1) {
+                                    const jIdx = juncCompMap[pinRef.pin_id];
+                                    if (jIdx !== undefined) {
+                                        const comp = newComponents[jIdx];
+                                        return { x: comp.x, y: comp.y };
+                                    }
                                     const anchor = aiPreview.pinAnchors.find(a => a.comp_idx === -1 && a.pin_id === pinRef.pin_id);
                                     if (anchor) {
                                         return {
@@ -6493,8 +8383,13 @@ document.addEventListener("DOMContentLoaded", () => {
                             const p2 = getPinCoords(conn.pin2);
 
                             if (p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)) {
-                                const comp1 = newComponents[compIdxMap[conn.pin1.comp_idx]];
-                                const comp2 = newComponents[compIdxMap[conn.pin2.comp_idx]];
+                                const c1 = conn.pin1.comp_idx === -1 ? juncCompMap[conn.pin1.pin_id] : compIdxMap[conn.pin1.comp_idx];
+                                const c2 = conn.pin2.comp_idx === -1 ? juncCompMap[conn.pin2.pin_id] : compIdxMap[conn.pin2.comp_idx];
+                                if (c1 !== undefined && c2 !== undefined && c1 !== -1 && c1 === c2) {
+                                    return; // Skip self-loop between merged duplicate instances
+                                }
+                                const comp1 = newComponents[c1];
+                                const comp2 = newComponents[c2];
                                 const exclude = [comp1, comp2].filter(Boolean);
 
                                 if (p1.x === p2.x || p1.y === p2.y) {

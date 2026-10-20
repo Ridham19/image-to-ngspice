@@ -13,8 +13,16 @@
             740.0
         ],
         "conf": 0.91,
-        "value": null,
-        "rotation": 0
+        "value": "Tx",
+        "rotation": 0,
+        "raw_ocr": "bpc150",
+        "ocr_status": "detected",
+        "text_box": [
+            1117,
+            707,
+            247,
+            70
+        ]
     },
     {
         "name": "GND1",
@@ -31,7 +39,9 @@
         ],
         "conf": 0.89,
         "value": null,
-        "rotation": 0
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
     },
     {
         "name": "RE",
@@ -49,6 +59,8 @@
         "conf": 0.89,
         "value": "560k",
         "rotation": 270,
+        "raw_ocr": "560q",
+        "ocr_status": "detected",
         "text_box": [
             1108,
             1043,
@@ -72,6 +84,8 @@
         "conf": 0.89,
         "value": "22k",
         "rotation": 270,
+        "raw_ocr": "22kq",
+        "ocr_status": "detected",
         "text_box": [
             712,
             520,
@@ -94,7 +108,9 @@
         ],
         "conf": 0.89,
         "value": null,
-        "rotation": 0
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
     },
     {
         "name": "RC",
@@ -112,6 +128,8 @@
         "conf": 0.89,
         "value": "1.0k",
         "rotation": 270,
+        "raw_ocr": "1.0kq",
+        "ocr_status": "detected",
         "text_box": [
             1101,
             460,
@@ -133,13 +151,15 @@
             968.5
         ],
         "conf": 0.88,
-        "value": "22",
+        "value": "6.8k",
         "rotation": 270,
+        "raw_ocr": "6.8kq",
+        "ocr_status": "detected",
         "text_box": [
-            728,
-            907,
-            68,
-            70
+            726,
+            986,
+            171,
+            57
         ]
     },
     {
@@ -157,7 +177,9 @@
         ],
         "conf": 0.83,
         "value": null,
-        "rotation": 270
+        "rotation": 270,
+        "raw_ocr": null,
+        "ocr_status": "none"
     },
     {
         "name": "P1",
@@ -174,7 +196,9 @@
         ],
         "conf": 0.83,
         "value": null,
-        "rotation": 0
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
     },
     {
         "name": "J2",
@@ -191,7 +215,9 @@
         ],
         "conf": 0.8,
         "value": null,
-        "rotation": 0
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
     },
     {
         "name": "J3",
@@ -208,6 +234,8 @@
         ],
         "conf": 0.68,
         "value": null,
-        "rotation": 0
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
     }
 ]

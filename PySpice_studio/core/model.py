@@ -270,6 +270,7 @@ class ComponentDetector:
                 print(f"⚠️ Failed to load BJT classifier: {e}")
             
         self.ocr_reader = None
+        self.latest_ocr_texts = []
         if HAS_ML:
             print("👁️ Loading EasyOCR Engine (This takes a few seconds)...")
             # Initialize OCR once so it doesn't slow down every image detection
@@ -433,12 +434,73 @@ class ComponentDetector:
         NON_OCR_TYPES = {'wire', 'junction', 'crossover', 'terminal', 'ground', 'vss'}
         components = [d for d in raw_detections if d['type'] != 'text']
         texts = [d for d in raw_detections if d['type'] == 'text']
+        self.latest_ocr_texts = []
+
+        # Fallback: If YOLO detected 0 text boxes, run EasyOCR across the schematic image
+        if len(texts) == 0 and self.ocr_reader is not None and cv_img is not None:
+            try:
+                print("🔍 Running EasyOCR text discovery on circuit image...")
+                raw_ocr_boxes = self.ocr_reader.readtext(cv_img, detail=1)
+                for bbox, txt, prob in raw_ocr_boxes:
+                    if prob < 0.15 or not txt or not txt.strip():
+                        continue
+                    tx = int(min(pt[0] for pt in bbox))
+                    ty = int(min(pt[1] for pt in bbox))
+                    tw = int(max(pt[0] for pt in bbox) - tx)
+                    th = int(max(pt[1] for pt in bbox) - ty)
+                    if tw <= 0 or th <= 0:
+                        continue
+                    texts.append({
+                        'name': f"T{len(texts)+1}",
+                        'type': 'text',
+                        'box': [tx, ty, tw, th],
+                        'center': calculate_center([tx, ty, tw, th]),
+                        'conf': round(float(prob), 2),
+                        'pre_read_text': txt.strip()
+                    })
+            except Exception as ocr_fb_err:
+                print(f"⚠️ EasyOCR full-image fallback detection error: {ocr_fb_err}")
+
+        # Pre-read and record all OCR text boxes
+        all_ocr_texts = []
+        for text_item in texts:
+            raw_string = ""
+            if text_item.get('pre_read_text'):
+                raw_string = text_item['pre_read_text']
+            elif self.ocr_reader is not None and cv_img is not None:
+                tx, ty, tw, th = text_item['box']
+                pad = max(5, min(30, int(max(tw, th) * 0.15)))
+                h_img, w_img = cv_img.shape[:2]
+                y1, y2 = max(0, ty - pad), min(h_img, ty + th + pad)
+                x1, x2 = max(0, tx - pad), min(w_img, tx + tw + pad)
+                crop_img = cv_img[y1:y2, x1:x2]
+                if crop_img.shape[0] > 0 and crop_img.shape[1] > 0:
+                    crop_area = crop_img.shape[0] * crop_img.shape[1]
+                    scale = 4.0 if crop_area < 2500 else 2.0
+                    resized_crop = cv2.resize(crop_img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                    ocr_result = self.ocr_reader.readtext(resized_crop, detail=0)
+                    if ocr_result:
+                        raw_string = " ".join(ocr_result)
+            
+            text_item['ocr_string'] = raw_string
+            if raw_string:
+                all_ocr_texts.append({
+                    'id': text_item.get('name', f"T{len(all_ocr_texts)+1}"),
+                    'box': text_item['box'],
+                    'text': raw_string,
+                    'clean': clean_ocr_string(raw_string),
+                    'conf': text_item.get('conf', 0.5),
+                    'associated_comp': None
+                })
 
         # Keep track of assigned names to ensure uniqueness
         assigned_names = {comp['name'] for comp in components}
 
         for comp in components:
             if comp['type'] in NON_OCR_TYPES:
+                comp['value'] = None
+                comp['raw_ocr'] = None
+                comp['ocr_status'] = 'none'
                 continue
                 
             comp_center = comp['center']
@@ -455,67 +517,67 @@ class ComponentDetector:
             nearby_texts.sort(key=lambda x: x[1])
 
             detected_value = None
+            detected_raw_ocr = None
             detected_name = None
             best_text_box = None
+            best_text_item = None
 
             for text_item, dist in nearby_texts:
-                tx, ty, tw, th = text_item['box']
-                # Resolution-aware padding: 15% of the larger dimension, clamped [5, 30]
-                pad = max(5, min(30, int(max(tw, th) * 0.15)))
+                raw_string = text_item.get('ocr_string', '')
+                if not raw_string:
+                    continue
+
+                cleaned_str = clean_ocr_string(raw_string)
+                classification = classify_text(cleaned_str, comp['type'], comp_prefix)
                 
-                # Safe crop bounds so we don't go outside the image
-                h_img, w_img = cv_img.shape[:2]
-                y1, y2 = max(0, ty-pad), min(h_img, ty+th+pad)
-                x1, x2 = max(0, tx-pad), min(w_img, tx+tw+pad)
-                
-                crop_img = cv_img[y1:y2, x1:x2]
-                
-                if crop_img.shape[0] > 0 and crop_img.shape[1] > 0:
-                    # Enlarge the image based on size (4x for tiny crops under 2500 px², 2x for larger)
-                    crop_area = crop_img.shape[0] * crop_img.shape[1]
-                    scale = 4.0 if crop_area < 2500 else 2.0
-                    resized_crop = cv2.resize(crop_img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-                    
-                    # Pass the enlarged image to EasyOCR
-                    ocr_result = self.ocr_reader.readtext(resized_crop, detail=0)
-                    
-                    if ocr_result:
-                        raw_string = " ".join(ocr_result)
-                        cleaned_str = clean_ocr_string(raw_string)
-                        classification = classify_text(cleaned_str, comp['type'], comp_prefix)
-                        
-                        # Handle composite result (dict with both name + value)
-                        if isinstance(classification, dict):
-                            if not detected_name:
-                                detected_name = classification['name'].upper()
-                            if not detected_value:
-                                detected_value = correct_component_value(
-                                    classification['value'], comp['type']
-                                )
-                                best_text_box = text_item['box']
-                        elif classification == 'value' and not detected_value:
-                            # Strip spaces before fixing digits in value path
-                            value_str = re.sub(r'\s+', '', cleaned_str)
-                            detected_value = correct_component_value(value_str, comp['type'])
-                            best_text_box = text_item['box']
-                        elif classification == 'name' and not detected_name:
-                            detected_name = re.sub(r'\s+', '', cleaned_str).upper()
+                # Handle composite result (dict with both name + value)
+                if isinstance(classification, dict):
+                    if not detected_name:
+                        detected_name = classification['name'].upper()
+                    if not detected_value:
+                        detected_value = correct_component_value(
+                            classification['value'], comp['type']
+                        )
+                        detected_raw_ocr = classification['value']
+                        best_text_box = text_item['box']
+                        best_text_item = text_item
+                elif classification == 'value' and not detected_value:
+                    value_str = re.sub(r'\s+', '', cleaned_str)
+                    detected_value = correct_component_value(value_str, comp['type'])
+                    detected_raw_ocr = value_str
+                    best_text_box = text_item['box']
+                    best_text_item = text_item
+                elif classification == 'name' and not detected_name:
+                    detected_name = re.sub(r'\s+', '', cleaned_str).upper()
 
             if detected_value:
                 comp['value'] = detected_value
+                comp['raw_ocr'] = detected_raw_ocr
+                comp['ocr_status'] = 'detected'
                 comp['text_box'] = best_text_box
+                # Associate text box with this component
+                if best_text_item:
+                    for ot in all_ocr_texts:
+                        if ot['box'] == best_text_item['box']:
+                            ot['associated_comp'] = comp['name']
             elif len(nearby_texts) > 0:
                 comp['value'] = "TEXT_FOUND"
+                comp['raw_ocr'] = None
+                comp['ocr_status'] = 'review_needed'
+            else:
+                comp['value'] = None
+                comp['raw_ocr'] = None
+                comp['ocr_status'] = 'unset'
 
             if detected_name:
-                # simple validation: check if the parsed name starts with the expected prefix
-                # and satisfies basic length / format constraints
                 detected_name_upper = detected_name.upper()
                 if comp_prefix and detected_name_upper.startswith(comp_prefix.upper()) and len(detected_name_upper) <= 6:
                     if detected_name_upper not in assigned_names:
                         assigned_names.discard(comp['name'])
                         comp['name'] = detected_name_upper
                         assigned_names.add(detected_name_upper)
+
+        self.latest_ocr_texts = all_ocr_texts
 
         # 💾 SAVE TO JSON FILE 💾
         print(f"💾 Saving detailed component data to {output_file}...")
