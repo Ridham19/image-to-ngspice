@@ -63,21 +63,27 @@ def mask_components(
 
     # ── Phase 1: Collision Masking ──
     for comp in components:
+        label = str(comp.get("label", "")).lower()
+        comp_id = str(comp.get("id", ""))
+        # Anchors and junctions have no physical body to mask
+        if label == "junction" or comp_id.startswith("anc_") or comp.get("is_junction") or comp.get("is_anchor"):
+            continue
+
         bbox = comp.get("bbox")
         if not bbox or len(bbox) != 4:
             continue
 
         bx, by, bw, bh = [int(v) for v in bbox]
 
-        if erode_bbox:
-            if bw <= 2 * pin_pad or bh <= 2 * pin_pad:
-                logger.warning(f"Component {comp.get('id', 'unknown')} bbox ({bw}x{bh}) is too small for pin_pad {pin_pad}. Skipping masking.")
-                continue
+        # Adaptive pin pad: preserve pin leads without exceeding component dimensions
+        pad_x = min(pin_pad, max(0, bw // 3))
+        pad_y = min(pin_pad, max(0, bh // 3))
 
-            x1 = max(0, bx + pin_pad)
-            y1 = max(0, by + pin_pad)
-            x2 = min(w, bx + bw - pin_pad)
-            y2 = min(h, by + bh - pin_pad)
+        if erode_bbox:
+            x1 = max(0, bx + pad_x)
+            y1 = max(0, by + pad_y)
+            x2 = min(w, bx + bw - pad_x)
+            y2 = min(h, by + bh - pad_y)
         else:
             x1 = max(0, bx)
             y1 = max(0, by)

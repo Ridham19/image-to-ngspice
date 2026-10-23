@@ -807,12 +807,18 @@ def detect_seam_wire_anchors(
         min_blob_area=40,
     )
 
-    # Mask out component bounding boxes completely to prevent component bodies from generating false seam anchors
+    # Mask out component bounding boxes to prevent component bodies from generating false seam anchors,
+    # leaving a small 2px margin so leads connecting to pins right at the box edge are preserved
     for c in components:
         box = c.get("box", [0, 0, 0, 0])
         if box and len(box) == 4 and box[2] > 4 and box[3] > 4:
             bx, by, bw, bh = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-            cv2.rectangle(wire_mask, (bx, by), (bx + bw, by + bh), 0, -1)
+            x1 = max(0, bx + 2)
+            y1 = max(0, by + 2)
+            x2 = min(width, bx + bw - 2)
+            y2 = min(height, by + bh - 2)
+            if x2 > x1 and y2 > y1:
+                cv2.rectangle(wire_mask, (x1, y1), (x2, y2), 0, -1)
 
     tile_map = {(t["row"], t["col"]): t for t in tiles}
     seam_anchors: List[Dict[str, Any]] = []
@@ -1016,6 +1022,7 @@ def trace_wires_tiled(
             comp_pins_map[p["comp_idx"]].append(p)
 
     all_tile_nets: List[List[str]] = []
+    observed_tile_pairs: Set[Tuple[str, str]] = set()
     tile_debug_info = {}
 
     # 2. Run wire tracing on each individual tile
@@ -1074,6 +1081,10 @@ def trace_wires_tiled(
             t_netlist, t_debug = trace_wires(tile_crop, tile_wt_components, config=tracer_cfg)
             all_tile_nets.extend(t_netlist)
             tile_debug_info[tid] = t_debug
+            for net in t_netlist:
+                for i in range(len(net)):
+                    for j in range(i + 1, len(net)):
+                        observed_tile_pairs.add(tuple(sorted([net[i], net[j]])))
         except Exception as e:
             print(f"[WARN] Wire tracing failed on tile {tid}: {e}")
 
@@ -1132,31 +1143,175 @@ def trace_wires_tiled(
     for m in set(parent.keys()):
         net_groups[find(m)].append(m)
 
-    # 5. Build clean, standard sequential connections between real component pins
+    # 5. Build clean, structured connections via Minimum Spanning Tree (MST)
+    # routing naturally through physical seam anchors without naive string sorting or shorting pins.
+    import math
+
+    tile_rects = {t["tile_id"]: (t["x1"], t["y1"], t["x2"], t["y2"]) for t in tiles}
     pin_lookup = {f"{p['comp_idx']}_{p['pin_id']}": p for p in pin_anchors if p.get("comp_idx", 0) >= 0}
+    seam_anchor_map = {a["id"]: a for a in seam_anchors}
+
+    def get_node_info(node_id: str):
+        if node_id in pin_lookup:
+            p = pin_lookup[node_id]
+            gx, gy = p["x"], p["y"]
+            c_idx = p["comp_idx"]
+            p_id = p["pin_id"]
+            t_ids = [
+                tid for tid, (x1, y1, x2, y2) in tile_rects.items()
+                if (x1 - 15 <= gx <= x2 + 15) and (y1 - 15 <= gy <= y2 + 15)
+            ]
+            return {
+                "id": node_id,
+                "is_seam": False,
+                "x": gx,
+                "y": gy,
+                "comp_idx": c_idx,
+                "pin_id": p_id,
+                "tiles": t_ids,
+                "pin_ref": {"comp_idx": c_idx, "pin_id": p_id}
+            }
+        elif node_id in seam_anchor_map:
+            a = seam_anchor_map[node_id]
+            gx, gy = a["global_x"], a["global_y"]
+            anc_id = a["anchor_id"]
+            return {
+                "id": node_id,
+                "is_seam": True,
+                "x": gx,
+                "y": gy,
+                "comp_idx": -1,
+                "pin_id": anc_id,
+                "tiles": list(a.get("tiles", [])),
+                "pin_ref": {"comp_idx": -1, "pin_id": anc_id}
+            }
+        return None
+
     final_connections = []
+    used_seam_anchor_ids = set()
     final_netlist = []
 
     for root, members in net_groups.items():
-        # Keep ONLY real component pins (filter out seam bridge anchors)
-        c_pins = [m for m in members if m in pin_lookup]
+        node_infos = {}
+        for m in members:
+            inf = get_node_info(m)
+            if inf:
+                node_infos[m] = inf
 
-        if len(c_pins) < 2:
+        c_pins = [m for m, inf in node_infos.items() if not inf["is_seam"]]
+        s_anchors = [m for m, inf in node_infos.items() if inf["is_seam"]]
+
+        # If less than 2 real component pins and no seam anchors, skip
+        if len(c_pins) < 2 and (len(c_pins) == 0 or len(s_anchors) == 0):
             continue
 
-        c_pins = sorted(c_pins)
-        final_netlist.append(c_pins)
+        nodes = list(node_infos.keys())
+        if len(nodes) < 2:
+            continue
 
-        # Build sequential connections for the frontend A* router
-        for i in range(len(c_pins) - 1):
-            p1_idx, p1_pid = map(int, c_pins[i].split("_"))
-            p2_idx, p2_pid = map(int, c_pins[i + 1].split("_"))
-            final_connections.append({
-                "pin1": {"comp_idx": p1_idx, "pin_id": p1_pid},
-                "pin2": {"comp_idx": p2_idx, "pin_id": p2_pid}
-            })
+        # Build candidate edges between all nodes in this net
+        edges = []
+        for i in range(len(nodes)):
+            u = nodes[i]
+            u_info = node_infos[u]
+            for j in range(i + 1, len(nodes)):
+                v = nodes[j]
+                v_info = node_infos[v]
+
+                # 1. Never connect two pins of the same component directly
+                if not u_info["is_seam"] and not v_info["is_seam"]:
+                    if u_info["comp_idx"] == v_info["comp_idx"]:
+                        continue
+
+                dist = math.hypot(u_info["x"] - v_info["x"], u_info["y"] - v_info["y"])
+                shared_tiles = set(u_info["tiles"]).intersection(set(v_info["tiles"]))
+                pair_key = tuple(sorted([u, v]))
+                was_observed = pair_key in observed_tile_pairs
+
+                if was_observed:
+                    weight = dist * 0.9
+                elif shared_tiles:
+                    weight = dist
+                else:
+                    # Different tiles: force routing through an overlap seam anchor
+                    weight = 1_000_000.0 + dist
+
+                edges.append((weight, u, v))
+
+        # Kruskal's MST
+        edges.sort(key=lambda e: e[0])
+        tree_parent = {n: n for n in nodes}
+        def t_find(i: str) -> str:
+            if tree_parent[i] == i: return i
+            tree_parent[i] = t_find(tree_parent[i])
+            return tree_parent[i]
+
+        def t_union(i: str, j: str) -> bool:
+            ri, rj = t_find(i), t_find(j)
+            if ri != rj:
+                tree_parent[ri] = rj
+                return True
+            return False
+
+        adj = defaultdict(list)
+        for weight, u, v in edges:
+            if t_union(u, v):
+                adj[u].append(v)
+                adj[v].append(u)
+
+        # Prune dead-end seam anchors (degree < 2) that do not bridge between components
+        pruned = True
+        while pruned:
+            pruned = False
+            for anc in list(s_anchors):
+                if anc in adj and len(adj[anc]) < 2:
+                    neighbors = list(adj[anc])
+                    for nbr in neighbors:
+                        adj[nbr].remove(anc)
+                    del adj[anc]
+                    pruned = True
+
+        # Extract clean edges from MST
+        seen_edges = set()
+        net_pins_only = sorted(c_pins)
+        if len(net_pins_only) >= 2:
+            final_netlist.append(net_pins_only)
+
+        for u, neighbors in adj.items():
+            for v in neighbors:
+                edge_key = tuple(sorted([u, v]))
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    u_inf = node_infos[u]
+                    v_inf = node_infos[v]
+                    if u_inf["is_seam"]:
+                        used_seam_anchor_ids.add(u_inf["pin_id"])
+                    if v_inf["is_seam"]:
+                        used_seam_anchor_ids.add(v_inf["pin_id"])
+
+                    final_connections.append({
+                        "pin1": u_inf["pin_ref"],
+                        "pin2": v_inf["pin_ref"]
+                    })
 
     final_netlist.sort(key=lambda pins: (-len(pins), pins[0] if pins else ""))
+
+    # Construct final_pin_anchors including real pins and all active seam anchors
+    final_pin_anchors = list(pin_anchors)
+    for a in seam_anchors:
+        if a["anchor_id"] in used_seam_anchor_ids:
+            final_pin_anchors.append({
+                "comp_idx": -1,
+                "pin_id": a["anchor_id"],
+                "x": int(a["global_x"]),
+                "y": int(a["global_y"]),
+                "isJunction": True,
+                "isSeamAnchor": True,
+                "pin_name": f"S{a['anchor_id']}",
+                "terminal": None,
+                "comp_name": f"SeamAnchor_{a['anchor_id']}",
+                "comp_type": "junction",
+            })
 
     # Update global_debug pin_net_map for frontend nodes assignment
     pin_net_map = {}
@@ -1165,5 +1320,5 @@ def trace_wires_tiled(
             pin_net_map[m] = net_idx
     global_debug["pin_net_map"] = pin_net_map
 
-    return final_connections, pin_anchors, final_netlist, global_debug, seam_anchors
+    return final_connections, final_pin_anchors, final_netlist, global_debug, seam_anchors
 
