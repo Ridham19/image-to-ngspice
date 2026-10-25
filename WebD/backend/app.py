@@ -508,14 +508,28 @@ async def detect_circuit(
                     det["nodes"] = nodes_list
 
                 # Build sequential connections for the frontend A* router
+                pin_pos_map = {(pa["comp_idx"], pa["pin_id"]): (pa["x"], pa["y"]) for pa in pin_anchors}
+                from core.tiled_detector import find_wire_path_fast
+                wire_mask = None
+                if debug_info and "label_map" in debug_info and debug_info["label_map"] is not None:
+                    wire_mask = (debug_info["label_map"] > 0).astype(np.uint8) * 255
+
                 for net_pins in netlist:
                     for i in range(len(net_pins) - 1):
                         p1_idx, p1_pid = map(int, net_pins[i].split("_"))
                         p2_idx, p2_pid = map(int, net_pins[i+1].split("_"))
-                        connections.append({
+                        conn_entry = {
                             "pin1": {"comp_idx": p1_idx, "pin_id": p1_pid},
                             "pin2": {"comp_idx": p2_idx, "pin_id": p2_pid}
-                        })
+                        }
+                        if wire_mask is not None:
+                            pt1 = pin_pos_map.get((p1_idx, p1_pid))
+                            pt2 = pin_pos_map.get((p2_idx, p2_pid))
+                            if pt1 and pt2:
+                                poly_path = find_wire_path_fast(wire_mask, pt1, pt2)
+                                if poly_path and len(poly_path) >= 2:
+                                    conn_entry["path"] = poly_path
+                        connections.append(conn_entry)
                 
                 # Generate Debug Image
                 from wire_tracer.utils import draw_debug_overlay

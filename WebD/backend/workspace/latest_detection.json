@@ -1,62 +1,200 @@
 [
     {
-        "name": "R1",
-        "type": "resistor",
+        "name": "Q1",
+        "type": "bjt_npn",
         "box": [
-            645,
-            335,
-            53,
-            34
+            928,
+            655,
+            175,
+            170
         ],
         "center": [
-            671.5,
-            352.0
+            1015.5,
+            740.0
         ],
-        "conf": 0.87,
-        "value": "8",
+        "conf": 0.91,
+        "value": "Tx",
         "rotation": 0,
-        "raw_ocr": "8",
+        "raw_ocr": "bpc150",
         "ocr_status": "detected",
         "text_box": [
-            631,
-            309,
-            38,
-            23
+            1117,
+            707,
+            247,
+            70
+        ]
+    },
+    {
+        "name": "GND1",
+        "type": "ground",
+        "box": [
+            1002,
+            1212,
+            93,
+            55
+        ],
+        "center": [
+            1048.5,
+            1239.5
+        ],
+        "conf": 0.89,
+        "value": null,
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
+    },
+    {
+        "name": "RE",
+        "type": "resistor",
+        "box": [
+            1003,
+            956,
+            90,
+            137
+        ],
+        "center": [
+            1048.0,
+            1024.5
+        ],
+        "conf": 0.89,
+        "value": "560k",
+        "rotation": 270,
+        "raw_ocr": "560q",
+        "ocr_status": "detected",
+        "text_box": [
+            1108,
+            1043,
+            154,
+            58
+        ]
+    },
+    {
+        "name": "R2",
+        "type": "resistor",
+        "box": [
+            627,
+            443,
+            87,
+            134
+        ],
+        "center": [
+            670.5,
+            510.0
+        ],
+        "conf": 0.89,
+        "value": "22k",
+        "rotation": 270,
+        "raw_ocr": "22kq",
+        "ocr_status": "detected",
+        "text_box": [
+            712,
+            520,
+            153,
+            56
+        ]
+    },
+    {
+        "name": "GND2",
+        "type": "ground",
+        "box": [
+            625,
+            1212,
+            92,
+            56
+        ],
+        "center": [
+            671.0,
+            1240.0
+        ],
+        "conf": 0.89,
+        "value": null,
+        "rotation": 0,
+        "raw_ocr": null,
+        "ocr_status": "none"
+    },
+    {
+        "name": "RC",
+        "type": "resistor",
+        "box": [
+            1002,
+            380,
+            91,
+            138
+        ],
+        "center": [
+            1047.5,
+            449.0
+        ],
+        "conf": 0.89,
+        "value": "1.0k",
+        "rotation": 270,
+        "raw_ocr": "1.0kq",
+        "ocr_status": "detected",
+        "text_box": [
+            1101,
+            460,
+            169,
+            58
+        ]
+    },
+    {
+        "name": "R4",
+        "type": "resistor",
+        "box": [
+            626,
+            901,
+            89,
+            135
+        ],
+        "center": [
+            670.5,
+            968.5
+        ],
+        "conf": 0.88,
+        "value": "6.8k",
+        "rotation": 270,
+        "raw_ocr": "6.8kq",
+        "ocr_status": "detected",
+        "text_box": [
+            726,
+            986,
+            171,
+            57
         ]
     },
     {
         "name": "J1",
         "type": "junction",
         "box": [
-            515,
-            126,
-            19,
-            20
+            1022,
+            217,
+            51,
+            53
         ],
         "center": [
-            524.5,
-            136.0
+            1047.5,
+            243.5
         ],
-        "conf": 0.87,
+        "conf": 0.83,
         "value": null,
         "rotation": 270,
         "raw_ocr": null,
         "ocr_status": "none"
     },
     {
-        "name": "GND1",
-        "type": "ground",
+        "name": "P1",
+        "type": "terminal",
         "box": [
-            832,
-            228,
-            31,
-            19
+            1025,
+            153,
+            49,
+            49
         ],
         "center": [
-            847.5,
-            237.5
+            1049.5,
+            177.5
         ],
-        "conf": 0.87,
+        "conf": 0.83,
         "value": null,
         "rotation": 0,
         "raw_ocr": null,
@@ -66,60 +204,16 @@
         "name": "J2",
         "type": "junction",
         "box": [
-            516,
-            343,
-            18,
-            18
+            643,
+            713,
+            56,
+            55
         ],
         "center": [
-            525.0,
-            352.0
+            671.0,
+            740.5
         ],
-        "conf": 0.85,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "C7.5F",
-        "type": "capacitor",
-        "box": [
-            722,
-            418,
-            34,
-            22
-        ],
-        "center": [
-            739.0,
-            429.0
-        ],
-        "conf": 0.85,
-        "value": "8",
-        "rotation": 0,
-        "raw_ocr": "8",
-        "ocr_status": "detected",
-        "text_box": [
-            631,
-            309,
-            38,
-            23
-        ]
-    },
-    {
-        "name": "GND2",
-        "type": "ground",
-        "box": [
-            508,
-            604,
-            31,
-            20
-        ],
-        "center": [
-            523.5,
-            614.0
-        ],
-        "conf": 0.82,
+        "conf": 0.8,
         "value": null,
         "rotation": 0,
         "raw_ocr": null,
@@ -129,300 +223,16 @@
         "name": "J3",
         "type": "junction",
         "box": [
-            731,
-            343,
-            19,
-            19
-        ],
-        "center": [
-            740.5,
-            352.5
-        ],
-        "conf": 0.82,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "M1",
-        "type": "mosfet",
-        "box": [
-            485,
-            449,
-            46,
-            52
-        ],
-        "center": [
-            508.0,
-            475.0
-        ],
-        "conf": 0.81,
-        "value": "nmos",
-        "rotation": 0,
-        "raw_ocr": "ttyw4pgn",
-        "ocr_status": "detected",
-        "text_box": [
-            531,
-            453,
-            67,
-            17
-        ]
-    },
-    {
-        "name": "P1",
-        "type": "terminal",
-        "box": [
-            858,
-            350,
-            32,
+            654,
+            229,
+            34,
             32
         ],
         "center": [
-            874.0,
-            366.0
-        ],
-        "conf": 0.8,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J4",
-        "type": "junction",
-        "box": [
-            380,
-            248,
-            19,
-            20
-        ],
-        "center": [
-            389.5,
-            258.0
-        ],
-        "conf": 0.78,
-        "value": null,
-        "rotation": 270,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "VSS1",
-        "type": "vss",
-        "box": [
-            858,
-            350,
-            32,
-            32
-        ],
-        "center": [
-            874.0,
-            366.0
-        ],
-        "conf": 0.71,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "M2",
-        "type": "mosfet",
-        "box": [
-            484,
-            228,
-            48,
-            54
-        ],
-        "center": [
-            508.0,
-            255.0
-        ],
-        "conf": 0.7,
-        "value": "1180n",
-        "rotation": 0,
-        "raw_ocr": "1180n",
-        "ocr_status": "detected",
-        "text_box": [
-            532,
-            278,
-            48,
-            19
-        ]
-    },
-    {
-        "name": "J5",
-        "type": "junction",
-        "box": [
-            842,
-            25,
-            11,
-            10
-        ],
-        "center": [
-            847.5,
-            30.0
-        ],
-        "conf": 0.69,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J6",
-        "type": "junction",
-        "box": [
-            734,
-            535,
-            10,
-            11
-        ],
-        "center": [
-            739.0,
-            540.5
+            671.0,
+            245.0
         ],
         "conf": 0.68,
-        "value": null,
-        "rotation": 270,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J7",
-        "type": "junction",
-        "box": [
-            654,
-            133,
-            8,
-            9
-        ],
-        "center": [
-            658.0,
-            137.5
-        ],
-        "conf": 0.67,
-        "value": null,
-        "rotation": 270,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J8",
-        "type": "junction",
-        "box": [
-            516,
-            531,
-            17,
-            18
-        ],
-        "center": [
-            524.5,
-            540.0
-        ],
-        "conf": 0.62,
-        "value": null,
-        "rotation": 270,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "P2",
-        "type": "terminal",
-        "box": [
-            197,
-            241,
-            35,
-            34
-        ],
-        "center": [
-            214.5,
-            258.0
-        ],
-        "conf": 0.62,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J9",
-        "type": "junction",
-        "box": [
-            385,
-            468,
-            9,
-            9
-        ],
-        "center": [
-            389.5,
-            472.5
-        ],
-        "conf": 0.56,
-        "value": null,
-        "rotation": 0,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "R2",
-        "type": "resistor",
-        "box": [
-            517,
-            290,
-            15,
-            17
-        ],
-        "center": [
-            524.5,
-            298.5
-        ],
-        "conf": 0.55,
-        "value": "1k",
-        "rotation": 270,
-        "raw_ocr": "m1",
-        "ocr_status": "detected",
-        "text_box": [
-            529,
-            298,
-            32,
-            18
-        ]
-    },
-    {
-        "name": "J10",
-        "type": "junction",
-        "box": [
-            653,
-            253,
-            9,
-            11
-        ],
-        "center": [
-            657.5,
-            258.5
-        ],
-        "conf": 0.53,
-        "value": null,
-        "rotation": 270,
-        "raw_ocr": null,
-        "ocr_status": "none"
-    },
-    {
-        "name": "J11",
-        "type": "junction",
-        "box": [
-            610,
-            531,
-            18,
-            18
-        ],
-        "center": [
-            619.0,
-            540.0
-        ],
-        "conf": 0.43,
         "value": null,
         "rotation": 0,
         "raw_ocr": null,

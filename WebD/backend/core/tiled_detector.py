@@ -8,8 +8,8 @@ components using Non-Maximum Suppression (NMS) with alignment points.
 """
 
 import math
-from collections import defaultdict
-from typing import List, Dict, Any, Tuple, Optional
+from collections import defaultdict, deque
+from typing import List, Dict, Any, Tuple, Optional, Set
 import cv2
 import numpy as np
 
@@ -783,6 +783,100 @@ def split_and_detect_circuit(
     return merged_components, tile_metadata
 
 
+def find_wire_path_fast(
+    wire_mask: Optional[np.ndarray],
+    p1: Tuple[float, float],
+    p2: Tuple[float, float],
+    max_search_radius: int = 20,
+) -> List[List[int]]:
+    """
+    Traces the shortest polyline path along wire pixels between p1 and p2.
+    Returns a list of [x, y] coordinates following the original wire geometry.
+    """
+    x1, y1 = int(round(p1[0])), int(round(p1[1]))
+    x2, y2 = int(round(p2[0])), int(round(p2[1]))
+
+    if wire_mask is None or wire_mask.size == 0 or (x1 == x2 and y1 == y2):
+        return [[x1, y1], [x2, y2]]
+
+    h, w = wire_mask.shape[:2]
+    x1, x2 = max(0, min(w - 1, x1)), max(0, min(w - 1, x2))
+    y1, y2 = max(0, min(h - 1, y1)), max(0, min(h - 1, y2))
+
+    # Search within localized bounding box crop with margin
+    pad = 50
+    crop_x1 = max(0, min(x1, x2) - pad)
+    crop_y1 = max(0, min(y1, y2) - pad)
+    crop_x2 = min(w, max(x1, x2) + pad + 1)
+    crop_y2 = min(h, max(y1, y2) + pad + 1)
+
+    sub_mask = wire_mask[crop_y1:crop_y2, crop_x1:crop_x2]
+    sub_h, sub_w = sub_mask.shape
+    if sub_h == 0 or sub_w == 0:
+        return [[x1, y1], [x2, y2]]
+
+    local_x1, local_y1 = x1 - crop_x1, y1 - crop_y1
+    local_x2, local_y2 = x2 - crop_x1, y2 - crop_y1
+
+    def find_nearest_wire_pixel(cx: int, cy: int) -> Tuple[int, int]:
+        if 0 <= cy < sub_h and 0 <= cx < sub_w and sub_mask[cy, cx] > 0:
+            return cx, cy
+        for r in range(1, max_search_radius + 1):
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    nx, ny = cx + dx, cy + dy
+                    if 0 <= nx < sub_w and 0 <= ny < sub_h and sub_mask[ny, nx] > 0:
+                        return nx, ny
+        return max(0, min(sub_w - 1, cx)), max(0, min(sub_h - 1, cy))
+
+    start_x, start_y = find_nearest_wire_pixel(local_x1, local_y1)
+    target_x, target_y = find_nearest_wire_pixel(local_x2, local_y2)
+
+    neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+    queue = deque([(start_x, start_y)])
+    came_from = {}
+    visited = np.zeros((sub_h, sub_w), dtype=bool)
+    visited[start_y, start_x] = True
+    found = False
+
+    step_count = 0
+    max_steps = sub_w * sub_h
+    while queue and step_count < max_steps:
+        step_count += 1
+        curr_x, curr_y = queue.popleft()
+        if curr_x == target_x and curr_y == target_y:
+            found = True
+            break
+
+        for dx, dy in neighbors:
+            nx, ny = curr_x + dx, curr_y + dy
+            if 0 <= nx < sub_w and 0 <= ny < sub_h:
+                if not visited[ny, nx] and sub_mask[ny, nx] > 0:
+                    visited[ny, nx] = True
+                    came_from[(nx, ny)] = (curr_x, curr_y)
+                    queue.append((nx, ny))
+
+    if not found:
+        return [[x1, y1], [x2, y2]]
+
+    curr = (target_x, target_y)
+    raw_path = []
+    while curr in came_from:
+        raw_path.append(curr)
+        curr = came_from[curr]
+    raw_path.append((start_x, start_y))
+    raw_path.reverse()
+
+    pts = [[x1, y1]]
+    for pt in raw_path:
+        pts.append([pt[0] + crop_x1, pt[1] + crop_y1])
+    pts.append([x2, y2])
+
+    pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+    simplified = cv2.approxPolyDP(pts_arr, epsilon=2.0, closed=False)
+    return [[int(pt[0][0]), int(pt[0][1])] for pt in simplified]
+
+
 def detect_seam_wire_anchors(
     bgr_image: np.ndarray,
     tiles: List[Dict[str, Any]],
@@ -1319,6 +1413,37 @@ def trace_wires_tiled(
         for m in net_pins:
             pin_net_map[m] = net_idx
     global_debug["pin_net_map"] = pin_net_map
+
+    # Compute actual physical wire paths for all connections so frontend displays highlighted wire paths
+    wire_pixels_mask = None
+    if global_debug.get("label_map") is not None:
+        wire_pixels_mask = (global_debug["label_map"] > 0).astype(np.uint8) * 255
+    elif tile_debug_info:
+        comp_map = np.zeros((height, width), dtype=np.uint8)
+        for t in tiles:
+            tid = t["tile_id"]
+            if tid in tile_debug_info and "label_map" in tile_debug_info[tid]:
+                t_lm = tile_debug_info[tid]["label_map"]
+                tx1, ty1, tx2, ty2 = t["x1"], t["y1"], t["x2"], t["y2"]
+                comp_map[ty1:ty2, tx1:tx2] = (t_lm > 0).astype(np.uint8) * 255
+        wire_pixels_mask = comp_map
+
+    for conn in final_connections:
+        p1_ref = conn["pin1"]
+        p2_ref = conn["pin2"]
+        p1_info = pin_lookup.get(f"{p1_ref['comp_idx']}_{p1_ref['pin_id']}") if p1_ref["comp_idx"] >= 0 else seam_anchor_map.get(f"seam_anchor_{p1_ref['pin_id']}")
+        p2_info = pin_lookup.get(f"{p2_ref['comp_idx']}_{p2_ref['pin_id']}") if p2_ref["comp_idx"] >= 0 else seam_anchor_map.get(f"seam_anchor_{p2_ref['pin_id']}")
+
+        if p1_info and p2_info:
+            x1 = p1_info["x"] if "x" in p1_info else p1_info["global_x"]
+            y1 = p1_info["y"] if "y" in p1_info else p1_info["global_y"]
+            x2 = p2_info["x"] if "x" in p2_info else p2_info["global_x"]
+            y2 = p2_info["y"] if "y" in p2_info else p2_info["global_y"]
+
+            if wire_pixels_mask is not None:
+                conn["path"] = find_wire_path_fast(wire_pixels_mask, (x1, y1), (x2, y2))
+            else:
+                conn["path"] = [[int(x1), int(y1)], [int(x2), int(y2)]]
 
     return final_connections, final_pin_anchors, final_netlist, global_debug, seam_anchors
 

@@ -5695,6 +5695,32 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    function getConnectionPoints(conn) {
+        if (!conn) return null;
+        if (conn.path && Array.isArray(conn.path) && conn.path.length >= 2) {
+            return conn.path;
+        }
+        const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
+        const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
+        if (!p1 || !p2) return null;
+        return [[p1.x, p1.y], [p2.x, p2.y]];
+    }
+
+    function projectPointToConnection(px, py, conn) {
+        const pts = getConnectionPoints(conn);
+        if (!pts || pts.length < 2) return null;
+        let bestDist = Infinity;
+        let bestProj = { x: Math.round(pts[0][0]), y: Math.round(pts[0][1]), t: 0, dist: Infinity, segIdx: 0 };
+        for (let i = 0; i < pts.length - 1; i++) {
+            const segProj = projectPointToSegment(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+            if (segProj.dist < bestDist) {
+                bestDist = segProj.dist;
+                bestProj = { ...segProj, segIdx: i };
+            }
+        }
+        return bestProj;
+    }
+
     function getPinDisplayName(pinRef) {
         if (!pinRef) return '';
         if (pinRef.comp_idx === -1) {
@@ -5711,12 +5737,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function aiHitTestConnection(imgX, imgY) {
         let bestIdx = null, bestDist = AI_CONN_HIT_DIST;
         aiPreview.connections.forEach((conn, idx) => {
-            const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
-            const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
-            if (!p1 || !p2) return;
-            const dist = pointToSegmentDist(imgX, imgY, p1.x, p1.y, p2.x, p2.y);
-            if (dist < bestDist) {
-                bestDist = dist;
+            const proj = projectPointToConnection(imgX, imgY, conn);
+            if (!proj) return;
+            if (proj.dist < bestDist) {
+                bestDist = proj.dist;
                 bestIdx = idx;
             }
         });
@@ -6130,14 +6154,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (aiPreview.activeTab === 'values') {
             // Draw subtle wire routes in the background
             aiCtx.lineWidth = 1.5 / aiEditor.zoom;
-            aiCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            aiCtx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
             aiPreview.connections.forEach(conn => {
-                const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
-                const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
-                if (!p1 || !p2) return;
+                const pts = getConnectionPoints(conn);
+                if (!pts || pts.length < 2) return;
                 aiCtx.beginPath();
-                aiCtx.moveTo(p1.x, p1.y);
-                aiCtx.lineTo(p2.x, p2.y);
+                aiCtx.moveTo(pts[0][0], pts[0][1]);
+                for (let k = 1; k < pts.length; k++) {
+                    aiCtx.lineTo(pts[k][0], pts[k][1]);
+                }
                 aiCtx.stroke();
             });
 
@@ -6375,33 +6400,67 @@ document.addEventListener("DOMContentLoaded", () => {
             aiCtx.fillText(labelText + valueText, box[0] + 3, box[1] - 5);
         });
 
-        // 3) Draw connection lines
+        // 3) Draw connection lines highlighted along the original wire paths
         const connLineWidth = Math.max(2.5, 3 / aiEditor.zoom);
+        const glowWidth = Math.max(7, 9 / aiEditor.zoom);
+
         aiPreview.connections.forEach((conn, idx) => {
+            const pts = getConnectionPoints(conn);
+            if (!pts || pts.length < 2) return;
+
             const p1 = findPinAnchor(conn.pin1.comp_idx, conn.pin1.pin_id);
             const p2 = findPinAnchor(conn.pin2.comp_idx, conn.pin2.pin_id);
             if (!p1 || !p2) return;
 
             const pinKey1 = `${conn.pin1.comp_idx}_${conn.pin1.pin_id}`;
             const netLabel = nets.pinNetMap[pinKey1];
-            let color = nets.netColors[netLabel] || 'rgba(100,100,100,0.7)';
+            let color = nets.netColors[netLabel] || 'rgba(56, 189, 248, 0.9)';
 
             const isHovered = aiEditor.hoveredConnIdx === idx;
 
+            aiCtx.save();
+            aiCtx.lineCap = 'round';
+            aiCtx.lineJoin = 'round';
+
+            // Phase A: Glowing halo along the physical wire to highlight original path
             aiCtx.beginPath();
-            aiCtx.moveTo(p1.x, p1.y);
-            aiCtx.lineTo(p2.x, p2.y);
-            aiCtx.lineWidth = isHovered ? connLineWidth * 2 : connLineWidth;
-            aiCtx.strokeStyle = isHovered ? (aiEditor.tool === 'delete' ? '#EF4444' : '#38BDF8') : color;
+            aiCtx.moveTo(pts[0][0], pts[0][1]);
+            for (let k = 1; k < pts.length; k++) {
+                aiCtx.lineTo(pts[k][0], pts[k][1]);
+            }
+
             if (isHovered) {
-                aiCtx.setLineDash([6 / aiEditor.zoom, 4 / aiEditor.zoom]);
+                aiCtx.lineWidth = glowWidth * 1.5;
+                aiCtx.strokeStyle = aiEditor.tool === 'delete' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(56, 189, 248, 0.55)';
+            } else {
+                aiCtx.lineWidth = glowWidth;
+                aiCtx.strokeStyle = color.replace(')', ', 0.32)').replace('rgb', 'rgba');
+                if (!color.includes('rgb')) {
+                    aiCtx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+                }
             }
             aiCtx.stroke();
-            aiCtx.setLineDash([]);
+
+            // Phase B: Solid core wire trace
+            aiCtx.beginPath();
+            aiCtx.moveTo(pts[0][0], pts[0][1]);
+            for (let k = 1; k < pts.length; k++) {
+                aiCtx.lineTo(pts[k][0], pts[k][1]);
+            }
+            aiCtx.lineWidth = isHovered ? connLineWidth * 1.6 : connLineWidth;
+            aiCtx.strokeStyle = isHovered ? (aiEditor.tool === 'delete' ? '#EF4444' : '#38BDF8') : color;
+            if (isHovered) {
+                aiCtx.setLineDash([8 / aiEditor.zoom, 4 / aiEditor.zoom]);
+            }
+            aiCtx.stroke();
+            aiCtx.restore();
 
             // Connection midpoint marker when hovered (delete mode)
             if (isHovered && aiEditor.tool === 'delete') {
-                const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+                const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
+                const proj = projectPointToConnection(cursorImg.x, cursorImg.y, conn);
+                const mx = proj ? proj.x : (p1.x + p2.x) / 2;
+                const my = proj ? proj.y : (p1.y + p2.y) / 2;
                 const r = 10 / aiEditor.zoom;
                 aiCtx.beginPath();
                 aiCtx.arc(mx, my, r, 0, Math.PI * 2);
@@ -6423,7 +6482,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Connection anchor insertion marker when hovered (junction mode or connect mode with pendingPin)
             if (isHovered && (aiEditor.tool === 'junction' || (aiEditor.tool === 'connect' && aiEditor.pendingPin))) {
                 const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
-                const proj = projectPointToSegment(cursorImg.x, cursorImg.y, p1.x, p1.y, p2.x, p2.y);
+                const proj = projectPointToConnection(cursorImg.x, cursorImg.y, conn) || projectPointToSegment(cursorImg.x, cursorImg.y, p1.x, p1.y, p2.x, p2.y);
                 const jr = 9 / aiEditor.zoom;
                 aiCtx.beginPath();
                 aiCtx.moveTo(proj.x, proj.y - jr);
@@ -6572,7 +6631,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         const hp2 = findPinAnchor(hConn.pin2.comp_idx, hConn.pin2.pin_id);
                         if (hp1 && hp2) {
                             const cursorImg = aiScreenToImage(aiEditor.mouseX, aiEditor.mouseY);
-                            const proj = projectPointToSegment(cursorImg.x, cursorImg.y, hp1.x, hp1.y, hp2.x, hp2.y);
+                            const proj = projectPointToConnection(cursorImg.x, cursorImg.y, hConn) || projectPointToSegment(cursorImg.x, cursorImg.y, hp1.x, hp1.y, hp2.x, hp2.y);
                             targetX = proj.x;
                             targetY = proj.y;
                         }
@@ -6889,7 +6948,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         const p1Anchor = findPinAnchor(oldConn.pin1.comp_idx, oldConn.pin1.pin_id);
                         const p2Anchor = findPinAnchor(oldConn.pin2.comp_idx, oldConn.pin2.pin_id);
                         if (p1Anchor && p2Anchor) {
-                            const proj = projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
+                            const proj = projectPointToConnection(img.x, img.y, oldConn) || projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
                             const juncId = aiJunctionCounter++;
                             const juncAnchor = {
                                 comp_idx: -1,
@@ -6902,10 +6961,17 @@ document.addEventListener("DOMContentLoaded", () => {
                             aiPreview.pinAnchors.push(juncAnchor);
                             const juncRef = { comp_idx: -1, pin_id: juncId };
 
-                            // Split old connection into 2 segments through the anchor
+                            // Split old connection into 2 segments through the anchor, preserving polyline paths
+                            let path1 = null, path2 = null;
+                            if (oldConn.path && oldConn.path.length >= 2 && proj.segIdx !== undefined) {
+                                path1 = oldConn.path.slice(0, proj.segIdx + 1);
+                                path1.push([proj.x, proj.y]);
+                                path2 = [[proj.x, proj.y], ...oldConn.path.slice(proj.segIdx + 1)];
+                            }
+
                             aiPreview.connections.splice(connIdx, 1,
-                                { pin1: oldConn.pin1, pin2: juncRef },
-                                { pin1: juncRef, pin2: oldConn.pin2 }
+                                { pin1: oldConn.pin1, pin2: juncRef, path: path1 },
+                                { pin1: juncRef, pin2: oldConn.pin2, path: path2 }
                             );
 
                             // Connect pending pin to the new anchor
@@ -7239,7 +7305,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const p1Anchor = findPinAnchor(oldConn.pin1.comp_idx, oldConn.pin1.pin_id);
                     const p2Anchor = findPinAnchor(oldConn.pin2.comp_idx, oldConn.pin2.pin_id);
                     if (p1Anchor && p2Anchor) {
-                        const proj = projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
+                        const proj = projectPointToConnection(img.x, img.y, oldConn) || projectPointToSegment(img.x, img.y, p1Anchor.x, p1Anchor.y, p2Anchor.x, p2Anchor.y);
                         const juncId = aiJunctionCounter++;
                         const juncAnchor = {
                             comp_idx: -1,
@@ -7252,9 +7318,16 @@ document.addEventListener("DOMContentLoaded", () => {
                         aiPreview.pinAnchors.push(juncAnchor);
                         const juncRef = { comp_idx: -1, pin_id: juncId };
 
+                        let path1 = null, path2 = null;
+                        if (oldConn.path && oldConn.path.length >= 2 && proj.segIdx !== undefined) {
+                            path1 = oldConn.path.slice(0, proj.segIdx + 1);
+                            path1.push([proj.x, proj.y]);
+                            path2 = [[proj.x, proj.y], ...oldConn.path.slice(proj.segIdx + 1)];
+                        }
+
                         aiPreview.connections.splice(connIdx, 1,
-                            { pin1: oldConn.pin1, pin2: juncRef },
-                            { pin1: juncRef, pin2: oldConn.pin2 }
+                            { pin1: oldConn.pin1, pin2: juncRef, path: path1 },
+                            { pin1: juncRef, pin2: oldConn.pin2, path: path2 }
                         );
 
                         aiInfoEl.textContent = `⊕ Inserted junction anchor J${juncId} on wire — split into 2 segments`;
