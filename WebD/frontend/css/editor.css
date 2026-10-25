@@ -4,6 +4,7 @@
 
 /* --- RESET & BASE --- */
 :root {
+    color-scheme: dark;
     --bg-base: #0f172a; /* slate-900 */
     --bg-surface: #1e293b; /* slate-800 */
     --glass-bg: rgba(15, 23, 42, 0.85);
@@ -15,7 +16,8 @@
     --text-secondary: #94a3b8; /* slate-400 */
     --text-code: #38bdf8;
     --bg-code: rgba(15, 23, 42, 0.6);
-    --select-option-bg: #0f172a;
+    --select-option-bg: #1e293b;
+    --select-option-color: #f8fafc;
     --danger: #f87171;
     --success: #10b981; /* emerald-500 */
     --success-hover: #059669; /* emerald-600 */
@@ -33,6 +35,7 @@
 }
 
 [data-theme="light"] {
+    color-scheme: light;
     --bg-base: #f8fafc; /* slate-50 */
     --bg-surface: #ffffff;
     --glass-bg: rgba(255, 255, 255, 0.88);
@@ -45,6 +48,7 @@
     --text-code: #0369a1; /* sky-700 */
     --bg-code: #f1f5f9; /* slate-100 */
     --select-option-bg: #ffffff;
+    --select-option-color: #0f172a;
     --danger: #dc2626;
     --success: #16a34a; /* emerald-600 */
     --success-hover: #15803d; /* emerald-700 */
@@ -400,9 +404,52 @@ canvas {
     font-weight: 600;
     background-image: url("data:image/svg+xml;utf8,<svg fill='%2300E5FF' height='10' viewBox='0 0 24 24' width='10' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
 }
-.toolbar-select option {
-    background-color: var(--select-option-bg);
-    color: var(--text-primary);
+.toolbar-select option,
+.toolbar-select.active option {
+    background-color: var(--select-option-bg, #1e293b);
+    color: var(--select-option-color, #f8fafc);
+}
+
+/* Universal Selects & Dropdowns Theme Consistency */
+select {
+    color-scheme: dark;
+}
+[data-theme="light"] select {
+    color-scheme: light;
+}
+
+select option,
+.toolbar-select option,
+.toolbar-select.active option,
+.modal-select option,
+.split-select option,
+.prop-input option,
+select.prop-input option {
+    background-color: var(--select-option-bg, #1e293b) !important;
+    color: var(--select-option-color, #f8fafc) !important;
+}
+
+select option:checked,
+select option:hover {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+}
+
+[data-theme="light"] select option,
+[data-theme="light"] .toolbar-select option,
+[data-theme="light"] .toolbar-select.active option,
+[data-theme="light"] .modal-select option,
+[data-theme="light"] .split-select option,
+[data-theme="light"] .prop-input option,
+[data-theme="light"] select.prop-input option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+}
+
+[data-theme="light"] select option:checked,
+[data-theme="light"] select option:hover {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
 }
 
 /* ============================================

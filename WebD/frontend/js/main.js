@@ -509,6 +509,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Compute absolute pin positions for a component
     function getCompPins(comp) {
+        if (comp.type === 'ic') {
+            const numPins = Math.max(2, parseInt(comp.params && comp.params.num_pins, 10) || 2);
+            const leftCount = Math.ceil(numPins / 2);
+            const rightCount = Math.floor(numPins / 2);
+            const vStep = 20;
+            const bodyH = (Math.max(leftCount, rightCount) - 1) * vStep;
+            const rotRad = ((comp.rotation || 0) % 360) * Math.PI / 180;
+            const cosR = Math.round(Math.cos(rotRad));
+            const sinR = Math.round(Math.sin(rotRad));
+
+            const pinOffsets = [];
+            // Left-side pins: top to bottom (Pins 1 to leftCount)
+            for (let i = 0; i < leftCount; i++) {
+                const yOff = -bodyH / 2 + i * vStep;
+                pinOffsets.push([-40, yOff]);
+            }
+            // Right-side pins: bottom to top (DIP convention)
+            for (let i = rightCount - 1; i >= 0; i--) {
+                const yOff = -bodyH / 2 + i * vStep;
+                pinOffsets.push([40, yOff]);
+            }
+
+            return pinOffsets.map(([dx, dy]) => {
+                const rx = dx * cosR - dy * sinR;
+                const ry = dx * sinR + dy * cosR;
+                return { x: comp.x + rx, y: comp.y + ry };
+            });
+        }
+
         const db = COMPONENT_DB[comp.type];
         if (!db) return [{ x: comp.x, y: comp.y }];
         const rotRad = ((comp.rotation || 0) % 360) * Math.PI / 180;
@@ -4256,26 +4285,115 @@ document.addEventListener("DOMContentLoaded", () => {
             if (comp.type === 'ic') {
                 const icTitle = document.createElement('p');
                 icTitle.className = 'prop-section-title';
-                icTitle.textContent = 'IC Configuration';
+                icTitle.textContent = 'IC Configuration & Presets';
                 panel.appendChild(icTitle);
 
-                // Subcircuit name
+                // Built-in presets catalog
+                const IC_PRESETS = [
+                    { id: 'custom', name: 'Custom (User Defined)', pins: comp.params.num_pins || '2', subckt: comp.params.subckt_name || 'MyIC', pins_desc: 'Custom pin count & subcircuit' },
+                    { id: 'NE555', name: 'NE555 Precision Timer (8 pins)', pins: '8', subckt: 'NE555', pins_desc: '1:GND | 2:TRIG | 3:OUT | 4:RESET | 5:CTRL | 6:THRESH | 7:DISCH | 8:VCC' },
+                    { id: 'LM7805', name: 'LM7805 +5V Regulator (3 pins)', pins: '3', subckt: 'LM7805', pins_desc: '1:IN | 2:GND | 3:OUT' },
+                    { id: 'LM7812', name: 'LM7812 +12V Regulator (3 pins)', pins: '3', subckt: 'LM7812', pins_desc: '1:IN | 2:GND | 3:OUT' },
+                    { id: 'LM317', name: 'LM317 Adj Regulator (3 pins)', pins: '3', subckt: 'LM317', pins_desc: '1:IN | 2:ADJ | 3:OUT' },
+                    { id: 'INTEGRATOR', name: 'Active Integrator (4 pins)', pins: '4', subckt: 'INTEGRATOR', pins_desc: '1:IN | 2:OUT | 3:VCC | 4:VEE' },
+                    { id: 'DIFFERENTIATOR', name: 'Active Differentiator (4 pins)', pins: '4', subckt: 'DIFFERENTIATOR', pins_desc: '1:IN | 2:OUT | 3:VCC | 4:VEE' },
+                    { id: 'SUMMING_AMP', name: 'Summing Amplifier (6 pins)', pins: '6', subckt: 'SUMMING_AMP', pins_desc: '1:IN1 | 2:IN2 | 3:IN3 | 4:OUT | 5:VCC | 6:VEE' },
+                    { id: 'SCHMITT_TRIGGER', name: 'Schmitt Trigger (4 pins)', pins: '4', subckt: 'SCHMITT_TRIGGER', pins_desc: '1:IN | 2:OUT | 3:VCC | 4:VEE' },
+                    { id: 'INSTRUMENTATION_AMP', name: 'Instrumentation Amp (6 pins)', pins: '6', subckt: 'INSTRUMENTATION_AMP', pins_desc: '1:INP | 2:INN | 3:REF | 4:OUT | 5:VCC | 6:VEE' },
+                    { id: 'SR_FF', name: 'SR Flip-Flop (4 pins)', pins: '4', subckt: 'SR_FF', pins_desc: '1:S | 2:R | 3:Q | 4:QBAR' },
+                    { id: 'JK_FF', name: 'JK Flip-Flop with Clock (5 pins)', pins: '5', subckt: 'JK_FF', pins_desc: '1:J | 2:K | 3:CLK | 4:Q | 5:QBAR' },
+                    { id: 'D_FF', name: 'D Flip-Flop / Latch (4 pins)', pins: '4', subckt: 'D_FF', pins_desc: '1:D | 2:CLK | 3:Q | 4:QBAR' },
+                    { id: 'T_FF', name: 'Toggle (T) Flip-Flop (4 pins)', pins: '4', subckt: 'T_FF', pins_desc: '1:T | 2:CLK | 3:Q | 4:QBAR' },
+                    { id: 'HALF_ADDER', name: '1-Bit Half Adder (4 pins)', pins: '4', subckt: 'HALF_ADDER', pins_desc: '1:A | 2:B | 3:SUM | 4:CARRY' },
+                    { id: 'FULL_ADDER', name: '1-Bit Full Adder (5 pins)', pins: '5', subckt: 'FULL_ADDER', pins_desc: '1:A | 2:B | 3:CIN | 4:SUM | 5:COUT' },
+                    { id: 'MUX2TO1', name: '2:1 Multiplexer (4 pins)', pins: '4', subckt: 'MUX2TO1', pins_desc: '1:IN0 | 2:IN1 | 3:SEL | 4:OUT' },
+                ];
+
+                // ── 1. Preset Selector ──
+                const presetRow = document.createElement('div');
+                presetRow.className = 'prop-row';
+                const presetLbl = document.createElement('span');
+                presetLbl.className = 'prop-label';
+                presetLbl.textContent = 'IC Preset';
+                presetRow.appendChild(presetLbl);
+
+                const presetSelect = document.createElement('select');
+                presetSelect.className = 'prop-input';
+                presetSelect.style.cssText = 'font-weight:600;cursor:pointer;';
+
+                const currentSubckt = (comp.params.subckt_name || '').toUpperCase();
+                let matchedPresetId = 'custom';
+
+                IC_PRESETS.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name;
+                    if (p.id !== 'custom' && (currentSubckt === p.id || currentSubckt === p.subckt.toUpperCase())) {
+                        opt.selected = true;
+                        matchedPresetId = p.id;
+                    }
+                    presetSelect.appendChild(opt);
+                });
+
+                if (matchedPresetId === 'custom' && presetSelect.options[0]) {
+                    presetSelect.options[0].selected = true;
+                }
+
+                presetSelect.addEventListener('change', async (e) => {
+                    const selectedId = e.target.value;
+                    const preset = IC_PRESETS.find(p => p.id === selectedId);
+                    if (!preset) return;
+
+                    saveState();
+                    if (preset.id !== 'custom') {
+                        comp.params.subckt_name = preset.subckt;
+                        comp.params.num_pins = preset.pins;
+                        // Fetch backend template or leave empty so backend auto-loads built-in subcircuit
+                        try {
+                            const res = await fetch('/api/subcircuits');
+                            if (res.ok) {
+                                const data = await res.json();
+                                const found = data.subcircuits && data.subcircuits.find(s => s.name === preset.subckt);
+                                if (found && found.spice_code) {
+                                    comp.params.custom_subckt = found.spice_code;
+                                }
+                            }
+                        } catch (err) {
+                            console.warn("Could not fetch subcircuit template:", err);
+                        }
+                    }
+                    render();
+                    updatePropertiesPanel();
+                });
+                presetRow.appendChild(presetSelect);
+                panel.appendChild(presetRow);
+
+                // ── 2. Subcircuit Name ──
                 addPropField(panel, 'Subckt Name', String(comp.params.subckt_name || 'MyIC'), (newVal) => {
                     saveState();
                     comp.params.subckt_name = newVal.trim() || 'MyIC';
                     render();
                 });
 
-                // Pin count — triggers immediate re-render to show new pin layout
+                // ── 3. Pin Count ──
                 addPropField(panel, 'Pin Count', String(comp.params.num_pins || '2'), (newVal) => {
                     const n = Math.max(2, parseInt(newVal, 10) || 2);
                     saveState();
                     comp.params.num_pins = String(n);
                     render();
-                    updatePropertiesPanel();  // refresh so label shows new value
+                    updatePropertiesPanel();
                 });
 
-                // Custom .subckt body (multiline textarea)
+                // ── 4. Pinout Guide / Descriptions Badge ──
+                const activePreset = IC_PRESETS.find(p => p.id !== 'custom' && p.subckt.toUpperCase() === (comp.params.subckt_name || '').toUpperCase());
+                if (activePreset && activePreset.pins_desc) {
+                    const pinoutBadge = document.createElement('div');
+                    pinoutBadge.style.cssText = 'padding:6px 8px;margin:4px 0 6px 0;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);border-radius:4px;font-size:10px;line-height:1.4;color:#38bdf8;font-family:monospace;word-break:break-word;';
+                    pinoutBadge.innerHTML = `<strong>Pinout:</strong> ${activePreset.pins_desc}`;
+                    panel.appendChild(pinoutBadge);
+                }
+
+                // ── 5. Custom / Editable .subckt textarea ──
                 const subcktRow = document.createElement('div');
                 subcktRow.className = 'prop-row';
                 subcktRow.style.flexDirection = 'column';
@@ -4284,18 +4402,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 const subcktLbl = document.createElement('span');
                 subcktLbl.className = 'prop-label';
-                subcktLbl.textContent = 'Custom .subckt';
+                subcktLbl.textContent = 'SPICE .subckt Code';
                 subcktRow.appendChild(subcktLbl);
 
                 const subcktHint = document.createElement('span');
                 subcktHint.style.cssText = 'font-size:10px;color:var(--text-dim,#64748b);line-height:1.3;';
-                subcktHint.textContent = 'Paste a full ngspice .subckt block here. Leave empty to rely on an external file.';
+                subcktHint.textContent = 'Paste custom .subckt or leave empty to use built-in library model.';
                 subcktRow.appendChild(subcktHint);
 
                 const subcktTA = document.createElement('textarea');
                 subcktTA.className = 'prop-input';
-                subcktTA.rows = 5;
-                subcktTA.style.cssText = 'font-family:monospace;font-size:11px;resize:vertical;width:100%;box-sizing:border-box;';
+                subcktTA.rows = 6;
+                subcktTA.style.cssText = 'font-family:monospace;font-size:11px;resize:vertical;width:100%;box-sizing:border-box;line-height:1.35;';
+                subcktTA.placeholder = '* Built-in template will be used if left blank';
                 subcktTA.value = comp.params.custom_subckt || '';
                 subcktTA.addEventListener('change', (e) => {
                     saveState();

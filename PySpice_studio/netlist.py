@@ -92,6 +92,14 @@ Rout_int int out 75
             key = f'ic_{subckt_name}'
             if custom_body and key not in subckts_needed:
                 subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+            elif not custom_body and key not in subckts_needed:
+                try:
+                    from core.subcircuits import get_subcircuit_spice
+                    builtin_body = get_subcircuit_spice(subckt_name)
+                    if builtin_body:
+                        subckts_needed[key] = f"\n* --- Built-in subcircuit: {subckt_name} ---\n{builtin_body}"
+                except Exception:
+                    pass
         elif c.type in ['and_gate', 'or_gate', 'not_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate']:
             if c.type not in subckts_needed:
                 gate_subckts = {

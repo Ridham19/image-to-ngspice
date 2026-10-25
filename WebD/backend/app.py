@@ -57,6 +57,7 @@ from pydantic import BaseModel
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from core.model import ComponentDetector
 from core.node_solver import solve_canvas, NON_DEVICE_TYPES
+from core.subcircuits import SUBCKT_DEFINITIONS, get_subcircuit_spice, list_subcircuits, SUBCIRCUIT_CATALOG
 
 # ═══════════════════════════════════════════
 # APP INIT
@@ -139,103 +140,11 @@ SPICE_TEMPLATES = {
 
 # ═══════════════════════════════════════════
 # SUBCIRCUIT DEFINITIONS
-# Built-in .subckt blocks prepended to the netlist when the matching
-# component type appears on the canvas.  Keys match component types.
+# Built-in .subckt definitions imported from core.subcircuits
+# (Includes NE555, LM7805, LM7812, LM317, LM741, Integrator,
+# Differentiator, Summing Amp, Schmitt Trigger, Flip-Flops, Logic Gates)
 # ═══════════════════════════════════════════
-SUBCKT_DEFINITIONS: Dict[str, str] = {
-    # Ideal op-amp model (5 external pins: V+, V−, OUT, VS+, VS−)
-    # Based on a simple voltage-controlled voltage source (VCVS) approximation.
-    'opamp': """\
-* --- Ideal Op-Amp Subcircuit: LM741 ---
-.subckt LM741 vplus vminus out vspos vsneg
-* Input resistance between inputs
-Rin vplus vminus 2MEG
-
-* Controlled voltage source referenced to ground at an internal node
-Eout int 0 vplus vminus 200000
-
-* Output resistance connected between the internal node and the output pin
-Rout_int int out 75
-.ends LM741""",
-
-    # Internally no fixed definition — user supplies .subckt_name param
-    # and the definition is expected to be provided externally or via the
-    # custom_subckt param field.  We emit a placeholder comment.
-    'ic': None,
-
-    # Transformer: no .subckt needed — uses coupled inductors directly
-    'transformer': None,
-
-    # ── Built-in Logic Gate Models (Smooth tanh behavioral subcircuits) ──
-    'and_gate': """\
-* --- 2-Input AND Gate Subcircuit ---
-.subckt AND2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = (( (1 + tanh(4*(v(in1)-2.5)))/2 ) * ( (1 + tanh(4*(v(in2)-2.5)))/2 )) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends AND2""",
-
-    'or_gate': """\
-* --- 2-Input OR Gate Subcircuit ---
-.subckt OR2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = (1 - (1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends OR2""",
-
-    'not_gate': """\
-* --- NOT Gate / Inverter Subcircuit ---
-.subckt NOT1 in out
-Rin in 0 100MEG
-B_out out_int 0 V = (1 - (1 + tanh(4*(v(in)-2.5)))/2) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends NOT1""",
-
-    'nand_gate': """\
-* --- 2-Input NAND Gate Subcircuit ---
-.subckt NAND2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = (1 - ((1 + tanh(4*(v(in1)-2.5)))/2) * ((1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends NAND2""",
-
-    'nor_gate': """\
-* --- 2-Input NOR Gate Subcircuit ---
-.subckt NOR2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = ((1 - (1 + tanh(4*(v(in1)-2.5)))/2) * (1 - (1 + tanh(4*(v(in2)-2.5)))/2)) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends NOR2""",
-
-    'xor_gate': """\
-* --- 2-Input XOR Gate Subcircuit ---
-.subckt XOR2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends XOR2""",
-
-    'xnor_gate': """\
-* --- 2-Input XNOR Gate Subcircuit ---
-.subckt XNOR2 in1 in2 out
-Rin1 in1 0 100MEG
-Rin2 in2 0 100MEG
-B_out out_int 0 V = ( 1 - ( ((1 + tanh(4*(v(in1)-2.5)))/2)*(1 - (1 + tanh(4*(v(in2)-2.5)))/2) + ((1 + tanh(4*(v(in2)-2.5)))/2)*(1 - (1 + tanh(4*(v(in1)-2.5)))/2) ) ) * 5.0
-R_out out_int out 50
-C_out out 0 10p
-.ends XNOR2""",
-}
+# Note: SUBCKT_DEFINITIONS is imported from core.subcircuits at the top of this file.
 
 # SPICE prefix order for sorted netlist output
 # X = subcircuit instances (op-amps, ICs, logic gates, etc.); K = mutual inductance (transformers)
@@ -659,12 +568,16 @@ async def simulate_circuit(request: SimulateRequest):
                         if defn:
                             subckts_needed['opamp'] = defn
                 elif comp.type == 'ic':
-                    # User-defined subcircuit: embed custom_subckt body if supplied
+                    # User-defined or built-in preset subcircuit
                     custom_body = comp.params.get('custom_subckt', '').strip()
                     subckt_name = comp.params.get('subckt_name', 'MyIC')
                     key = f'ic_{subckt_name}'
                     if custom_body and key not in subckts_needed:
                         subckts_needed[key] = f"\n* --- User-defined subcircuit: {subckt_name} ---\n{custom_body}"
+                    elif not custom_body and key not in subckts_needed:
+                        builtin_body = get_subcircuit_spice(subckt_name)
+                        if builtin_body:
+                            subckts_needed[key] = f"\n* --- Built-in subcircuit: {subckt_name} ---\n{builtin_body}"
                 elif comp.type in ('and_gate', 'or_gate', 'not_gate', 'nand_gate', 'nor_gate', 'xor_gate', 'xnor_gate'):
                     if comp.type not in subckts_needed:
                         defn = SUBCKT_DEFINITIONS.get(comp.type)
@@ -1430,6 +1343,19 @@ def generate_plot_images_matplotlib(
         plot_files.append(filename)
 
     return plot_files
+
+
+
+@app.get("/api/subcircuits")
+async def get_subcircuits_endpoint():
+    """
+    Return catalog of built-in subcircuit presets, including pin counts,
+    pin labels, categories, and bundled SPICE code templates.
+    """
+    return JSONResponse(content={
+        "status": "success",
+        "subcircuits": list_subcircuits(),
+    })
 
 
 # ═══════════════════════════════════════════
